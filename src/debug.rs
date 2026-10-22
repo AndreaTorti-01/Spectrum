@@ -1091,68 +1091,11 @@ pub fn showcase_state() -> UiState {
     st
 }
 
-/// Made-up profile rows for the profiles window screenshots. Nothing here exists on disk.
+/// Profile rows for the profiles window screenshots: this machine's real color folder and associations, run
+/// through the same type, usage and deletable logic as the window. Read-only; the showcase window is a mock
+/// (`profiles_window::open_showcase`), so Delete only edits the list and never touches a file.
 pub fn showcase_profiles() -> Vec<app::ProfileRow> {
-    use app::{ProfileKind, ProfileRow};
-    use wcs::Undeletable;
-    let row = |file: &str, name: &str, kind, used: &str, deletable| ProfileRow {
-        file: file.into(),
-        name: name.into(),
-        kind,
-        used: used.into(),
-        deletable,
-    };
-    vec![
-        row(
-            "Spectrum MAG 271QPX E2 EDID.icm",
-            "MAG 271QPX E2 (EDID)",
-            ProfileKind::Sdr,
-            "Used by monitor 1 (default)",
-            Ok(()),
-        ),
-        row(
-            "Spectrum HDR MSI-3CB0 A.icc",
-            "Spectrum HDR MAG 271QPX E2",
-            ProfileKind::Hdr,
-            "Used by monitor 1 (default)",
-            Ok(()),
-        ),
-        row(
-            "Spectrum Display P3.icm",
-            "Spectrum Display P3",
-            ProfileKind::Matrix,
-            "Not in use",
-            Ok(()),
-        ),
-        row(
-            "Spectrum Adobe RGB compatible.icm",
-            "Spectrum Adobe RGB compatible",
-            ProfileKind::Matrix,
-            "Not in use",
-            Ok(()),
-        ),
-        row(
-            "Studio Display Calibrated.icc",
-            "Studio Display Calibrated",
-            ProfileKind::Lut,
-            "Not in use",
-            Ok(()),
-        ),
-        row(
-            wcs::SRGB_INBOX,
-            "sRGB IEC61966-2.1",
-            ProfileKind::Sdr,
-            "Used by monitor 1",
-            Err(Undeletable::Inbox),
-        ),
-        row(
-            "Spectrum Test Delete.icm",
-            "Spectrum Test Delete",
-            ProfileKind::Matrix,
-            "Not in use",
-            Ok(()),
-        ),
-    ]
+    app::list_profiles()
 }
 
 /// `open gamut-showcase`: the gamut window with the monitor's EDID-derived profile, sRGB and Display P3
