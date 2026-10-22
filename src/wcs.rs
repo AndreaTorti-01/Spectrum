@@ -243,7 +243,7 @@ pub fn ensure_user_scope(m: &Monitor) -> Result<(), String> {
     Ok(())
 }
 
-/// `MONITOR\MSI4CD8\{4d36e96e-...}\0003`: the device name the legacy WCS calls want.
+/// `MONITOR\SPC0001\{4d36e96e-...}\0003`: the device name the legacy WCS calls want.
 fn monitor_device_id(m: &Monitor) -> Option<String> {
     unsafe {
         let mut dd: DISPLAY_DEVICEW = std::mem::zeroed();
@@ -497,7 +497,7 @@ mod tests {
     #[test]
     fn file_name_validation() {
         assert!(valid_file_name("Spectrum Test.icm"));
-        assert!(valid_file_name("Spectrum HDR MSI-3CB0 A.icc"));
+        assert!(valid_file_name("Spectrum HDR SPC-0001 A.icc"));
         assert!(!valid_file_name(""));
         assert!(!valid_file_name(".."));
         assert!(!valid_file_name("..\\evil.icm"));

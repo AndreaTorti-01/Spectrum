@@ -38,7 +38,7 @@ fn mock_state(args: &[String]) -> UiState {
         .unwrap_or(2);
     let opts = vec![
         (
-            "MAG 271QPX E2 (from EDID)".to_string(),
+            "QD-OLED 27 (from EDID)".to_string(),
             "Spectrum MAG.icm".to_string(),
         ),
         ("sRGB".to_string(), "sRGB Color Space Profile.icm".to_string()),
@@ -58,7 +58,7 @@ fn mock_state(args: &[String]) -> UiState {
             bottom: 1440,
         },
         accent: 0xFF5A3C,
-        name: "MAG 271QPX E2".into(),
+        name: "QD-OLED 27".into(),
         width: 2560,
         height: 1440,
         hdr_supported: hdr_mode != "none",
@@ -118,7 +118,7 @@ fn mock_state(args: &[String]) -> UiState {
         monitors: if mons == 1 { vec![m1] } else { vec![m1, m2] },
         autostart: true,
         advanced: true,
-        status: Some("Applied MAG 271QPX E2 (from EDID)".into()),
+        status: Some("Applied QD-OLED 27 (from EDID)".into()),
     }
 }
 
@@ -251,7 +251,7 @@ fn main() {
         }
         "gamut" => {
             ui::set_mock(Some(mock_state(&args)));
-            ui::gamut_window::open(Some("Spectrum MAG 271QPX E2 EDID.icm".into()), 0);
+            ui::gamut_window::open(Some("Spectrum QD-OLED 27 EDID.icm".into()), 0);
             pump(secs, || !gamut_open());
         }
         "identify" => {

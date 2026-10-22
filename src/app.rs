@@ -1845,16 +1845,16 @@ mod tests {
 
     #[test]
     fn edid_file_name_includes_the_monitor_key() {
-        let a = edid_file_name("MAG 271QPX E2", "MSI-3CB0-0000012A", None);
-        let b = edid_file_name("MAG 271QPX E2", "MSI-3CB0-0000012B", None);
-        assert_eq!(a, "Spectrum MAG 271QPX E2 MSI-3CB0-0000012A EDID.icm");
+        let a = edid_file_name("QD-OLED 27", "SPC-0001-0000012A", None);
+        let b = edid_file_name("QD-OLED 27", "SPC-0001-0000012B", None);
+        assert_eq!(a, "Spectrum QD-OLED 27 SPC-0001-0000012A EDID.icm");
         assert_ne!(a, b);
         // Config from an older version keeps its file name.
-        let old = "Spectrum MAG 271QPX E2 EDID.icm";
-        assert_eq!(edid_file_name("MAG 271QPX E2", "K-1", Some(old)), old);
+        let old = "Spectrum QD-OLED 27 EDID.icm";
+        assert_eq!(edid_file_name("QD-OLED 27", "K-1", Some(old)), old);
         assert_eq!(
-            edid_file_name("MAG 271QPX E2", "K-1", Some("other.icm")),
-            "Spectrum MAG 271QPX E2 K-1 EDID.icm"
+            edid_file_name("QD-OLED 27", "K-1", Some("other.icm")),
+            "Spectrum QD-OLED 27 K-1 EDID.icm"
         );
     }
 }

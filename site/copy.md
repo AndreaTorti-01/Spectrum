@@ -1,6 +1,6 @@
 # Spectrum website copy
 
-Total prose words: 110 (budget 380; counts Headline, Hero text, Body, Caption, Callout, noscript and the footer line; excludes kickers, button and label lines, numbers, axis ticks, alt text and the gamut descriptions, which are the app's own strings)
+Total prose words: 106 (budget 380; counts Headline, Hero text, Body, Caption, Callout, noscript and the footer line; excludes kickers, button and label lines, numbers, axis ticks, alt text and the gamut descriptions, which are the app's own strings)
 
 Line types: Headline, Hero text, Body, Caption, Callout and Noscript count as prose and carry a word count. Kicker, Button, Label, Alt, Aria and Description are UI text and are not counted. Placeholders in braces ({rx}, {area}) are filled by the builder from the measurement report and monitor.json. Coverage percentages are computed from monitor.json (checked by hand: 100, 98.4, 94.9 and 78.1).
 
@@ -32,9 +32,9 @@ UI labels quoted here match the app verbatim: "Read profile from monitor", "Comp
 - Hero text: "Spectrum decodes the EDID your monitor reports, writes an ICC profile from it and keeps your SDR and HDR profiles applied." (21 words)
 - Button: "Download for Windows"
 - Button (ghost): "View on GitHub"
-- Canvas labels (mono): "sRGB" · "Display P3" · "Adobe RGB (1998)" · "MSI MAG 271QPX E2" · "{area}% of CIE 1931 xy" (area computed live)
+- Canvas labels (mono): "sRGB" · "Display P3" · "Adobe RGB (1998)" · "QD-OLED 27" · "{area}% of CIE 1931 xy" (area computed live)
 - Canvas axis labels: wavelength ticks every 20 nm, "x" and "y"
-- Aria: "CIE 1931 xy chromaticity diagram. The gamut triangle morphs from sRGB through Display P3 and Adobe RGB (1998) to the author's monitor, an MSI MAG 271QPX E2."
+- Aria: "CIE 1931 xy chromaticity diagram. The gamut triangle morphs from sRGB through Display P3 and Adobe RGB (1998) to the author's monitor, a QD-OLED 27."
 
 ## 3. Main window
 
@@ -70,7 +70,7 @@ UI labels quoted here match the app verbatim: "Read profile from monitor", "Comp
 - Kicker: "Gamut · CIE 1931 xy"
 - Headline: "Compare gamuts against reference spaces." (5 words)
 - Body: none
-- Caption: "Computed from the EDID of an MSI MAG 271QPX E2." (10 words)
+- Caption: "Computed from a QD-OLED monitor's EDID." (6 words)
 - Spec row 1 label: "sRGB" · "100%"
 - Description (shown on hover or focus, as in the app): "The web and Windows default, with the same primaries as Rec. 709 (HD video)."
 - Spec row 2 label: "Display P3" · "98.4%"
@@ -88,8 +88,8 @@ UI labels quoted here match the app verbatim: "Read profile from monitor", "Comp
 - Body: none
 - Caption: "Left-click toggles the main window." (5 words)
 - Label (taskbar mock): "Spectrum" (tray icon tooltip)
-- Alt (light): "Spectrum tray menu, light theme. For each monitor, a radio list of SDR profiles (MAG 271QPX E2 (EDID), sRGB, Display P3, Adobe RGB, ProPhoto RGB, Rec. 2020, DCI-P3), an HDR check item, then Open Spectrum and Exit."
-- Alt (dark): "Spectrum tray menu, dark theme. For each monitor, a radio list of SDR profiles (MAG 271QPX E2 (EDID), sRGB, Display P3, Adobe RGB, ProPhoto RGB, Rec. 2020, DCI-P3), an HDR check item, then Open Spectrum and Exit."
+- Alt (light): "Spectrum tray menu, light theme. For each monitor, a radio list of SDR profiles (QD-OLED 27 (EDID), sRGB, Display P3, Adobe RGB, ProPhoto RGB, Rec. 2020, DCI-P3), an HDR check item, then Open Spectrum and Exit."
+- Alt (dark): "Spectrum tray menu, dark theme. For each monitor, a radio list of SDR profiles (QD-OLED 27 (EDID), sRGB, Display P3, Adobe RGB, ProPhoto RGB, Rec. 2020, DCI-P3), an HDR check item, then Open Spectrum and Exit."
 
 ## 7. Footer
 

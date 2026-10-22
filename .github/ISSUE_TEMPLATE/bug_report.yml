@@ -42,7 +42,7 @@ body:
     id: monitors
     attributes:
       label: Monitor models
-      placeholder: MSI MAG 271QPX QD-OLED E2
+      placeholder: QD-OLED 27
     validations:
       required: true
   - type: dropdown

@@ -286,9 +286,9 @@ mod tests {
     fn sample() -> Config {
         let mut c = Config::default();
         {
-            let m = c.monitor_mut("MSI-3CB0-0000012A");
-            m.name = "MAG 271QPX E2".into();
-            m.edid_profile = Some("MAG 271QPX (EDID).icm".into());
+            let m = c.monitor_mut("SPC-0001-0000012A");
+            m.name = "QD-OLED 27".into();
+            m.edid_profile = Some("QD-OLED 27 (EDID).icm".into());
             m.sdr = Some("sRGB Color Space Profile.icm".into());
             m.hdr = Some(HdrParams {
                 min_nits: 0.0,
@@ -296,7 +296,7 @@ mod tests {
                 full_frame_nits: 400.5,
                 saturation: 0.25,
             });
-            m.hdr_file = Some("Spectrum HDR MSI A.icc".into());
+            m.hdr_file = Some("Spectrum HDR SPC-0001 A.icc".into());
             m.sdr_above_peak = Some(true);
         }
         c.monitor_mut("DEL-1234-0").name = "Dell = weird [name]".into();
@@ -376,15 +376,15 @@ name=x
     fn forgetting_a_profile_clears_matching_fields_only() {
         let mut c = sample();
         c.monitor_mut("DEL-1234-0").sdr = Some("Other.icm".into());
-        assert!(c.forget_profile("spectrum hdr msi a.ICC"));
-        let m = &c.monitors["MSI-3CB0-0000012A"];
+        assert!(c.forget_profile("spectrum hdr spc-0001 a.ICC"));
+        let m = &c.monitors["SPC-0001-0000012A"];
         assert_eq!(m.hdr_file, None);
         assert_eq!(m.hdr, None);
         assert!(m.edid_profile.is_some() && m.sdr.is_some());
-        assert!(c.forget_profile("MAG 271QPX (EDID).icm"));
-        assert_eq!(c.monitors["MSI-3CB0-0000012A"].edid_profile, None);
+        assert!(c.forget_profile("QD-OLED 27 (EDID).icm"));
+        assert_eq!(c.monitors["SPC-0001-0000012A"].edid_profile, None);
         assert!(c.forget_profile("sRGB Color Space Profile.icm"));
-        assert_eq!(c.monitors["MSI-3CB0-0000012A"].sdr, None);
+        assert_eq!(c.monitors["SPC-0001-0000012A"].sdr, None);
         assert_eq!(c.monitors["DEL-1234-0"].sdr.as_deref(), Some("Other.icm"));
         assert!(!c.forget_profile("nothing.icm"));
     }

@@ -227,7 +227,9 @@ fn build_entries(selected_file: Option<&str>, mon: usize) -> (Vec<Entry>, Option
             .as_ref()
             .map(|s| (s.file.clone(), s.label.clone(), s.prims))
     });
-    let mut profiles = if super::is_mock() && showcase.is_none() {
+    let mut profiles = if showcase.is_some() {
+        crate::showcase::gamut_profiles()
+    } else if super::is_mock() {
         mock_profiles()
     } else {
         installed_profiles(mon)
@@ -343,8 +345,8 @@ fn mock_profiles() -> Vec<(String, String, Option<Primaries>, String)> {
     let w = xy(0.3127, 0.3290);
     vec![
         (
-            "Spectrum MAG 271QPX E2 EDID.icm".to_string(),
-            "MAG 271QPX E2 (EDID)".to_string(),
+            "Spectrum QD-OLED 27 EDID.icm".to_string(),
+            "QD-OLED 27 (EDID)".to_string(),
             Some(Primaries {
                 r: xy(0.6855, 0.3047),
                 g: xy(0.2373, 0.7041),
@@ -355,7 +357,7 @@ fn mock_profiles() -> Vec<(String, String, Option<Primaries>, String)> {
         ),
         (
             "Spectrum HDR 1.icc".to_string(),
-            "MAG 271QPX E2 HDR 450".to_string(),
+            "QD-OLED 27 HDR 450".to_string(),
             Some(Primaries {
                 r: xy(0.6855, 0.3047),
                 g: xy(0.2373, 0.7041),
@@ -1466,7 +1468,7 @@ mod tests {
 
     #[test]
     fn closest_match_breaks_primary_ties_by_white_point() {
-        // The MAG 271QPX E2 EDID: Display P3 primaries with a near-D65 white. DCI-P3 shares the primaries
+        // The QD-OLED 27 EDID: Display P3 primaries with a near-D65 white. DCI-P3 shares the primaries
         // (a tie on overlap), but its white is far greener, so Display P3 must win.
         let xy = |x, y| Xy { x, y };
         let mag = Primaries {

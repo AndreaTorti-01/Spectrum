@@ -1162,54 +1162,15 @@ pub fn set_demo_out(p: Option<std::path::PathBuf>) {
     OUT.with(|o| *o.borrow_mut() = p);
 }
 
-/// The current state with the first monitor shown as HDR-on with tuned values. Used for screenshots only:
-/// the windows read it through `ui::set_mock`, so nothing is applied and no setting changes.
+/// The screenshot state: the fixed QD-OLED 27 of `crate::showcase`. The windows read it through
+/// `ui::set_mock`, so nothing is applied and no setting changes.
 pub fn showcase_state() -> UiState {
-    let mut st = app::snapshot();
-    st.advanced = true; // show every HDR slider
-    if let Some(m) = st.monitors.first_mut() {
-        if !m.sdr_options.is_empty() {
-            m.sdr_current = Some(0); // the EDID-derived profile
-        }
-        m.hdr_supported = true;
-        m.hdr_on = true;
-        m.sdr_white_nits = Some(240.0);
-        m.hdr_custom_active = true;
-        m.sdr_above_peak = false;
-        // Realistic values: what the EDID says and what Windows reports for the profile.
-        m.hdr_profile = app::HdrProfile::Spectrum;
-        m.edid_hdr = Some(crate::edid::HdrStatic {
-            max_nits: Some(455.0),
-            max_frame_avg_nits: Some(254.0),
-            min_nits: Some(0.0),
-            pq: true,
-        });
-        m.reported = Some(crate::dxgi::Reported {
-            min_nits: 0.0,
-            max_nits: 450.0,
-            max_full_frame_nits: 250.0,
-            color_space: 12,
-            bits_per_color: 10,
-            red: [0.6855, 0.3037],
-            green: [0.2402, 0.7119],
-            blue: [0.1436, 0.0576],
-            white: [0.3135, 0.3291],
-        });
-        m.hdr = HdrParams {
-            min_nits: 0.0,
-            peak_nits: 450.0,
-            full_frame_nits: 250.0,
-            saturation: 0.0,
-        };
-    }
-    st
+    crate::showcase::state()
 }
 
-/// Profile rows for the profiles window screenshots: this machine's real color folder and associations, run
-/// through the same type, usage and deletable logic as the window. Read-only; the showcase window is a mock
-/// (`profiles_window::open_showcase`), so Delete only edits the list and never touches a file.
+/// Profile rows for the profiles window screenshots (`crate::showcase`).
 pub fn showcase_profiles() -> Vec<app::ProfileRow> {
-    app::list_profiles()
+    crate::showcase::profiles()
 }
 
 /// `open gamut-showcase`: the gamut window with the monitor's EDID-derived profile, sRGB and Display P3
@@ -1220,9 +1181,7 @@ pub fn open_gamut_showcase() {
         ui::gamut_window::open(None, 0);
         return;
     };
-    let prims = app::current_monitors()
-        .first()
-        .and_then(|m| m.edid.as_ref().map(|e| e.primaries));
+    let prims = Some(crate::showcase::monitor_edid().primaries);
     ui::gamut_window::open_showcase(file, label, prims, 0);
 }
 

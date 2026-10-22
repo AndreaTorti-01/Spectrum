@@ -40,7 +40,7 @@ text{font:400 12px "IBM Plex Mono";fill:${t.dim}}
 <div class="brand">${prismSvg(40, { id: "o" })}<span>SPECTRUM</span></div>
 <div class="kick">Windows 11 · MIT</div>
 <h1>Your monitor already knows its colors.</h1>
-<div class="facts"><div>${areaPercent(tri(mon)).toFixed(1)}%<small>of CIE 1931 xy</small></div><div>${monitor.name.replace("MSI ", "")}<small>EDID primaries</small></div></div>
+<div class="facts"><div>${areaPercent(tri(mon)).toFixed(1)}%<small>of CIE 1931 xy</small></div><div>${monitor.name}<small>EDID primaries</small></div></div>
 <svg width="${W}" height="${H}"><g stroke="${t.rule}" stroke-width="1">${grid.join("")}</g></svg>
 <img src="${horseshoe}">
 <svg width="${W}" height="${H}" fill="none">

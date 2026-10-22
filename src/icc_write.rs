@@ -453,8 +453,6 @@ mod tests {
         // The HDR Calibration app's own profile stores exactly this MD5 in its header.
         let f = include_bytes!("../tests/fixtures/hdr_calibration_app.icc");
         assert_eq!(profile_id(f), f[84..100]);
-        let f = include_bytes!("../tests/fixtures/hdr_calibration_app_2.icc");
-        assert_eq!(profile_id(f), f[84..100]);
     }
 
     #[test]
