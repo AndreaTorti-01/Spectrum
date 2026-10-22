@@ -1,4 +1,5 @@
-//! Click-through topmost per-monitor overlay (colored border + big number) used to identify screens.
+//! Click-through topmost per-monitor overlay used to identify screens: a colored border for hover, the
+//! border plus a big number for Identify.
 
 use super::draw::{colorref, display_face, make_font_px, window_dpi, Canvas};
 use crate::monitors::Rect;
@@ -23,26 +24,26 @@ const IDENTIFY_MS: u32 = 2500;
 const NONANTIALIASED_QUALITY: u8 = 3;
 
 struct Data {
-    num: u32,
+    /// The big number; `None` draws the border only (hover).
+    num: Option<u32>,
     accent: u32,
 }
 
 thread_local! {
     static WINDOWS: RefCell<Vec<HWND>> = const { RefCell::new(Vec::new()) };
-    static SHOWN: RefCell<Option<(Rect, u32, u32)>> = const { RefCell::new(None) };
+    static SHOWN: RefCell<Option<(Rect, u32)>> = const { RefCell::new(None) };
 }
 
-/// Hover highlight: shows exactly one overlay (replaces any other).
-pub fn show(rect: Rect, num: u32, accent: u32) {
-    let same =
-        SHOWN.with(|s| *s.borrow() == Some((rect, num, accent))) && WINDOWS.with(|w| w.borrow().len() == 1);
+/// Hover highlight: the colored border only, on exactly one monitor (replaces any other overlay).
+pub fn show(rect: Rect, accent: u32) {
+    let same = SHOWN.with(|s| *s.borrow() == Some((rect, accent))) && WINDOWS.with(|w| w.borrow().len() == 1);
     if same {
         return;
     }
     hide_all();
-    if let Some(h) = create(rect, num, accent) {
+    if let Some(h) = create(rect, None, accent) {
         WINDOWS.with(|w| w.borrow_mut().push(h));
-        SHOWN.with(|s| *s.borrow_mut() = Some((rect, num, accent)));
+        SHOWN.with(|s| *s.borrow_mut() = Some((rect, accent)));
     }
 }
 
@@ -58,12 +59,12 @@ pub fn hide_all() {
     }
 }
 
-/// `(rect, num, accent)` per monitor; auto-hides after 2.5 s.
+/// Border and big number on every monitor: `(rect, num, accent)` each; auto-hides after 2.5 s.
 pub fn identify_all(mons: &[(Rect, u32, u32)]) {
     hide_all();
     let mut first = None;
     for &(rect, num, accent) in mons {
-        if let Some(h) = create(rect, num, accent) {
+        if let Some(h) = create(rect, Some(num), accent) {
             WINDOWS.with(|w| w.borrow_mut().push(h));
             first.get_or_insert(h);
         }
@@ -93,7 +94,7 @@ fn register_class() {
     });
 }
 
-fn create(rect: Rect, num: u32, accent: u32) -> Option<HWND> {
+fn create(rect: Rect, num: Option<u32>, accent: u32) -> Option<HWND> {
     register_class();
     let (w, h) = (rect.right - rect.left, rect.bottom - rect.top);
     if w <= 0 || h <= 0 {
@@ -198,11 +199,12 @@ unsafe fn paint(hwnd: HWND, hdc: windows_sys::Win32::Graphics::Gdi::HDC, d: &Dat
         FillRect(hdc, &r, acc);
     }
     DeleteObject(acc as _);
+    let Some(num) = d.num else { return };
 
     // the number, in an off-screen canvas (no flicker), non-antialiased so no pink fringes on the key color
     let em = (h as f32 * 0.34) as i32;
     let font = make_font_px(display_face(), -em, 700, NONANTIALIASED_QUALITY);
-    let text = d.num.to_string();
+    let text = num.to_string();
     let Some(mut probe) = Canvas::new(8, 8) else {
         DeleteObject(font as _);
         return;

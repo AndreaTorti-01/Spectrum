@@ -250,7 +250,7 @@ fn main() {
                 bottom: h,
             };
             if mode == "overlay" {
-                ui::overlay::show(r, 1, st.monitors[0].accent);
+                ui::overlay::show(r, st.monitors[0].accent);
             } else {
                 ui::overlay::identify_all(&[(r, 1, st.monitors[0].accent)]);
             }
