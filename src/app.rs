@@ -617,7 +617,7 @@ fn open_gamut() {
         0
     };
     let file = mons.get(idx).and_then(current_sdr_file);
-    ui::gamut_window::open(file);
+    ui::gamut_window::open(file, idx);
 }
 
 fn identify() {

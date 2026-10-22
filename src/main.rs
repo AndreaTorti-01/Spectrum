@@ -228,11 +228,14 @@ fn main() {
         Command::DebugOpen(what) => debug_open(format!("open {what}")),
         Command::DebugTrayCmd(id) => debug_open(format!("tray-cmd {id}")),
         Command::DebugStage(t) => debug::stage(&t),
-        Command::DebugDemo => app::run(RunOpts {
-            tray: false,
-            show_main: false,
-            command: Some("demo".into()),
-        }),
+        Command::DebugDemo => {
+            debug::set_demo_out(out.map(|p| p.to_path_buf()));
+            app::run(RunOpts {
+                tray: false,
+                show_main: false,
+                command: Some("demo".into()),
+            })
+        }
     };
     std::process::exit(code);
 }

@@ -6,6 +6,7 @@
 pub mod draw;
 pub mod gamut_window;
 pub mod main_window;
+pub mod mockbar;
 pub mod overlay;
 pub mod widgets;
 
@@ -97,7 +98,7 @@ fn mock_apply(a: &UiAction) {
         }
         UiAction::Highlight(None) => overlay::hide_all(),
         UiAction::Identify => overlay::identify_all(&rects),
-        UiAction::OpenGamut => gamut_window::open(None),
+        UiAction::OpenGamut => gamut_window::open(None, main_window::selected()),
         _ => {}
     }
 }

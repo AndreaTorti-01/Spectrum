@@ -7,7 +7,9 @@
   area with a solid backdrop (--debug-stage) so nothing from the desktop can end up in a picture, then
   opens each surface (main window, gamut window, tray menu) and saves the exact window rectangle
   (DWM frame bounds: no shadow, no backdrop) as <surface>-<theme>.png. hdr-<theme>.png is the HDR section
-  cropped out of the main window. With -Demo it also records the scripted --debug-demo at about 10 fps.
+  cropped out of the main window. With -Demo it also records the scripted --debug-demo at 10 fps: the demo
+  writes a layout file (capture region, rectangles, start time, cursor path), the script records exactly that
+  region and draws an arrow cursor on the frames.
 
   Visual capture only: nothing here changes a color setting (--debug-demo runs on a mock UI state).
 
@@ -43,6 +45,7 @@ if (-not (Test-Path $Exe)) { throw "Spectrum.exe not found at $Exe (run cargo bu
 Add-Type -ReferencedAssemblies System.Drawing -TypeDefinition @'
 using System;
 using System.Drawing;
+using System.Drawing.Drawing2D;
 using System.Runtime.InteropServices;
 
 public static class Cap
@@ -136,6 +139,29 @@ public static class Cap
         return n;
     }
 
+    /// True when every pixel has the backdrop color.
+    public static bool IsBlank(Bitmap b, int r, int g, int bl) { return Stray(b, r, g, bl, new int[0][]) == 0; }
+
+    /// Draws an arrow cursor (white, dark outline, soft shadow) with its tip at (x, y).
+    public static void Sprite(Bitmap b, float x, float y, float s) {
+        float[][] a = { new float[] {0, 0}, new float[] {0, 16.5f}, new float[] {4.1f, 12.9f}, new float[] {6.9f, 19.2f},
+                        new float[] {9.4f, 18.1f}, new float[] {6.7f, 11.9f}, new float[] {11.8f, 11.9f} };
+        PointF[] p = new PointF[a.Length]; PointF[] q = new PointF[a.Length];
+        for (int i = 0; i < a.Length; i++) {
+            p[i] = new PointF(x + a[i][0] * s, y + a[i][1] * s);
+            q[i] = new PointF(p[i].X + 1.1f * s, p[i].Y + 1.5f * s);
+        }
+        using (Graphics g = Graphics.FromImage(b)) {
+            g.SmoothingMode = SmoothingMode.AntiAlias;
+            using (var sh = new SolidBrush(Color.FromArgb(64, 0, 0, 0))) g.FillPolygon(sh, q);
+            using (var pen = new Pen(Color.FromArgb(255, 26, 26, 26), 1.4f * s) { LineJoin = LineJoin.Round })
+            using (var fill = new SolidBrush(Color.White)) {
+                g.FillPolygon(fill, p);
+                g.DrawPolygon(pen, p);
+            }
+        }
+    }
+
     public static void Close(IntPtr h) { PostMessage(h, 0x0010, IntPtr.Zero, IntPtr.Zero); }
 
     public static void Escape(IntPtr menu) {
@@ -204,7 +230,6 @@ New-Item -ItemType Directory -Force -Path $Out, $SiteOut | Out-Null
 $classes = @{ main = 'SpectrumMainWindow'; gamut = 'SpectrumGamutWindow'; traymenu = '#32768' }
 
 foreach ($t in $themes) {
-    $rects = @{}
     foreach ($sf in $Scale) {
         $one = ($sf -eq 1)
         $suffix = if ($one) { '-1x' } else { '' }
@@ -225,7 +250,6 @@ foreach ($t in $themes) {
             Start-Sleep -Milliseconds 600
             if ($s -ne 'traymenu' -and -not [Cap]::IsTopmost($h)) { throw "$s is not above the backdrop; refusing to capture" }
             $shot = if ($one) { Get-WindowShot $h } else { Get-WindowShot $h -ClientOnly }
-            if ($one) { $rects[$s] = $shot.Rect }
             if ($s -eq 'traymenu') {
                 Save-Png $shot.Bitmap (Join-Path $Out "traymenu-$t.png")
                 Save-Png $shot.Bitmap (Join-Path $Out "traymenu-$t-1x.png")
@@ -256,49 +280,82 @@ foreach ($t in $themes) {
         if ($Demo -and $one) {
             Stop-Spectrum
             $stage = Start-Process -FilePath $Exe -ArgumentList '--debug-stage', $t -PassThru
-            Wait-Window 'SpectrumStage' | Out-Null
-            # Union of the main window and the tray menu: both are inside the stage, nothing else is.
-            $m = $rects['main']; $q = $rects['traymenu']
-            $x0 = [Math]::Min($m[0], $q[0]); $y0 = [Math]::Min($m[1], $q[1])
-            $x1 = [Math]::Max($m[0] + $m[2], $q[0] + $q[2]); $y1 = [Math]::Max($m[1] + $m[3], $q[1] + $q[3])
-            # Never reach into the taskbar (clock, pinned apps, tray icons).
-            $bar = [Cap]::Find('Shell_TrayWnd')
-            if ($bar -ne [IntPtr]::Zero) {
-                $br = [Cap]::FrameRect($bar)
-                if ($br[1] -gt $y0) { $y1 = [Math]::Min($y1, $br[1]) }
-            }
-            $w = $x1 - $x0; $h = $y1 - $y0
+            $stageWnd = Wait-Window 'SpectrumStage'
             $dir = Join-Path $RawOut "demo-$t"
             if (Test-Path $dir) { Remove-Item $dir -Recurse -Force }
             New-Item -ItemType Directory -Force -Path $dir | Out-Null
+            $layoutFile = Join-Path $RawOut "demo-$t.layout.txt"
+            if (Test-Path $layoutFile) { Remove-Item $layoutFile -Force }
 
-            $demoProc = Start-Process -FilePath $Exe -ArgumentList '--debug-demo', '--theme', $t -PassThru
-            Wait-Window '#32768' 8000 | Out-Null
-            $frames = New-Object System.Collections.Generic.List[System.Drawing.Bitmap]
+            # The demo measures its own tray menu, then writes the layout: capture region, rectangles, start
+            # time (Unix ms), length and the scripted cursor path.
+            $demoProc = Start-Process -FilePath $Exe -ArgumentList '--debug-demo', '--theme', $t, '--out', $layoutFile -PassThru
             $sw = [Diagnostics.Stopwatch]::StartNew()
+            while (-not (Test-Path $layoutFile)) {
+                if ($demoProc.HasExited -or $sw.ElapsedMilliseconds -gt 15000) { throw 'the demo did not write its layout file' }
+                Start-Sleep -Milliseconds 40
+            }
+            $L = @{}; $kt = @(); $kx = @(); $ky = @()
+            foreach ($line in Get-Content $layoutFile) {
+                $p = $line -split ' '
+                if ($p[0] -eq 'key') { $kt += [double]$p[1]; $kx += [double]$p[2]; $ky += [double]$p[3] }
+                else { $L[$p[0]] = [double[]]($p[1..($p.Length - 1)]) }
+            }
+            $reg = [int[]]$L['region']; $m = [int[]]$L['main']; $q = [int[]]$L['menu']; $bar = [int[]]$L['bar']
+            $x0 = $reg[0]; $y0 = $reg[1]; $w = $reg[2]; $h = $reg[3]
+            $t0 = [long]$L['t0'][0]; $end = [long]$L['end'][0]; $cscale = [single]$L['scale'][0]
+            # The region must lie inside the stage, so no desktop, taskbar or other window can be in it.
+            $sr = [Cap]::FrameRect($stageWnd)
+            if ($x0 -lt $sr[0] -or $y0 -lt $sr[1] -or ($x0 + $w) -gt ($sr[0] + $sr[2]) -or ($y0 + $h) -gt ($sr[1] + $sr[3])) {
+                throw 'the demo region is not inside the stage'
+            }
+            Wait-Window 'SpectrumMainWindow' | Out-Null
+            while (([DateTimeOffset]::UtcNow.ToUnixTimeMilliseconds()) -lt $t0) { Start-Sleep -Milliseconds 2 }
+
+            $frames = New-Object System.Collections.Generic.List[System.Drawing.Bitmap]
+            $times = New-Object System.Collections.Generic.List[double]
             $next = 0
-            while (-not $demoProc.HasExited -and $sw.ElapsedMilliseconds -lt 14000) {
-                if ($sw.ElapsedMilliseconds -ge $next) {
+            while ($true) {
+                $tn = [DateTimeOffset]::UtcNow.ToUnixTimeMilliseconds() - $t0
+                if ($tn -ge $end) { break }
+                if ($demoProc.HasExited) { throw 'the demo ended before the recording was complete' }
+                if ($tn -ge $next) {
                     $frames.Add([Cap]::Grab($x0, $y0, $w, $h))
+                    $times.Add($tn + 8)
                     $next += 100
                 } else {
-                    Start-Sleep -Milliseconds 5
+                    Start-Sleep -Milliseconds 3
                 }
             }
-            # Privacy check: outside the main window and the menu (plus their shadows) only the backdrop may show.
-            $sr, $sg, $sb = if ($t -eq 'dark') { 0x20, 0x20, 0x20 } else { 0xE9, 0xE6, 0xE1 }
+            $demoProc.WaitForExit(6000) | Out-Null
+
+            # Checks: no blank frame, and outside the window, the menu (both with their shadows) and the mock
+            # taskbar only the stage color may show.
+            $br, $bg, $bb = if ($t -eq 'dark') { 0x20, 0x20, 0x20 } else { 0xE9, 0xE6, 0xE1 }
             $keep = @(
                 [int[]]@(($m[0] - $x0 - 80), ($m[1] - $y0 - 80), ($m[2] + 160), ($m[3] + 160)),
-                [int[]]@(($q[0] - $x0 - 80), ($q[1] - $y0 - 80), ($q[2] + 160), ($q[3] + 160)))
-            $bad = 0
-            foreach ($f in $frames) { if ([Cap]::Stray($f, $sr, $sg, $sb, [int[][]]$keep) -gt 0) { $bad++ } }
-            if ($bad -gt 0) {
-                Save-Png $frames[[int]($frames.Count / 2)] (Join-Path $RawOut 'failed-frame.png')
-                throw "$bad of $($frames.Count) demo frames contain something other than the backdrop; frames not saved (see failed-frame.png)"
-            }
-            $i = 1
+                [int[]]@(($q[0] - $x0 - 80), ($q[1] - $y0 - 80), ($q[2] + 160), ($q[3] + 160)),
+                [int[]]@(($bar[0] - $x0 - 1), ($bar[1] - $y0 - 1), ($bar[2] + 2), ($bar[3] + 2)))
+            $blank = 0; $bad = 0
             foreach ($f in $frames) {
+                if ([Cap]::IsBlank($f, $br, $bg, $bb)) { $blank++ }
+                if ([Cap]::Stray($f, $br, $bg, $bb, [int[][]]$keep) -gt 0) { $bad++ }
+            }
+            if ($blank -gt 0 -or $bad -gt 0 -or $frames.Count -lt 10) {
+                if ($frames.Count -gt 0) { Save-Png $frames[[int]($frames.Count / 2)] (Join-Path $RawOut 'failed-frame.png') }
+                throw "$blank blank and $bad stray-pixel frames of $($frames.Count); frames not saved (see failed-frame.png)"
+            }
+
+            # Cursor sprite at the scripted position, interpolated at each frame's time.
+            $i = 1
+            for ($n = 0; $n -lt $frames.Count; $n++) {
+                $f = $frames[$n]
+                $k = [Math]::Min([Math]::Max($times[$n] / 20.0, 0), $kt.Count - 1)
+                $k0 = [int][Math]::Floor($k); $k1 = [Math]::Min($k0 + 1, $kt.Count - 1); $fr = $k - $k0
+                $cx = $kx[$k0] + ($kx[$k1] - $kx[$k0]) * $fr - $x0
+                $cy = $ky[$k0] + ($ky[$k1] - $ky[$k0]) * $fr - $y0
                 [Cap]::GrayRing($f, $m[0] - $x0, $m[1] - $y0, $m[2], $m[3])
+                [Cap]::Sprite($f, [single]$cx, [single]$cy, $cscale)
                 Save-Png $f (Join-Path $dir ('frame-{0:D4}.png' -f $i))
                 $f.Dispose(); $i++
             }
