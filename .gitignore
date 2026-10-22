@@ -21,4 +21,5 @@ site/dist/
 /screenshots-raw
 
 # Claude scratch
-.claude/
+.claude/worktrees/
+.claude/settings.local.json
