@@ -74,7 +74,7 @@ pub static STANDARD_SPACES: [StandardSpace; 6] = [
         name: "sRGB",
         prims: BT709,
         trc: Trc::Srgb,
-        description: "The default for the web and Windows. A monitor's sRGB mode emulates it.",
+        description: "The web and Windows default, with the same primaries as Rec. 709 (HD video).",
         color: 0x8FA3B8,
     },
     StandardSpace {

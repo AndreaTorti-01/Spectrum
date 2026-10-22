@@ -239,6 +239,11 @@ fn dump_text(mons: &[Monitor], cfg: &Config, ui: &UiState) -> String {
             "  sdr white:      {}",
             crate::monitors::sdr_white_nits(m).map_or("(unavailable)".to_string(), |n| format!("{n} nits"))
         );
+        let _ = writeln!(
+            s,
+            "  windows reports: {}",
+            crate::dxgi::reported(&m.gdi_name).map_or("(unavailable)".to_string(), |r| dxgi_text(&r))
+        );
         let _ = writeln!(s, "  user scope:     {:?}", i.user_scope);
         let _ = writeln!(
             s,
@@ -426,6 +431,55 @@ fn dump_json(mons: &[Monitor], cfg: &Config, ui: &UiState) -> String {
         cpath.exists(),
         items.join(",\n")
     )
+}
+
+fn dxgi_text(r: &crate::dxgi::Reported) -> String {
+    format!(
+        "min {} max {} maxfullframe {} nits; color space {}; {} bpc; R {:.4},{:.4} G {:.4},{:.4} B {:.4},{:.4} W {:.4},{:.4}",
+        r.min_nits,
+        r.max_nits,
+        r.max_full_frame_nits,
+        r.color_space_name(),
+        r.bits_per_color,
+        r.red[0],
+        r.red[1],
+        r.green[0],
+        r.green[1],
+        r.blue[0],
+        r.blue[1],
+        r.white[0],
+        r.white[1]
+    )
+}
+
+/// `--debug-dxgi <num>`: what Windows reports for the monitor, read through DXGI.
+pub fn dxgi(num: &str, out: Option<&Path>) -> i32 {
+    let n = match parse_num(num) {
+        Ok(n) => n,
+        Err(e) => return fail(out, &e),
+    };
+    let mons = crate::monitors::enumerate();
+    let Some(m) = mons.iter().find(|m| m.num == n) else {
+        return fail(out, &format!("no monitor {n}"));
+    };
+    match crate::dxgi::reported(&m.gdi_name) {
+        Some(r) => {
+            emit(
+                out,
+                &format!(
+                    "monitor {n} ({}): {}
+",
+                    m.gdi_name,
+                    dxgi_text(&r)
+                ),
+            );
+            0
+        }
+        None => fail(
+            out,
+            &format!("DXGI has no output for monitor {n} ({})", m.gdi_name),
+        ),
+    }
 }
 
 /// `--debug-dump [--json]`
@@ -1081,6 +1135,25 @@ pub fn showcase_state() -> UiState {
         m.hdr_on = true;
         m.sdr_white_nits = Some(240.0);
         m.hdr_custom_active = true;
+        // Realistic values for the info lines: what the EDID says and what Windows reports for the profile.
+        m.hdr_profile = app::HdrProfile::Spectrum;
+        m.edid_hdr = Some(crate::edid::HdrStatic {
+            max_nits: Some(455.0),
+            max_frame_avg_nits: Some(254.0),
+            min_nits: Some(0.0),
+            pq: true,
+        });
+        m.reported = Some(crate::dxgi::Reported {
+            min_nits: 0.0,
+            max_nits: 450.0,
+            max_full_frame_nits: 250.0,
+            color_space: 12,
+            bits_per_color: 10,
+            red: [0.6855, 0.3037],
+            green: [0.2402, 0.7119],
+            blue: [0.1436, 0.0576],
+            white: [0.3135, 0.3291],
+        });
         m.hdr = HdrParams {
             min_nits: 0.0,
             peak_nits: 450.0,

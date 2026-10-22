@@ -43,6 +43,7 @@ enum Command {
     DebugHdrReset(String),
     DebugHdrToggle(String, String),
     DebugAutostart(String),
+    DebugDxgi(String),
     DebugDeleteProfile(String),
     DebugSdrWhite(String, Option<String>),
 }
@@ -96,6 +97,7 @@ fn parse_args<I: Iterator<Item = String>>(it: I) -> Args {
                 args.command =
                     Command::DebugHdrToggle(it.next().unwrap_or_default(), it.next().unwrap_or_default())
             }
+            "--debug-dxgi" => args.command = Command::DebugDxgi(it.next().unwrap_or_default()),
             "--debug-autostart" => args.command = Command::DebugAutostart(it.next().unwrap_or_default()),
             "--debug-sdr-white" => {
                 let n = it.next().unwrap_or_default();
@@ -235,6 +237,7 @@ fn main() {
         Command::DebugHdr(n, v) => debug::apply_hdr(&n, &v, out),
         Command::DebugHdrReset(n) => debug::reset_hdr(&n, out),
         Command::DebugHdrToggle(n, v) => debug::toggle_hdr(&n, &v, out),
+        Command::DebugDxgi(n) => debug::dxgi(&n, out),
         Command::DebugAutostart(v) => debug::autostart(&v, out),
         Command::DebugDeleteProfile(f) => debug::delete_profile(&f, out),
         Command::DebugSdrWhite(n, v) => debug::sdr_white(&n, v.as_deref(), out),

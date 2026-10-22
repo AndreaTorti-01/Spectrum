@@ -310,6 +310,9 @@ fn installed_profiles(mon_idx: usize) -> Vec<(String, String, Option<Primaries>,
         let Ok(info) = crate::icc_read::parse(&bytes) else {
             continue;
         };
+        if !info.is_display_rgb() {
+            continue;
+        }
         let name = if info.desc.trim().is_empty() {
             file.clone()
         } else {

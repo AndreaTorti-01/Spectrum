@@ -1,5 +1,4 @@
-//! Click-through topmost per-monitor overlay used to identify screens: a colored border for hover, the
-//! border plus a big number for Identify.
+//! Click-through topmost per-monitor overlay for Identify: a colored border plus a big number on each screen.
 
 use super::draw::{colorref, display_face, make_font_px, window_dpi, Canvas};
 use crate::monitors::Rect;
@@ -24,33 +23,18 @@ const IDENTIFY_MS: u32 = 2500;
 const NONANTIALIASED_QUALITY: u8 = 3;
 
 struct Data {
-    /// The big number; `None` draws the border only (hover).
+    /// The big number; `None` draws the border only.
     num: Option<u32>,
     accent: u32,
 }
 
 thread_local! {
     static WINDOWS: RefCell<Vec<HWND>> = const { RefCell::new(Vec::new()) };
-    static SHOWN: RefCell<Option<(Rect, u32)>> = const { RefCell::new(None) };
-}
-
-/// Hover highlight: the colored border only, on exactly one monitor (replaces any other overlay).
-pub fn show(rect: Rect, accent: u32) {
-    let same = SHOWN.with(|s| *s.borrow() == Some((rect, accent))) && WINDOWS.with(|w| w.borrow().len() == 1);
-    if same {
-        return;
-    }
-    hide_all();
-    if let Some(h) = create(rect, None, accent) {
-        WINDOWS.with(|w| w.borrow_mut().push(h));
-        SHOWN.with(|s| *s.borrow_mut() = Some((rect, accent)));
-    }
 }
 
 /// Destroys every overlay window.
 pub fn hide_all() {
     let wins: Vec<HWND> = WINDOWS.with(|w| std::mem::take(&mut *w.borrow_mut()));
-    SHOWN.with(|s| *s.borrow_mut() = None);
     for h in wins {
         // SAFETY: handles created by `create` on this thread.
         unsafe {

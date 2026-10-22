@@ -55,7 +55,7 @@ pub fn dispatch(a: UiAction) {
 
 fn mock_apply(a: &UiAction) {
     use crate::monitors::Rect;
-    // Overlays and the gamut window are driven by the app in real mode; do it here for previews.
+    // The identify overlay and the gamut window are driven by the app in real mode; do it here for previews.
     let rects: Vec<(Rect, u32, u32)> = MOCK.with(|m| {
         m.borrow()
             .as_ref()
@@ -97,12 +97,6 @@ fn mock_apply(a: &UiAction) {
         }
     });
     match a {
-        UiAction::Highlight(Some(i)) => {
-            if let Some((r, _, c)) = rects.get(*i) {
-                overlay::show(*r, *c);
-            }
-        }
-        UiAction::Highlight(None) => overlay::hide_all(),
         UiAction::Identify => overlay::identify_all(&rects),
         UiAction::OpenGamut => gamut_window::open(None, main_window::selected()),
         UiAction::OpenProfiles => profiles_window::open_showcase(crate::debug::showcase_profiles()),

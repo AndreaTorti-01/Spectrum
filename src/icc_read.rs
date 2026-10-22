@@ -29,6 +29,14 @@ pub struct IccInfo {
     pub mhc2: Option<Mhc2>,
 }
 
+impl IccInfo {
+    /// A display-class ('mntr') RGB profile: the kind that can belong to a monitor. Printer, scanner and
+    /// abstract profiles are not.
+    pub fn is_display_rgb(&self) -> bool {
+        &self.class == b"mntr" && &self.color_space == b"RGB "
+    }
+}
+
 fn slice(data: &[u8], off: usize, len: usize) -> Option<&[u8]> {
     data.get(off..off.checked_add(len)?)
 }
