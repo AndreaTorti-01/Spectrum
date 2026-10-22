@@ -3,7 +3,7 @@
 //! installs a copy of the inbox sRGB profile as "Spectrum Test.icm", associates it (not default),
 //! checks it appears, then removes it again. Never changes defaults or HDR.
 
-use spectrum::{config, installer, monitors, util, wcs};
+use spectrum::{autostart, config, monitors, util, wcs};
 
 fn main() {
     let roundtrip = std::env::args().any(|a| a == "roundtrip");
@@ -35,10 +35,9 @@ fn main() {
         println!("  HDR default   {:?}", wcs::default_profile(m, true));
         println!("  assoc (SDR)   {:?}", wcs::associated(m, false));
         println!("  assoc (HDR)   {:?}", wcs::associated(m, true));
-        println!("  autostart     {}", installer::autostart_enabled());
+        println!("  autostart     {}", autostart::autostart_enabled());
     }
-    println!("install_dir   {}", installer::install_dir().display());
-    println!("running inst. {}", installer::is_running_installed());
+    println!("startup lnk   {}", autostart::shortcut_path().display());
     println!("backup_dir    {}", wcs::backup_dir().display());
     let cfg = config::Config::load();
     println!("config monitors: {}", cfg.monitors.len());

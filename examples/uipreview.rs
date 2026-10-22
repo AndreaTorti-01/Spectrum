@@ -2,7 +2,7 @@
 //! UI preview harness: opens Spectrum's windows against a realistic mock data provider so they can be
 //! looked at (and screenshotted) without the app/monitor/WCS layers.
 //!
-//! Usage: `uipreview <main|gamut|install|overlay|identify|tray|icon> [--theme dark|light] [--hdr on|off|none]
+//! Usage: `uipreview <main|gamut|overlay|identify|tray|icon> [--theme dark|light] [--hdr on|off|none]
 //!         [--mons 1|2] [--secs N] [--out file.bmp]`
 
 use spectrum::app::{UiMonitor, UiState};
@@ -236,10 +236,6 @@ fn main() {
             ui::set_mock(Some(mock_state(&args)));
             ui::gamut_window::open(Some("Spectrum MAG 271QPX E2 EDID.icm".into()));
             pump(secs, || !gamut_open());
-        }
-        "install" => {
-            let r = ui::install_window::run();
-            println!("choice: {r:?}");
         }
         "overlay" | "identify" => {
             let st = mock_state(&args);

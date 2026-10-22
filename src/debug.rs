@@ -4,10 +4,10 @@
 #![allow(clippy::not_unsafe_ptr_arg_deref)]
 
 use crate::app::{self, UiAction, UiMonitor, UiState};
+use crate::autostart;
 use crate::color::Primaries;
 use crate::config::Config;
 use crate::icc_write::HdrParams;
-use crate::installer::{self, InstallState};
 use crate::monitors::Monitor;
 use crate::ui;
 use crate::util::wide;
@@ -155,26 +155,12 @@ fn hdr_text(h: &Option<HdrParams>) -> String {
     }
 }
 
-/// Install and autostart state, one line each.
-fn install_text(st: &InstallState, autostart: bool) -> String {
+/// Autostart state: whether the Startup shortcut exists, and where it is.
+fn install_text(autostart: bool) -> String {
+    let lnk = autostart::shortcut_path();
     let mut s = String::new();
     let _ = writeln!(s, "autostart:       {}", if autostart { "on" } else { "off" });
-    let _ = writeln!(s, "installed:       {}", st.exe_exists);
-    let _ = writeln!(
-        s,
-        "install path:    {} (exists={})",
-        st.exe.display(),
-        st.exe_exists
-    );
-    let _ = writeln!(s, "running installed copy: {}", st.running_installed);
-    let _ = writeln!(s, "run key value:   {}", opt(&st.run_value));
-    let _ = writeln!(
-        s,
-        "shortcut:        {} (exists={})",
-        st.shortcut.display(),
-        st.shortcut_exists
-    );
-    let _ = writeln!(s, "uninstall key:   {}", st.uninstall_key_exists);
+    let _ = writeln!(s, "startup shortcut: {} (exists={})", lnk.display(), lnk.exists());
     s
 }
 
@@ -215,11 +201,7 @@ fn dump_text(mons: &[Monitor], cfg: &Config, ui: &UiState) -> String {
             opt(&c.hdr_file)
         );
     }
-    let _ = writeln!(
-        s,
-        "\n{}",
-        install_text(&installer::state(), ui.autostart).trim_end()
-    );
+    let _ = writeln!(s, "\n{}", install_text(ui.autostart).trim_end());
     let _ = writeln!(s, "\nmonitors: {}", mons.len());
     for m in mons {
         let i = info(m);
@@ -414,16 +396,11 @@ fn dump_json(mons: &[Monitor], cfg: &Config, ui: &UiState) -> String {
         o.push('}');
         items.push(o);
     }
-    let st = installer::state();
+    let lnk = autostart::shortcut_path();
     let install = format!(
-        "{{\"installed\":{},\"path\":{},\"running_installed\":{},\"run_value\":{},\"shortcut\":{},\"shortcut_exists\":{},\"uninstall_key\":{}}}",
-        st.exe_exists,
-        json_str(&st.exe.display().to_string()),
-        st.running_installed,
-        json_opt(&st.run_value),
-        json_str(&st.shortcut.display().to_string()),
-        st.shortcut_exists,
-        st.uninstall_key_exists
+        "{{\"startup_shortcut\":{},\"startup_shortcut_exists\":{}}}",
+        json_str(&lnk.display().to_string()),
+        lnk.exists()
     );
     let cpath = crate::config::config_path();
     format!(
@@ -677,7 +654,7 @@ pub fn toggle_hdr(num: &str, state: &str, out: Option<&Path>) -> i32 {
     )
 }
 
-/// Result line plus install and autostart state, for the two switches that touch the install.
+/// Result line plus autostart state, for the switch that touches the Startup shortcut.
 fn finish_install(mut text: String, r: Result<String, String>, out: Option<&Path>) -> i32 {
     let code = match r {
         Ok(m) if m.is_empty() => {
@@ -693,7 +670,7 @@ fn finish_install(mut text: String, r: Result<String, String>, out: Option<&Path
             1
         }
     };
-    text.push_str(&install_text(&installer::state(), installer::autostart_enabled()));
+    text.push_str(&install_text(autostart::autostart_enabled()));
     emit(out, &text);
     code
 }
@@ -706,13 +683,6 @@ pub fn autostart(state: &str, out: Option<&Path>) -> i32 {
     };
     let text = format!("action: set autostart {}\n", if on { "on" } else { "off" });
     finish_install(text, app::dispatch_result(UiAction::SetAutostart(on)), out)
-}
-
-/// `--debug-install`: the install window's Install button with autostart on, without launching the copy.
-pub fn install(out: Option<&Path>) -> i32 {
-    let text = "action: install with autostart on, no launch\n".to_string();
-    let r = installer::install(true).map(|exe| format!("installed to {}", exe.display()));
-    finish_install(text, r, out)
 }
 
 // ---------------------------------------------------------------------------------------------
@@ -744,7 +714,7 @@ pub fn send_to_running(cmd: &str) -> bool {
     true
 }
 
-/// Asks a running instance to exit (uninstall) and waits up to `ms` for its window to go.
+/// Asks a running instance to exit (`--quit`, `--cleanup`) and waits up to `ms` for its window to go.
 pub fn stop_running(ms: u64) {
     if let Some(h) = find_running() {
         // SAFETY: plain post.

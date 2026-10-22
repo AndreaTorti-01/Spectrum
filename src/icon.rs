@@ -7,8 +7,6 @@ use windows_sys::Win32::Graphics::Gdi::{
 };
 use windows_sys::Win32::UI::WindowsAndMessaging::{CreateIconIndirect, HICON, ICONINFO};
 
-pub use crate::icon_render::ico_bytes;
-
 /// Creates a 32-bit HICON of `size` x `size` px. The caller owns it (`DestroyIcon`).
 pub fn create_hicon(size: u32) -> HICON {
     let size = size.clamp(8, 512);
