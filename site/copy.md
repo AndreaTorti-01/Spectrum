@@ -2,9 +2,9 @@
 
 Total prose words: 111 (budget 380; counts Headline, Hero text, Body, Caption, Callout, noscript and the footer line; excludes kickers, button and label lines, numbers, axis ticks, alt text and the gamut descriptions, which are the app's own strings)
 
-Line types: Headline, Hero text, Body, Caption, Callout and Noscript count as prose and carry a word count. Kicker, Button, Label, Alt, Aria and Description are UI text and are not counted. Placeholders in braces ({EXE_KB}, {IDLE_MB}, {rx}, {area}) are filled by the builder from the measurement report and monitor.json. Coverage percentages are computed from monitor.json (checked by hand: 100, 98.4, 94.9 and 78.1).
+Line types: Headline, Hero text, Body, Caption, Callout and Noscript count as prose and carry a word count. Kicker, Button, Label, Alt, Aria and Description are UI text and are not counted. Placeholders in braces ({rx}, {area}) are filled by the builder from the measurement report and monitor.json. Coverage percentages are computed from monitor.json (checked by hand: 100, 98.4, 94.9 and 78.1).
 
-UI labels quoted here match the app verbatim: "Read profile from monitor", "Compare gamuts…", "Start with Windows", "Black level", "Peak brightness", "Full-frame", "Saturation", "Reset HDR", "Open Spectrum". Gamut space names and descriptions are copied from `STANDARD_SPACES` in `src/color.rs`; if that file changes, change the strings here.
+UI labels quoted here match the app verbatim: "Read profile from monitor", "Compare gamuts…", "Start with Windows", "Black level", "Peak brightness", "Full-frame", "Saturation", "SDR content", "Advanced", "Restore default values", "Open Spectrum". Gamut space names and descriptions are copied from `STANDARD_SPACES` in `src/color.rs`; if that file changes, change the strings here.
 
 ## Meta
 
@@ -22,8 +22,8 @@ UI labels quoted here match the app verbatim: "Read profile from monitor", "Comp
 - Link: "How it works" (jumps to section 3, main window)
 - Link: "GitHub"
 - Button: "Download"
-- Label: "System" / "Light" / "Dark" (theme toggle states)
-- Aria: "Theme: system, light or dark" (toggle), "Spectrum home" (wordmark link)
+- Icons: monitor, sun, moon (theme toggle states, no visible text)
+- Aria: "Theme: System" / "Theme: Light" / "Theme: Dark" (toggle), "Spectrum home" (wordmark link)
 
 ## 2. Hero
 
@@ -32,7 +32,6 @@ UI labels quoted here match the app verbatim: "Read profile from monitor", "Comp
 - Hero text: "Spectrum decodes the EDID your monitor reports, writes an ICC profile from it and keeps your SDR and HDR profiles applied." (21 words)
 - Button: "Download for Windows"
 - Button (ghost): "View on GitHub"
-- Facts row, big mono: "{EXE_KB} KB" with label "exe"; "{IDLE_MB} MB" with label "idle RAM"
 - Canvas labels (mono): "sRGB" · "Display P3" · "Adobe RGB (1998)" · "MSI MAG 271QPX E2" · "{area}% of CIE 1931 xy" (area computed live)
 - Canvas axis labels: wavelength ticks every 20 nm, "x" and "y"
 - Aria: "CIE 1931 xy chromaticity diagram. The gamut triangle morphs from sRGB through Display P3 and Adobe RGB (1998) to the author's monitor, an MSI MAG 271QPX E2."

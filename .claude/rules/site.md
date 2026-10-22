@@ -34,13 +34,13 @@ Pictures pull the visitor in and text captions them. Copy follows `.claude/rules
 
 - Glass slab (`glassSlab.ts`): pointer-driven 3D tilt (about 9° and 7°), a moving specular highlight (`screen` blend at 14% in dark, `overlay` in light; `--spec-*` tokens), a conic spectral border and a blurred spectral caustic under the slab. The entry scrub (rotation and opacity to flat) runs from "top 95%" to "top 70%", then the slab stays still without a pointer. Reduced motion shows a flat image.
 - Reveal (`reveal.ts`): only H1 and H2 animate. Characters rise and fade in (transform and opacity only); the Archivo `wdth` axis expands per word, because re-shaping variable-font text every frame is what makes long tasks. Only the H1 is split at load, each H2 in an idle callback shortly before it scrolls in. Body text never animates.
-- Hero (`hero.ts`): the gamut triangle autoplays sRGB, Display P3, Adobe RGB, then the monitor, and loops. Each state holds 2.4 s and the morph takes 0.9 s (`power2.inOut` on the vertex lerp, labels crossfade). It runs only while the hero is in view (IntersectionObserver) and the tab is visible. The hero is a normal section: it is not pinned and not scrubbed by scroll, because a pinned page that stops scrolling looks broken. Reduced motion and `?shot=` show the monitor state. Pointer parallax on the labels stays.
+- Hero (`hero.ts`): the gamut triangle autoplays sRGB, Display P3, Adobe RGB, then the monitor, and loops. Each state holds 2.4 s and the morph takes 0.9 s (`power2.inOut` on the vertex lerp, labels crossfade). It runs only while the hero is in view (IntersectionObserver) and the tab is visible. The hero is a normal section: it is not pinned and not scrubbed by scroll, because a pinned page that stops scrolling looks broken. Reduced motion and `?shot=` show the monitor state. The wavelength and axis labels stay fixed (no pointer parallax).
 - Spectral bar: a canvas computed per pixel from the CIE 1931 table. It is the section divider and the nav progress line.
 - Motion only where it explains something. `prefers-reduced-motion` turns off Lenis and shows static slabs.
 
 ## Themes
 
-- Default follows the system (`prefers-color-scheme`). The nav has a 3-state toggle (System, Light, Dark) stored in localStorage under `spectrum-theme`. The resolved theme is `data-theme` on `<html>`. `?theme=light|dark` overrides it for screenshots.
+- Default follows the system (`prefers-color-scheme`). The nav has a 3-state icon toggle (monitor for System, sun for Light, moon for Dark; inline SVG, the aria-label names the state) stored in localStorage under `spectrum-theme`. The resolved theme is `data-theme` on `<html>`. `?theme=light|dark` overrides it for screenshots.
 - Every screenshot exists in both themes and each slab holds both pictures. CSS shows the one matching the resolved theme.
 - The tray menu is drawn by Windows and `--debug-scale` does not change it, so `traymenu-<theme>.png` is a 1x capture. The site shows it at its natural 220 px width (`--menu-w`) and no larger, since upscaling a 1x capture blurs it.
 - Screenshots are the 2× client-area captures (`<surface>-<theme>.png`). A CSS title strip draws the title bar, because the OS title bar does not scale. The `*-1x.png` files keep the OS title bar and are for the README only. Mixing them in puts a second title bar on the slab.
@@ -50,7 +50,7 @@ Pictures pull the visitor in and text captions them. Copy follows `.claude/rules
 These are things to steer away from, because they make a page read as generated.
 
 - Avoid purple or indigo gradients, gradient blobs, decorative glows, glassmorphism blur panels, a centered hero, a pill badge, a three-equal-cards row, emoji, icon-library icons, a logo bar and testimonials.
-- Avoid invented numbers. Sizes, RAM and coverage come from measurement and `monitor.json`.
+- Avoid invented numbers. Coverage comes from measurement and `monitor.json`.
 - Swap test: if the logo could be replaced by a competitor's and nobody would notice, rework it.
 - Semantic landmarks, AA contrast in both themes, 2px `--ink` focus outline, alt text on every screenshot, `<noscript>` shows static images.
 

@@ -9,5 +9,3 @@ export const DOWNLOAD = RELEASES + "/download/SpectrumSetup.exe";
 export const LICENSE_URL = REPO + "/blob/main/LICENSE";
 
 /** Measured values, see the measurement report. */
-export const EXE_KB = 768;
-export const IDLE_MB = 1.6;

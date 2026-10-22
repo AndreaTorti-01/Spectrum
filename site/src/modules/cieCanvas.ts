@@ -46,8 +46,6 @@ const YMAX = 0.9;
 export class CieDiagram {
   tris: TriSpec[] = [];
   labels: CieLabel[] = [];
-  /** pointer parallax in css px, applied to the label layer only */
-  parallax = { x: 0, y: 0 };
 
   private ctx: CanvasRenderingContext2D;
   private off: HTMLCanvasElement | null = null;
@@ -301,7 +299,6 @@ export class CieDiagram {
   private drawWavelengths(p: ReturnType<typeof palette>) {
     const { ctx } = this;
     ctx.save();
-    ctx.translate(this.parallax.x, this.parallax.y);
     ctx.strokeStyle = p.dim;
     ctx.fillStyle = p.dim;
     ctx.lineWidth = 1;
@@ -327,9 +324,9 @@ export class CieDiagram {
     const { ctx } = this;
     ctx.save();
     ctx.textAlign = "right";
-    const x = this.visibleW - 10 + this.parallax.x;
+    const x = this.visibleW - 10;
     const narrow = this.visibleW < 560;
-    const y = (narrow ? this.Y(0.84) : this.Y(0.115)) + this.parallax.y;
+    const y = (narrow ? this.Y(0.84) : this.Y(0.115));
     for (const l of this.labels) {
       if (l.alpha <= 0.01) continue;
       ctx.globalAlpha = l.alpha;
