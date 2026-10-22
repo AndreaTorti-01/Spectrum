@@ -27,8 +27,8 @@ use windows_sys::Win32::UI::WindowsAndMessaging::{
 };
 
 const CLASS: &str = "SpectrumGamutWindow";
-const CLIENT_W: i32 = 780;
-const CLIENT_H: i32 = 520;
+const CLIENT_W: i32 = 860;
+const CLIENT_H: i32 = 610;
 /// Plot domain.
 const X_MAX: f64 = 0.8;
 const Y_MAX: f64 = 0.9;
@@ -88,27 +88,46 @@ fn with<T>(f: impl FnOnce(&mut Gamut) -> T) -> Option<T> {
 #[derive(Clone, Copy)]
 struct Geo {
     plot: R,
+    /// The list container (surface fill, border, rounded corners).
+    panel: R,
+    /// The list viewport inside the container's padding: a whole number of rows tall.
     list: R,
-    desc: R,
-    stats: R,
+    /// The info block (name, detail, coverage), anchored to the bottom of the right panel.
+    info: R,
     head_l: R,
     head_r: R,
 }
 
+/// Rows visible in the list viewport.
+const LIST_ROWS: i32 = 13;
+const PANEL_L: i32 = 568;
+/// Inner padding of the list container.
+const LIST_PAD: i32 = 4;
+/// Width reserved at the right edge of the container for the scrollbar.
+const SCROLLBAR_W: i32 = 12;
+
 fn geo(dpi: u32) -> Geo {
     let s = |v: i32| sc(v, dpi);
+    let pad = s(LIST_PAD);
+    let panel = R::new(
+        s(PANEL_L),
+        s(40),
+        s(CLIENT_W - 20),
+        s(40) + LIST_ROWS * s(ROW_H) + 2 * pad,
+    );
     Geo {
-        plot: R::new(s(56), s(40), s(456), s(490)),
-        head_l: R::new(s(56), s(10), s(456), s(34)),
-        head_r: R::new(s(488), s(10), s(CLIENT_W - 20), s(34)),
-        list: R::new(s(488), s(40), s(CLIENT_W - 20), s(318)),
-        desc: R::new(s(488), s(330), s(CLIENT_W - 20), s(410)),
-        stats: R::new(s(488), s(424), s(CLIENT_W - 20), s(506)),
+        plot: R::new(s(56), s(40), s(536), s(580)),
+        head_l: R::new(s(56), s(10), s(536), s(34)),
+        head_r: R::new(s(PANEL_L), s(10), s(CLIENT_W - 20), s(34)),
+        panel,
+        list: panel.inset(pad),
+        info: R::new(s(PANEL_L), panel.b + s(14), s(CLIENT_W - 20), s(CLIENT_H - 16)),
     }
 }
 
+/// Every list row (entry or header) has the same height, so scrolling and the viewport stay on whole rows.
 const ROW_H: i32 = 30;
-const HEAD_H: i32 = 24;
+const HEAD_H: i32 = ROW_H;
 
 fn row_h(r: &Row, dpi: u32) -> i32 {
     sc(
@@ -188,6 +207,16 @@ fn build_entries(selected_file: Option<&str>) -> (Vec<Entry>, Option<usize>) {
     } else {
         installed_profiles()
     };
+    // Spectrum's EDID profile first, then other SDR profiles, then HDR (MHC2) profiles.
+    profiles.sort_by_key(|p| {
+        if p.3 == "HDR" {
+            2
+        } else if p.0.starts_with("Spectrum") && p.0.ends_with("EDID.icm") {
+            0
+        } else {
+            1
+        }
+    });
     if let Some((file, label, prims)) = &showcase {
         // The monitor's own profile goes first; build it from the EDID when it is not installed.
         match profiles.iter().position(|p| p.0.eq_ignore_ascii_case(file)) {
@@ -337,14 +366,21 @@ impl Gamut {
 
     fn clamp_scroll(&mut self) {
         let g = geo(self.dpi);
+        let row = sc(ROW_H, self.dpi);
         let max = (self.content_h() - g.list.h()).max(0);
-        self.scroll = self.scroll.clamp(0, max);
+        let snapped = (self.scroll + row / 2) / row * row;
+        self.scroll = snapped.clamp(0, max);
     }
 
     /// Entry index and its on-screen rect at a client point.
     fn row_at(&self, x: i32, y: i32) -> Option<usize> {
         let g = geo(self.dpi);
-        if !g.list.contains(x, y) {
+        let sb = if self.content_h() > g.list.h() {
+            sc(SCROLLBAR_W, self.dpi)
+        } else {
+            0
+        };
+        if !g.list.contains(x, y) || x >= g.list.r - sb {
             return None;
         }
         let mut top = g.list.t - self.scroll;
@@ -416,9 +452,13 @@ impl Gamut {
     /// Stats line: coverage of sRGB / P3 / Adobe by the first ticked non-reference profile (or the monitor's).
     fn recompute(&mut self) {
         let pick = self
-            .entries
-            .iter()
-            .position(|e| !e.reference && e.checked && e.prims.is_some())
+            .selected
+            .filter(|&i| !self.entries[i].reference && self.entries[i].prims.is_some())
+            .or_else(|| {
+                self.entries
+                    .iter()
+                    .position(|e| !e.reference && e.checked && e.prims.is_some())
+            })
             .or(self.monitor_entry.filter(|&i| self.entries[i].prims.is_some()));
         self.stats = match pick.and_then(|i| self.entries[i].prims.map(|p| (i, p))) {
             None => (
@@ -590,15 +630,21 @@ impl Gamut {
                 1.0,
             );
             let lr = scf(17.0, dpi);
-            let (lx, ly) = (p.0 + nx * lr, p.1 + ny * lr);
+            let label = nm.to_string();
+            let (tw, thh) = (c.text_width(&label, self.fonts.dim), sc(14, dpi));
+            let (hw, hh) = (tw / 2, thh / 2);
+            let margin = sc(4, dpi);
+            // On the outward normal, then clamped inside the plot so it never reaches the axis labels.
+            let lx = (p.0 + nx * lr).clamp((g.plot.l + margin + hw) as f32, (g.plot.r - margin - hw) as f32);
+            let ly = (p.1 + ny * lr).clamp((g.plot.t + margin + hh) as f32, (g.plot.b - margin - hh) as f32);
             c.text(
                 R::new(
-                    lx as i32 - sc(16, dpi),
-                    ly as i32 - sc(8, dpi),
-                    lx as i32 + sc(16, dpi),
-                    ly as i32 + sc(8, dpi),
+                    lx as i32 - hw - sc(2, dpi),
+                    ly as i32 - hh - sc(2, dpi),
+                    lx as i32 + hw + sc(2, dpi),
+                    ly as i32 + hh + sc(2, dpi),
                 ),
-                &nm.to_string(),
+                &label,
                 self.fonts.dim,
                 th.text_dim,
                 TA_CENTER,
@@ -637,101 +683,181 @@ impl Gamut {
             c.line(wx, wy - s, wx, wy + s, scf(1.4, dpi), e.color, 1.0);
         }
 
-        // --- right: list ---
+        // --- right: list container ---
         let ctx = Ctx {
             th,
             f: &self.fonts,
             dpi,
         };
+        let radius = scf(6.0, dpi);
+        c.fill_rrect(g.panel, radius, th.surface, 1.0);
+        let content = self.content_h();
+        let overflow = content > g.list.h();
+        let sb_w = if overflow { sc(SCROLLBAR_W, dpi) } else { 0 };
+        let rows_r = g.list.r - sb_w;
+        // Rows are whole and aligned with the viewport, so they clip exactly at its edges.
         let mut top = g.list.t - self.scroll;
         for r in &self.rows {
             let h = row_h(r, dpi);
-            if top + h > g.list.t - h && top < g.list.b + h {
+            if top >= g.list.t && top + h <= g.list.b {
                 match r {
                     Row::Header(t) => {
                         c.text(
-                            R::new(g.list.l + sc(4, dpi), top, g.list.r, top + h),
+                            R::new(g.list.l + sc(8, dpi), top, rows_r, top + h),
                             t,
                             self.fonts.dim,
                             th.text_dim,
                             TA_LEFT,
                         );
                     }
-                    Row::Entry(i) => self.draw_row(c, &ctx, *i, R::new(g.list.l, top, g.list.r, top + h)),
+                    Row::Entry(i) => self.draw_row(c, &ctx, *i, R::new(g.list.l, top, rows_r, top + h)),
                 }
             }
             top += h;
         }
-        // mask everything outside the list rect (rows are not clipped)
-        c.fill_rect(R::new(g.list.l - sc(8, dpi), 0, c.width(), g.list.t), th.bg);
-        c.fill_rect(
-            R::new(g.list.l - sc(8, dpi), g.list.b, c.width(), c.height()),
-            th.bg,
-        );
-        c.text(g.head_r, "Compare gamuts", self.fonts.heading, th.text, TA_LEFT);
-        // scrollbar
-        let content = self.content_h();
-        if content > g.list.h() {
-            let track = g.list.h() as f32;
-            let th_len = (track * g.list.h() as f32 / content as f32).max(scf(24.0, dpi));
-            let y0 = g.list.t as f32 + (track - th_len) * self.scroll as f32 / (content - g.list.h()) as f32;
-            let x = g.list.r as f32 - scf(2.0, dpi);
-            c.line(
-                x,
-                y0 + scf(2.0, dpi),
-                x,
-                y0 + th_len - scf(2.0, dpi),
-                scf(3.0, dpi),
+        if overflow {
+            let fade_h = sc(24, dpi);
+            let max_scroll = content - g.list.h();
+            let fade = |c: &mut Canvas, from_top: bool| {
+                for k in 0..fade_h {
+                    // 0 at the inner end of the fade, ~1 at the container edge
+                    let t = (k + 1) as f32 / fade_h as f32;
+                    let alpha = 0.96 * t * t;
+                    let y = if from_top {
+                        g.list.t + fade_h - 1 - k
+                    } else {
+                        g.list.b - fade_h + k
+                    };
+                    c.blend_rect(R::new(g.list.l, y, rows_r, y + 1), th.surface, alpha);
+                }
+            };
+            if self.scroll > 0 {
+                fade(c, true);
+            }
+            if self.scroll < max_scroll {
+                fade(c, false);
+                let first_hidden_top = self.scroll + g.list.h();
+                let mut y = 0;
+                let mut more = 0;
+                for r in &self.rows {
+                    if y >= first_hidden_top && matches!(r, Row::Entry(_)) {
+                        more += 1;
+                    }
+                    y += row_h(r, dpi);
+                }
+                if more > 0 {
+                    let label = format!("{more} more");
+                    let w = c.text_width(&label, self.fonts.dim) + sc(14, dpi);
+                    let pill = R::new(
+                        rows_r - sc(6, dpi) - w,
+                        g.list.b - sc(22, dpi),
+                        rows_r - sc(6, dpi),
+                        g.list.b - sc(4, dpi),
+                    );
+                    c.fill_rrect(pill, scf(9.0, dpi), th.surface, 1.0);
+                    c.text(pill, &label, self.fonts.dim, th.text_dim, TA_CENTER);
+                }
+            }
+            // scrollbar: the track stays visible while the list overflows
+            let tx = g.list.r - sc(7, dpi);
+            let track = R::new(tx, g.list.t + sc(2, dpi), tx + sc(4, dpi), g.list.b - sc(2, dpi));
+            c.fill_rrect(track, scf(2.0, dpi), mix(th.surface, th.text_dim, 0.22), 1.0);
+            let th_len = ((track.h() as f32) * g.list.h() as f32 / content as f32).max(scf(24.0, dpi));
+            let y0 = track.t as f32 + (track.h() as f32 - th_len) * self.scroll as f32 / max_scroll as f32;
+            c.fill_rrect_f(
+                track.l as f32,
+                y0,
+                track.r as f32,
+                y0 + th_len,
+                scf(2.0, dpi),
                 th.text_dim,
-                0.5,
+                0.85,
             );
         }
-        // description of the selected row
+        c.stroke_rrect(g.panel, radius, scf(1.0, dpi).floor().max(1.0), th.line, 1.0);
+        c.text(g.head_r, "Compare gamuts", self.fonts.heading, th.text, TA_LEFT);
+
+        // --- right: one info block anchored to the bottom ---
+        let width = g.info.w();
+        let mut y = g.info.b;
+        // coverage lines
+        if !self.stats.1.is_empty() {
+            let h = c.measure_wrapped(width, &self.stats.1, self.fonts.dim);
+            y -= h;
+            c.text_wrapped(
+                R::new(g.info.l, y, g.info.r, y + h),
+                &self.stats.1,
+                self.fonts.dim,
+                th.text_dim,
+            );
+        } else if !self.stats.0.is_empty() {
+            let h = c.measure_wrapped(width, &self.stats.0, self.fonts.dim);
+            y -= h;
+            c.text_wrapped(
+                R::new(g.info.l, y, g.info.r, y + h),
+                &self.stats.0,
+                self.fonts.dim,
+                th.text_dim,
+            );
+        }
+        let sel_is_pick = self
+            .selected
+            .map(|i| self.entries[i].name == self.stats.0)
+            .unwrap_or(false);
+        if !self.stats.1.is_empty() && !sel_is_pick {
+            // the coverage belongs to a different profile than the selected row: say which
+            let h = sc(18, dpi);
+            y -= h;
+            c.text(
+                R::new(g.info.l, y, g.info.r, y + h),
+                &self.stats.0,
+                self.fonts.dim,
+                th.text,
+                TA_LEFT,
+            );
+        }
+        y -= sc(8, dpi);
+        c.fill_rect(R::new(g.info.l, y, g.info.r, y + sc(1, dpi).max(1)), th.line);
+        y -= sc(8, dpi);
         if let Some(i) = self.selected {
             let e = &self.entries[i];
+            if let (false, Some(p)) = (e.reference, e.prims) {
+                let h = sc(17, dpi);
+                y -= h;
+                c.text(
+                    R::new(g.info.l, y, g.info.r, y + h),
+                    &format!(
+                        "R {:.3}, {:.3}  G {:.3}, {:.3}  B {:.3}, {:.3}",
+                        p.r.x, p.r.y, p.g.x, p.g.y, p.b.x, p.b.y
+                    ),
+                    self.fonts.dim,
+                    th.text_dim,
+                    TA_LEFT,
+                );
+            }
+            let h = c.measure_wrapped(width, &e.detail, self.fonts.dim);
+            y -= h;
+            c.text_wrapped(
+                R::new(g.info.l, y, g.info.r, y + h),
+                &e.detail,
+                self.fonts.dim,
+                th.text_dim,
+            );
+            y -= sc(22, dpi);
             c.text(
-                R::new(g.desc.l, g.desc.t, g.desc.r, g.desc.t + sc(20, dpi)),
+                R::new(g.info.l, y, g.info.r, y + sc(20, dpi)),
                 &e.name,
                 self.fonts.body,
                 th.text,
                 TA_LEFT,
             );
-            let mut detail = e.detail.clone();
-            if let (false, Some(p)) = (e.reference, e.prims) {
-                detail.push_str(&format!(
-                    "\nR {:.3}, {:.3}  G {:.3}, {:.3}  B {:.3}, {:.3}",
-                    p.r.x, p.r.y, p.g.x, p.g.y, p.b.x, p.b.y
-                ));
-            }
-            c.text_wrapped(
-                R::new(g.desc.l, g.desc.t + sc(22, dpi), g.desc.r, g.desc.b),
-                &detail,
-                self.fonts.dim,
-                th.text_dim,
-            );
         } else {
-            c.text_wrapped(g.desc, "Select a row to see details", self.fonts.dim, th.text_dim);
-        }
-        c.fill_rect(
-            R::new(
-                g.stats.l,
-                g.stats.t - sc(6, dpi),
-                g.stats.r,
-                g.stats.t - sc(5, dpi),
-            ),
-            th.line,
-        );
-        c.text(
-            R::new(g.stats.l, g.stats.t, g.stats.r, g.stats.t + sc(20, dpi)),
-            &self.stats.0,
-            self.fonts.body,
-            th.text,
-            TA_LEFT,
-        );
-        if !self.stats.1.is_empty() {
+            let msg = "Select a row to see details";
+            let h = c.measure_wrapped(width, msg, self.fonts.dim);
+            y -= h;
             c.text_wrapped(
-                R::new(g.stats.l, g.stats.t + sc(22, dpi), g.stats.r, g.stats.b),
-                &self.stats.1,
+                R::new(g.info.l, y, g.info.r, y + h),
+                msg,
                 self.fonts.dim,
                 th.text_dim,
             );
@@ -745,7 +871,7 @@ impl Gamut {
         let plottable = e.prims.is_some();
         let rr = r.inset(sc(1, dpi));
         if self.selected == Some(i) {
-            c.fill_rrect(rr, scf(6.0, dpi), th.surface, 1.0);
+            c.fill_rrect(rr, scf(6.0, dpi), th.hover_fill(), 1.0);
             c.stroke_rrect(rr, scf(6.0, dpi), 1.0, th.line, 1.0);
         } else if self.hover == Some(i) {
             c.fill_rrect(rr, scf(6.0, dpi), th.hover_fill(), 0.6);
@@ -1166,7 +1292,9 @@ unsafe extern "system" fn wnd_proc(hwnd: HWND, msg: u32, wp: WPARAM, lp: LPARAM)
             let mut pt = POINT { x: lo(lp), y: hi(lp) };
             ScreenToClient(hwnd, &mut pt);
             with(|g| {
-                g.scroll -= delta * sc(ROW_H, g.dpi) / 120;
+                // one row per wheel notch
+                let steps = (delta.abs() / 120).max(1) * delta.signum();
+                g.scroll -= steps * sc(ROW_H, g.dpi);
                 g.clamp_scroll();
                 g.invalidate();
             });
