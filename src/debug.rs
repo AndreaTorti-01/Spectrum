@@ -1127,6 +1127,7 @@ pub fn set_demo_out(p: Option<std::path::PathBuf>) {
 /// the windows read it through `ui::set_mock`, so nothing is applied and no setting changes.
 pub fn showcase_state() -> UiState {
     let mut st = app::snapshot();
+    st.advanced = true; // show every HDR slider
     if let Some(m) = st.monitors.first_mut() {
         if !m.sdr_options.is_empty() {
             m.sdr_current = Some(0); // the EDID-derived profile
@@ -1135,7 +1136,7 @@ pub fn showcase_state() -> UiState {
         m.hdr_on = true;
         m.sdr_white_nits = Some(240.0);
         m.hdr_custom_active = true;
-        // Realistic values for the info lines: what the EDID says and what Windows reports for the profile.
+        // Realistic values: what the EDID says and what Windows reports for the profile.
         m.hdr_profile = app::HdrProfile::Spectrum;
         m.edid_hdr = Some(crate::edid::HdrStatic {
             max_nits: Some(455.0),

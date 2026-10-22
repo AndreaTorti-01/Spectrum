@@ -20,6 +20,8 @@ pub struct MonitorCfg {
 #[derive(Clone, Debug, Default)]
 pub struct Config {
     pub monitors: BTreeMap<String, MonitorCfg>,
+    /// The HDR section's "Advanced" row is expanded.
+    pub advanced: bool,
     /// The file exists but could not be read (antivirus lock, permissions). `save` refuses to overwrite
     /// it, so a transient read error cannot wipe the other monitors' settings.
     pub load_failed: bool,
@@ -75,6 +77,7 @@ fn retry_io<T>(mut op: impl FnMut() -> std::io::Result<T>) -> std::io::Result<T>
 }
 
 const SECTION_PREFIX: &str = "monitor:";
+const UI_SECTION: &str = "ui";
 
 pub fn config_path() -> PathBuf {
     app_data_dir().join("spectrum.ini")
@@ -193,12 +196,14 @@ impl Config {
     pub fn parse(text: &str) -> Config {
         let mut cfg = Config::default();
         let mut current: Option<String> = None;
+        let mut in_ui = false;
         for raw in text.lines() {
             let line = raw.trim().trim_start_matches('\u{feff}');
             if line.is_empty() || line.starts_with(';') || line.starts_with('#') {
                 continue;
             }
             if let Some(inner) = line.strip_prefix('[').and_then(|l| l.strip_suffix(']')) {
+                in_ui = inner.trim().eq_ignore_ascii_case(UI_SECTION);
                 current = inner
                     .trim()
                     .strip_prefix(SECTION_PREFIX)
@@ -209,10 +214,16 @@ impl Config {
                 }
                 continue;
             }
-            let Some(key) = &current else { continue };
             let Some((name, value)) = line.split_once('=') else {
                 continue;
             };
+            if in_ui {
+                if name.trim().eq_ignore_ascii_case("advanced") {
+                    cfg.advanced = value.trim() == "1";
+                }
+                continue;
+            }
+            let Some(key) = &current else { continue };
             let value = value.trim();
             let m = cfg.monitor_mut(key);
             let opt = || (!value.is_empty()).then(|| value.to_string());
@@ -230,6 +241,14 @@ impl Config {
 
     pub fn serialize(&self) -> String {
         let mut s = String::new();
+        if self.advanced {
+            s.push_str(&format!(
+                "[{UI_SECTION}]
+advanced=1
+
+"
+            ));
+        }
         for (key, m) in &self.monitors {
             s.push_str(&format!("[{SECTION_PREFIX}{}]\n", clean(key)));
             s.push_str(&format!("name={}\n", clean(&m.name)));

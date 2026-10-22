@@ -115,6 +115,7 @@ fn mock_state(args: &[String]) -> UiState {
     UiState {
         monitors: if mons == 1 { vec![m1] } else { vec![m1, m2] },
         autostart: true,
+        advanced: true,
         status: Some("Applied MAG 271QPX E2 (from EDID)".into()),
     }
 }

@@ -7,9 +7,9 @@ use super::draw::{
     Canvas, Fonts, Theme, R, TA_CENTER, TA_LEFT, TA_RIGHT, WM_MOUSELEAVE,
 };
 use super::widgets::{
-    self, black_scale, draw_button, draw_checkbox, draw_dropdown, draw_slider, draw_toggle, full_scale,
-    key_to_t, peak_scale, round_black, round_nits, round_sdr_white_nits, sat_scale, slider_t_at, white_scale,
-    BtnStyle, Ctx, Kind, WidgetList, DROPDOWN_DISMISSED,
+    self, black_scale, draw_button, draw_checkbox, draw_dropdown, draw_slider, draw_slider_tick, draw_toggle,
+    full_scale, key_to_t, peak_scale, round_black, round_nits, round_sdr_white_nits, sat_scale, slider_t_at,
+    white_scale, BtnStyle, Ctx, Kind, WidgetList, DROPDOWN_DISMISSED,
 };
 use crate::app::{UiAction, UiMonitor, UiState};
 use crate::icc_write::HdrParams;
@@ -37,7 +37,9 @@ use windows_sys::Win32::UI::WindowsAndMessaging::{
 
 const CLASS: &str = "SpectrumMainWindow";
 const CLIENT_W: i32 = 440;
-const CLIENT_H: i32 = 702;
+/// Client height with the HDR "Advanced" rows collapsed; expanded adds `ADV_H`.
+const CLIENT_H: i32 = 556;
+const ADV_H: i32 = 4 * 34;
 const MARGIN: i32 = 20;
 const WM_DROPDOWN_DONE: u32 = WM_APP + 10;
 const TIMER_COMMIT: usize = 1;
@@ -55,6 +57,7 @@ enum Id {
     Compare,
     Manage,
     HdrToggle,
+    Advanced,
     Black,
     Peak,
     Full,
@@ -68,6 +71,8 @@ const SLIDERS: [Id; 5] = [Id::Black, Id::Peak, Id::Full, Id::Sat, Id::SdrWhite];
 
 enum Pending {
     Dispatch(UiAction),
+    /// The Advanced row changed the client height.
+    Resize,
     OpenDropdown,
     Close,
 }
@@ -95,6 +100,9 @@ struct Main {
     dd_closed_at: Option<Instant>,
     icons: [HICON; 2],
     geo: Geo,
+    /// SDR content drag: last pointer x and whether the thumb sits in the peak detent.
+    snap_prev: f32,
+    snap_stuck: bool,
 }
 
 thread_local! {
@@ -122,31 +130,37 @@ struct Geo {
     div1: i32,
     hdr_head: R,
     hdr_hint: R,
-    /// Profile, Windows-reported and EDID lines under the HDR header.
-    hdr_info: [R; 3],
     toggle: R,
+    advanced: R,
     /// (label, slider, value) per slider row
     rows: [(R, R, R); 5],
     reset: R,
-    /// Warning beside Reset when SDR content is above the monitor's peak.
-    warn: R,
     div2: i32,
     autostart: R,
     status: R,
 }
 
-fn geo(dpi: u32) -> Geo {
+fn client_h(advanced: bool) -> i32 {
+    CLIENT_H + if advanced { ADV_H } else { 0 }
+}
+
+fn geo(dpi: u32, advanced: bool) -> Geo {
     let s = |v: i32| sc(v, dpi);
     let right = CLIENT_W - MARGIN;
-    let mut rows = [(R::default(), R::default(), R::default()); 5];
-    for (i, row) in rows.iter_mut().enumerate() {
-        let y = 428 + i as i32 * 34;
-        *row = (
+    let row = |y: i32| {
+        (
             R::new(s(MARGIN), s(y), s(134), s(y + 34)),
             R::new(s(138), s(y + 3), s(322), s(y + 31)),
             R::new(s(326), s(y), s(right), s(y + 34)),
-        );
+        )
+    };
+    // SDR content first, then the Advanced row and its four sliders (Black, Peak, Full-frame, Saturation).
+    let mut rows = [row(0); 5];
+    rows[4] = row(384);
+    for (i, r) in rows.iter_mut().take(4).enumerate() {
+        *r = row(456 + i as i32 * 34);
     }
+    let y = 456 + if advanced { ADV_H } else { 0 };
     Geo {
         map: R::new(s(MARGIN), s(16), s(330), s(128)),
         identify: R::new(s(right - 70), s(14), s(right), s(40)),
@@ -160,13 +174,12 @@ fn geo(dpi: u32) -> Geo {
         hdr_head: R::new(s(MARGIN), s(348), s(120), s(380)),
         hdr_hint: R::new(s(120), s(348), s(right - 58), s(380)),
         toggle: R::new(s(right - 44), s(353), s(right), s(375)),
-        hdr_info: [0, 1, 2].map(|i| R::new(s(MARGIN), s(380 + i * 14), s(right), s(394 + i * 14))),
+        advanced: R::new(s(MARGIN), s(424), s(MARGIN + 96), s(450)),
         rows,
-        reset: R::new(s(MARGIN), s(604), s(MARGIN + 92), s(632)),
-        warn: R::new(s(MARGIN + 100), s(604), s(right), s(632)),
-        div2: s(640),
-        autostart: R::new(s(MARGIN), s(648), s(right), s(672)),
-        status: R::new(s(MARGIN), s(676), s(right), s(696)),
+        reset: R::new(s(MARGIN), s(y + 4), s(MARGIN + 160), s(y + 32)),
+        div2: s(y + 38),
+        autostart: R::new(s(MARGIN), s(y + 46), s(right), s(y + 70)),
+        status: R::new(s(MARGIN), s(y + 74), s(right), s(y + 94)),
     }
 }
 
@@ -214,7 +227,7 @@ impl Main {
         match id {
             Id::Black => black_scale(),
             Id::Peak => peak_scale(),
-            Id::Full => full_scale(self.peak),
+            Id::Full => full_scale(),
             Id::SdrWhite => white_scale(),
             _ => sat_scale(),
         }
@@ -239,13 +252,8 @@ impl Main {
         }
         match id {
             Id::Black => self.black = v,
-            Id::Peak => {
-                self.peak = v;
-                if self.full > v {
-                    self.full = v;
-                }
-            }
-            Id::Full => self.full = v.min(self.peak),
+            Id::Peak => (self.peak, self.full) = widgets::move_peak(v, self.full),
+            Id::Full => self.full = widgets::move_full(v, self.peak),
             _ => self.sat = v,
         }
         self.dirty = true;
@@ -261,6 +269,29 @@ impl Main {
             }
             Id::SdrWhite => format!("{} nits", self.white.round() as i64),
             _ => format!("{}%", self.sat.round() as i64),
+        }
+    }
+
+    /// SDR content value of the monitor's peak (the detent), when it falls inside the slider.
+    fn white_target(&self) -> Option<f64> {
+        widgets::sdr_peak_target(self.mon()?.effective_peak()?)
+    }
+
+    /// Sets SDR content from a wheel or key step; a step across the peak lands on it.
+    fn step_white(&mut self, t: f64) {
+        let next = round_sdr_white_nits(white_scale().to_value(t));
+        self.white = match self.white_target() {
+            Some(p) => widgets::step_through(self.white, next, p),
+            None => next,
+        };
+        self.white_dirty = true;
+    }
+
+    fn step_slider(&mut self, id: Id, t: f64) {
+        if id == Id::SdrWhite {
+            self.step_white(t);
+        } else {
+            self.set_slider_t(id, t);
         }
     }
 
@@ -295,7 +326,7 @@ impl Main {
 
     fn layout(&mut self) {
         let dpi = self.dpi;
-        let g = geo(dpi);
+        let g = geo(dpi, self.st.advanced);
         self.geo = g;
         let mon = self.mon().cloned();
         let hdr_on = self.hdr_enabled();
@@ -331,17 +362,26 @@ impl Main {
             mon.as_ref().map(|m| m.hdr_supported).unwrap_or(false),
             true,
         );
-        for (i, id) in SLIDERS.iter().enumerate() {
-            let live = *id != Id::SdrWhite || mon.as_ref().is_some_and(|m| m.sdr_white_nits.is_some());
-            self.ui.add(*id, Kind::Slider, g.rows[i].1, hdr_on && live, true);
+        let white_live = mon.as_ref().is_some_and(|m| m.sdr_white_nits.is_some());
+        self.ui.add(
+            Id::SdrWhite,
+            Kind::Slider,
+            g.rows[4].1,
+            hdr_on && white_live,
+            true,
+        );
+        self.ui
+            .add(Id::Advanced, Kind::TextButton, g.advanced, true, true);
+        if self.st.advanced {
+            for (i, id) in SLIDERS.iter().take(4).enumerate() {
+                self.ui.add(*id, Kind::Slider, g.rows[i].1, hdr_on, true);
+            }
         }
         self.ui.add(
             Id::Reset,
             Kind::TextButton,
             g.reset,
-            mon.as_ref()
-                .map(|m| m.hdr_supported && m.hdr_custom_active)
-                .unwrap_or(false),
+            mon.as_ref().map(|m| m.hdr_supported).unwrap_or(false),
             true,
         );
         self.ui
@@ -396,9 +436,19 @@ impl Main {
                 self.pending
                     .push(Pending::Dispatch(UiAction::SetHdrEnabled { mon: sel, on }));
             }
-            Id::Reset => self
-                .pending
-                .push(Pending::Dispatch(UiAction::ResetHdr { mon: sel })),
+            Id::Reset => {
+                self.dirty = false;
+                self.pending
+                    .push(Pending::Dispatch(UiAction::ResetHdr { mon: sel }));
+            }
+            Id::Advanced => {
+                let on = !self.st.advanced;
+                self.st.advanced = on;
+                self.pending.push(Pending::Dispatch(UiAction::SetAdvanced(on)));
+                self.pending.push(Pending::Resize);
+                self.layout();
+                self.invalidate();
+            }
             Id::Autostart => {
                 self.pending
                     .push(Pending::Dispatch(UiAction::SetAutostart(!self.st.autostart)));
@@ -408,7 +458,26 @@ impl Main {
     }
 
     fn slider_at_x(&mut self, id: Id, x: i32) {
-        if let Some(w) = self.ui.get(id) {
+        if let Some(w) = self.ui.get(id).copied() {
+            let mut x = x;
+            if id == Id::SdrWhite {
+                if let Some(p) = self.white_target() {
+                    let (a, b) = widgets::slider_span(w.rect, self.dpi);
+                    let px = a + (b - a) * white_scale().to_t(p) as f32;
+                    let m = scf(widgets::SNAP_MAGNET_PX, self.dpi);
+                    let e = scf(widgets::SNAP_ESCAPE_PX, self.dpi);
+                    let (nx, stuck) = widgets::detent(x as f32, self.snap_prev, px, self.snap_stuck, m, e);
+                    self.snap_prev = x as f32;
+                    self.snap_stuck = stuck;
+                    if stuck {
+                        self.white = p;
+                        self.white_dirty = true;
+                        self.invalidate();
+                        return;
+                    }
+                    x = nx.round() as i32;
+                }
+            }
             let t = slider_t_at(w.rect, x, self.dpi);
             self.set_slider_t(id, t);
             self.invalidate();
@@ -586,13 +655,18 @@ impl Main {
         );
         c.text(g.hdr_head, "HDR", self.fonts.heading, th.text, TA_LEFT);
         let hint = match mon {
-            Some(m) if !m.hdr_supported => Some("Not supported by this display"),
-            Some(m) if !m.hdr_on => Some("Turn on HDR to tune it"),
+            Some(m) if !m.hdr_supported => Some("Not supported by this display".to_string()),
+            Some(m) if !m.hdr_on => Some("Turn on HDR to tune it".to_string()),
+            Some(m) => m.white_warning(self.white),
             None => None,
-            _ => None,
         };
         if let Some(h) = hint {
-            c.text(g.hdr_hint, h, self.fonts.dim, th.text_dim, TA_RIGHT);
+            let col = match (self.hdr_enabled(), th.dark) {
+                (true, true) => 0xFFB347,
+                (true, false) => 0xB45309,
+                _ => th.text_dim,
+            };
+            c.text(g.hdr_hint, &h, self.fonts.dim, col, TA_RIGHT);
         }
         draw_toggle(
             c,
@@ -601,14 +675,11 @@ impl Main {
             mon.map(|m| m.hdr_on).unwrap_or(false),
             ui.state(Id::HdrToggle),
         );
-        if let Some(m) = mon {
-            let lines = [m.hdr_profile_line(), m.reported_line(), m.edid_hdr_line()];
-            for (r, line) in g.hdr_info.iter().zip(lines) {
-                if let Some(line) = line {
-                    c.text(*r, &line, self.fonts.dim, th.text_dim, TA_LEFT);
-                }
-            }
-        }
+        let enabled = self.hdr_enabled();
+        let dim_text = mix(th.text, th.bg, 0.55);
+        let dim_val = mix(th.text_dim, th.bg, 0.5);
+        let amber = if th.dark { 0xFFB347 } else { 0xB45309 };
+        let above = enabled && mon.and_then(|m| m.white_warning(self.white)).is_some();
         let labels = [
             "Black level",
             "Peak brightness",
@@ -616,31 +687,47 @@ impl Main {
             "Saturation",
             "SDR content",
         ];
-        let enabled = self.hdr_enabled();
         for (i, id) in SLIDERS.iter().enumerate() {
+            if i < 4 && !self.st.advanced {
+                continue;
+            }
             let (lab, sl, val) = g.rows[i];
-            let tcol = if enabled {
-                th.text
-            } else {
-                mix(th.text, th.bg, 0.55)
-            };
-            c.text(lab, labels[i], self.fonts.body, tcol, TA_LEFT);
+            let lcol = if enabled { th.text } else { dim_text };
+            c.text(lab, labels[i], self.fonts.body, lcol, TA_LEFT);
+            let st = ui.state(*id);
+            if *id == Id::SdrWhite {
+                if let Some(p) = self.white_target() {
+                    draw_slider_tick(c, &ctx, sl, white_scale().to_t(p), st.enabled);
+                }
+            }
             let t = self.slider_scale(*id).to_t(self.slider_value(*id));
-            draw_slider(c, &ctx, sl, t, ui.state(*id), self.drag == Some(*id));
-            let vcol = if enabled {
-                th.text
+            draw_slider(c, &ctx, sl, t, st, self.drag == Some(*id));
+            let vcol = if !enabled {
+                dim_val
+            } else if *id == Id::SdrWhite && above {
+                amber
             } else {
-                mix(th.text_dim, th.bg, 0.5)
+                th.text
             };
             c.text(val, &self.slider_text(*id), self.fonts.body, vcol, TA_RIGHT);
         }
-        draw_button(c, &ctx, g.reset, "Reset HDR", ui.state(Id::Reset), BtnStyle::Text);
-        if let (true, Some(m)) = (enabled, mon) {
-            if let Some(w) = m.white_warning(self.white) {
-                let amber = if th.dark { 0xFFB347 } else { 0xB45309 };
-                c.text(g.warn, &w, self.fonts.dim, amber, TA_RIGHT);
-            }
-        }
+        let chevron = if self.st.advanced { "\u{25BE}" } else { "\u{25B8}" };
+        draw_button(
+            c,
+            &ctx,
+            g.advanced,
+            &format!("Advanced {chevron}"),
+            ui.state(Id::Advanced),
+            BtnStyle::Text,
+        );
+        draw_button(
+            c,
+            &ctx,
+            g.reset,
+            "Restore default values",
+            ui.state(Id::Reset),
+            BtnStyle::Text,
+        );
 
         // footer
         c.fill_rect(
@@ -737,7 +824,9 @@ pub fn open() {
         tracking: false,
         dd_closed_at: None,
         icons: [std::ptr::null_mut(); 2],
-        geo: geo(dpi),
+        geo: geo(dpi, false),
+        snap_prev: 0.0,
+        snap_stuck: false,
     };
     MAIN.with(|m| *m.borrow_mut() = Some(main));
     with(|m| {
@@ -746,7 +835,8 @@ pub fn open() {
     });
 
     let style = WS_OVERLAPPED | WS_CAPTION | WS_SYSMENU | WS_MINIMIZEBOX;
-    let (cw, ch) = (sc(CLIENT_W, dpi), sc(CLIENT_H, dpi));
+    let adv = with(|m| m.st.advanced).unwrap_or(false);
+    let (cw, ch) = (sc(CLIENT_W, dpi), sc(client_h(adv), dpi));
     let mut r = RECT {
         left: 0,
         top: 0,
@@ -918,6 +1008,11 @@ fn flush_pending() {
                 }
                 Pending::OpenDropdown => open_dropdown_now(),
                 Pending::Close => close_requested(),
+                Pending::Resize => {
+                    if let Some((h, dpi)) = with(|m| (m.hwnd, m.dpi)) {
+                        on_dpi_changed(h, dpi, None);
+                    }
+                }
             }
         }
     }
@@ -984,12 +1079,14 @@ fn close_requested() {
 }
 
 fn on_dpi_changed(hwnd: HWND, dpi: u32, suggested: Option<RECT>) {
-    with(|m| {
+    let adv = with(|m| {
         m.dpi = dpi;
         m.fonts = Fonts::new(dpi);
         m.canvas = None;
         m.layout();
-    });
+        m.st.advanced
+    })
+    .unwrap_or(false);
     refresh_icons(hwnd, dpi);
     // SAFETY: valid window; nested messages are handled with MAIN unborrowed.
     unsafe {
@@ -1001,7 +1098,7 @@ fn on_dpi_changed(hwnd: HWND, dpi: u32, suggested: Option<RECT>) {
                     left: 0,
                     top: 0,
                     right: sc(CLIENT_W, dpi),
-                    bottom: sc(CLIENT_H, dpi),
+                    bottom: sc(client_h(adv), dpi),
                 };
                 AdjustWindowRectExForDpi(&mut r, style, 0, 0, super::draw::frame_dpi(dpi));
                 let mut cur: RECT = std::mem::zeroed();
@@ -1140,6 +1237,8 @@ unsafe fn handle(hwnd: HWND, msg: u32, wp: WPARAM, lp: LPARAM) -> LRESULT {
                         }
                         if w.kind == Kind::Slider {
                             m.drag = Some(id);
+                            m.snap_prev = x as f32;
+                            m.snap_stuck = false;
                             m.slider_at_x(id, x);
                         }
                         SetCapture(hwnd);
@@ -1193,7 +1292,7 @@ unsafe fn handle(hwnd: HWND, msg: u32, wp: WPARAM, lp: LPARAM) -> LRESULT {
                     if SLIDERS.contains(&id) && m.ui.get(id).map(|w| w.enabled).unwrap_or(false) {
                         let t = m.slider_scale(id).to_t(m.slider_value(id));
                         let n = (t + 0.03 * (delta as f64 / 120.0)).clamp(0.0, 1.0);
-                        m.set_slider_t(id, n);
+                        m.step_slider(id, n);
                         m.arm_commit_timer();
                         m.invalidate();
                     }
@@ -1222,7 +1321,7 @@ unsafe fn handle(hwnd: HWND, msg: u32, wp: WPARAM, lp: LPARAM) -> LRESULT {
                         if SLIDERS.contains(&f) {
                             let t = m.slider_scale(f).to_t(m.slider_value(f));
                             if let Some(n) = key_to_t(t, vk) {
-                                m.set_slider_t(f, n);
+                                m.step_slider(f, n);
                                 m.arm_commit_timer();
                             }
                         } else if f == Id::Sdr && vk == VK_DOWN {
