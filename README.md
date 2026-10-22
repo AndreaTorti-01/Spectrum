@@ -20,7 +20,7 @@
 </p>
 
 <p align="center">
-  Windows 11 · 723 KB exe · 1.6 MB idle RAM · MIT
+  Windows 11 · 768 KB exe · 1.6 MB idle RAM · MIT
 </p>
 
 <p align="center">
@@ -37,7 +37,7 @@
         <source media="(prefers-color-scheme: dark)" srcset="docs/screenshots/main-dark-1x.png">
         <img src="docs/screenshots/main-light-1x.png" alt="Spectrum main window with a monitor map, SDR profile dropdown and HDR sliders" width="300">
       </picture>
-      <br>Hover a monitor to outline its real screen.
+      <br>Identify numbers each real screen for 2.5 seconds.
     </td>
     <td width="50%" align="center" valign="middle">
       <picture>

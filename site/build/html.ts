@@ -73,7 +73,7 @@ function specRows(): string {
 
 function callouts(): string {
   const texts = [
-    "Hover a monitor and its real screen gets a border",
+    "Identify shows each monitor's number on its screen",
     "The SDR profile applies on selection",
     "HDR sliders write an MHC2 profile on release",
   ];

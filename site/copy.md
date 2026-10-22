@@ -41,7 +41,7 @@ UI labels quoted here match the app verbatim: "Read profile from monitor", "Comp
 
 - Headline: "One window, every monitor." (4 words)
 - Body: none
-- Callout 1: "Hover a monitor and its real screen gets a border" (10 words)
+- Callout 1: "Identify shows each monitor's number on its screen" (8 words)
 - Callout 2: "The SDR profile applies on selection" (6 words)
 - Callout 3: "HDR sliders write an MHC2 profile on release" (8 words)
 - Alt (light): "Spectrum main window, light theme. A map of the connected monitors, an SDR profile dropdown, Read profile from monitor and Compare gamuts… buttons, an HDR toggle with four sliders, and a Start with Windows checkbox."
@@ -73,7 +73,7 @@ UI labels quoted here match the app verbatim: "Read profile from monitor", "Comp
 - Body: none
 - Caption: "Computed from the EDID of an MSI MAG 271QPX E2." (10 words)
 - Spec row 1 label: "sRGB" · "100%"
-- Description (shown on hover or focus, as in the app): "The default for the web and Windows. A monitor's sRGB mode emulates it."
+- Description (shown on hover or focus, as in the app): "The web and Windows default, with the same primaries as Rec. 709 (HD video)."
 - Spec row 2 label: "Display P3" · "98.4%"
 - Description: "DCI-P3 primaries with a D65 white and sRGB curve, used by Apple displays and many OLED monitors."
 - Spec row 3 label: "Adobe RGB (1998)" · "94.9%"
@@ -89,8 +89,8 @@ UI labels quoted here match the app verbatim: "Read profile from monitor", "Comp
 - Body: none
 - Caption: "Left-click toggles the main window." (5 words)
 - Label (taskbar mock): "Spectrum" (tray icon tooltip)
-- Alt (light): "Spectrum tray menu, light theme. For each monitor, a radio list of SDR profiles (MAG 271QPX E2 (EDID), sRGB, Display P3, Adobe RGB), an HDR check item, then Open Spectrum and Exit."
-- Alt (dark): "Spectrum tray menu, dark theme. For each monitor, a radio list of SDR profiles (MAG 271QPX E2 (EDID), sRGB, Display P3, Adobe RGB), an HDR check item, then Open Spectrum and Exit."
+- Alt (light): "Spectrum tray menu, light theme. For each monitor, a radio list of SDR profiles (MAG 271QPX E2 (EDID), sRGB, Display P3, Adobe RGB, ProPhoto RGB, Rec. 2020, DCI-P3), an HDR check item, then Open Spectrum and Exit."
+- Alt (dark): "Spectrum tray menu, dark theme. For each monitor, a radio list of SDR profiles (MAG 271QPX E2 (EDID), sRGB, Display P3, Adobe RGB, ProPhoto RGB, Rec. 2020, DCI-P3), an HDR check item, then Open Spectrum and Exit."
 
 ## 7. Footer
 
