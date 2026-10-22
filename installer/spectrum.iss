@@ -3,7 +3,7 @@
 ; Run `cargo build --release` first: it also writes target\spectrum.ico, the wizard icon.
 
 #ifndef AppVersion
-  #define AppVersion "0.1.0"
+  #define AppVersion "0.1.1"
 #endif
 #ifndef ExePath
   #define ExePath "..\target\release\Spectrum.exe"

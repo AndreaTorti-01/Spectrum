@@ -3,9 +3,9 @@
 
 /** Targets of the three callouts on the main window screenshot: monitor tile, SDR dropdown, HDR slider. */
 export const MAIN_CALLOUTS: ReadonlyArray<{ x: number; y: number }> = [
-  { x: 0.615, y: 0.117 },
-  { x: 0.953, y: 0.302 },
-  { x: 0.976, y: 0.666 },
+  { x: 0.615, y: 0.104 },
+  { x: 0.953, y: 0.267 },
+  { x: 0.976, y: 0.65 },
 ];
 
 /** Plot area of the gamut window screenshot: data (x, y) to fractions of the image. */
