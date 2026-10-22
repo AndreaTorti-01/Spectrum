@@ -9,6 +9,7 @@ pub mod edid;
 pub mod icc_read;
 pub mod icc_write;
 pub mod icon;
+pub mod icon_render;
 pub mod installer;
 pub mod monitors;
 pub mod tray;

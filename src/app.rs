@@ -409,11 +409,14 @@ fn set_sdr(idx_mon: usize, idx: usize) -> Result<String, String> {
         .ok_or_else(|| "Couldn't find that profile. Reopen the window and try again.".to_string())?;
     let fail = |e: String| {
         log(&format!("set sdr: {file} on monitor {}: {e}", m.num));
+        if e.starts_with(wcs::KEPT_PREFIX) {
+            return e;
+        }
         format!("Couldn't apply {label} to monitor {}. Try again.", m.num)
     };
     ensure_file(&file).map_err(fail)?;
     wcs::ensure_user_scope(&m).map_err(fail)?;
-    wcs::associate(&m, &file, true, false).map_err(fail)?;
+    wcs::set_default(&m, &file, false).map_err(fail)?;
     save_cfg(&m, |e| e.sdr = Some(file.clone()));
     log(&format!("applied {file} to monitor {} ({})", m.num, m.key));
     Ok(format!("Applied {label} to monitor {}", m.num))
@@ -433,6 +436,9 @@ fn read_edid(idx_mon: usize) -> Result<String, String> {
     let m = monitor_at(idx_mon)?;
     let fail = |e: &str| {
         log(&format!("read edid: monitor {}: {e}", m.num));
+        if e.starts_with(wcs::KEPT_PREFIX) {
+            return e.to_string();
+        }
         format!(
             "Couldn't read EDID from monitor {}. Reconnect the cable and try again.",
             m.num
@@ -469,7 +475,7 @@ fn read_edid(idx_mon: usize) -> Result<String, String> {
     }
     wcs::install_profile(&file, &bytes).map_err(|e| fail(&e))?;
     wcs::ensure_user_scope(&m).map_err(|e| fail(&e))?;
-    wcs::associate(&m, &file, true, false).map_err(|e| fail(&e))?;
+    wcs::set_default(&m, &file, false).map_err(|e| fail(&e))?;
     save_cfg(&m, |e| {
         e.edid_profile = Some(file.clone());
         e.sdr = Some(file.clone());
@@ -527,13 +533,18 @@ fn apply_hdr(idx_mon: usize, params: HdrParams) -> Result<String, String> {
     };
     let fail = |e: String| {
         log(&format!("apply hdr on monitor {}: {e}", m.num));
+        if e.starts_with(wcs::KEPT_PREFIX) {
+            return e;
+        }
         format!("Couldn't apply HDR profile to monitor {}. Try again.", m.num)
     };
     let desc = format!("Spectrum HDR {}", monitor_name(&m));
     let bytes = icc_write::build_hdr_profile(&desc, &hdr_prims(&m), &params);
     wcs::install_profile(&file, &bytes).map_err(fail)?;
-    if let Err(e) = wcs::ensure_user_scope(&m).and_then(|_| wcs::associate(&m, &file, true, true)) {
-        let _ = wcs::delete_profile(&file);
+    if let Err(e) = wcs::ensure_user_scope(&m).and_then(|_| wcs::set_default(&m, &file, true)) {
+        if drop_hdr_profile(&m, &file) {
+            let _ = wcs::delete_profile(&file);
+        }
         return Err(fail(e));
     }
     if let Some(p) = prev.filter(|p| !eq(p, &file)) {
@@ -735,7 +746,7 @@ pub fn reconcile() -> Vec<String> {
                     // A failed query is not an empty list: leave the monitor alone.
                     Err(e) => out.push(format!("{tag}: skipped SDR check, could not list profiles: {e}")),
                     Ok(list) if !contains_ci(&list, &file) => {
-                        let r = wcs::ensure_user_scope(m).and_then(|_| wcs::associate(m, &file, true, false));
+                        let r = wcs::ensure_user_scope(m).and_then(|_| wcs::set_default(m, &file, false));
                         match r {
                             Ok(()) => out.push(format!("{tag}: re-associated {file} as the SDR default")),
                             Err(e) => out.push(format!("{tag}: could not re-associate {file}: {e}")),
@@ -775,8 +786,7 @@ pub fn reconcile() -> Vec<String> {
                     match wcs::associated(m, true) {
                         Err(e) => out.push(format!("{tag}: skipped HDR check, could not list profiles: {e}")),
                         Ok(list) if !contains_ci(&list, &file) => {
-                            let r =
-                                wcs::ensure_user_scope(m).and_then(|_| wcs::associate(m, &file, true, true));
+                            let r = wcs::ensure_user_scope(m).and_then(|_| wcs::set_default(m, &file, true));
                             match r {
                                 Ok(()) => out.push(format!("{tag}: re-associated {file} as the HDR default")),
                                 Err(e) => out.push(format!("{tag}: could not re-associate {file}: {e}")),

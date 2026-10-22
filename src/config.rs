@@ -25,6 +25,55 @@ pub struct Config {
     pub load_failed: bool,
 }
 
+/// `FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE`: other Spectrum processes may read, write or
+/// replace the file while we hold it open.
+const SHARE_ALL: u32 = 0x1 | 0x2 | 0x4;
+const RETRIES: u32 = 5;
+const BACKOFF: std::time::Duration = std::time::Duration::from_millis(50);
+
+fn read_shared(path: &std::path::Path) -> std::io::Result<Vec<u8>> {
+    use std::io::Read;
+    use std::os::windows::fs::OpenOptionsExt;
+    let mut f = std::fs::OpenOptions::new()
+        .read(true)
+        .share_mode(SHARE_ALL)
+        .open(path)?;
+    let mut buf = Vec::new();
+    f.read_to_end(&mut buf)?;
+    Ok(buf)
+}
+
+fn write_shared(path: &std::path::Path, bytes: &[u8]) -> std::io::Result<()> {
+    use std::io::Write;
+    use std::os::windows::fs::OpenOptionsExt;
+    let mut f = std::fs::OpenOptions::new()
+        .write(true)
+        .create(true)
+        .truncate(true)
+        .share_mode(SHARE_ALL)
+        .open(path)?;
+    f.write_all(bytes)
+}
+
+/// Another process replacing or scanning the file shows up as access denied or a sharing/lock violation.
+fn is_transient(e: &std::io::Error) -> bool {
+    e.kind() == std::io::ErrorKind::PermissionDenied || matches!(e.raw_os_error(), Some(5 | 32 | 33))
+}
+
+/// Runs `op`, retrying up to [`RETRIES`] times with a short backoff while it fails transiently.
+fn retry_io<T>(mut op: impl FnMut() -> std::io::Result<T>) -> std::io::Result<T> {
+    let mut attempt = 0;
+    loop {
+        match op() {
+            Err(e) if is_transient(&e) && attempt < RETRIES => {
+                attempt += 1;
+                std::thread::sleep(BACKOFF);
+            }
+            r => return r,
+        }
+    }
+}
+
 const SECTION_PREFIX: &str = "monitor:";
 
 pub fn config_path() -> PathBuf {
@@ -59,7 +108,7 @@ fn clean(v: &str) -> String {
 
 impl Config {
     pub fn load() -> Config {
-        Config::from_read(std::fs::read(config_path()))
+        Config::from_read(retry_io(|| read_shared(&config_path())))
     }
 
     /// A missing file is an empty config; any other read error marks the config as `load_failed`.
@@ -84,24 +133,27 @@ impl Config {
             return;
         }
         let path = config_path();
-        let tmp = path.with_extension("ini.tmp");
-        if let Err(e) = std::fs::write(&tmp, self.serialize()) {
+        let tmp = path.with_extension(format!("ini.{}.tmp", std::process::id()));
+        if let Err(e) = retry_io(|| write_shared(&tmp, self.serialize().as_bytes())) {
             crate::util::log(&format!("config: write {} failed: {e}", tmp.display()));
             return;
         }
-        let ok = unsafe {
-            MoveFileExW(
-                wide(&tmp.to_string_lossy()).as_ptr(),
-                wide(&path.to_string_lossy()).as_ptr(),
-                MOVEFILE_REPLACE_EXISTING | MOVEFILE_WRITE_THROUGH,
-            )
-        };
-        if ok == 0 {
-            crate::util::log(&format!(
-                "config: replacing {} failed: {}",
-                path.display(),
-                std::io::Error::last_os_error()
-            ));
+        let replaced = retry_io(|| {
+            let ok = unsafe {
+                MoveFileExW(
+                    wide(&tmp.to_string_lossy()).as_ptr(),
+                    wide(&path.to_string_lossy()).as_ptr(),
+                    MOVEFILE_REPLACE_EXISTING | MOVEFILE_WRITE_THROUGH,
+                )
+            };
+            if ok == 0 {
+                Err(std::io::Error::last_os_error())
+            } else {
+                Ok(())
+            }
+        });
+        if let Err(e) = replaced {
+            crate::util::log(&format!("config: replacing {} failed: {e}", path.display()));
             let _ = std::fs::remove_file(&tmp);
         }
     }
@@ -237,6 +289,34 @@ name=x
         .to_vec()));
         assert!(!ok.load_failed);
         assert_eq!(ok.monitors.len(), 1);
+    }
+
+    #[test]
+    fn retry_gives_up_after_five_retries() {
+        use std::io::{Error, ErrorKind};
+        let mut calls = 0;
+        let r: std::io::Result<()> = retry_io(|| {
+            calls += 1;
+            Err(Error::from(ErrorKind::PermissionDenied))
+        });
+        assert!(r.is_err());
+        assert_eq!(calls, 6);
+        let mut calls = 0;
+        let r = retry_io(|| {
+            calls += 1;
+            if calls < 3 {
+                Err(Error::from_raw_os_error(32))
+            } else {
+                Ok(7)
+            }
+        });
+        assert_eq!(r.unwrap(), 7);
+        let mut calls = 0;
+        let _: std::io::Result<()> = retry_io(|| {
+            calls += 1;
+            Err(Error::from(ErrorKind::NotFound))
+        });
+        assert_eq!(calls, 1);
     }
 
     #[test]

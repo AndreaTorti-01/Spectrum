@@ -5,6 +5,7 @@ use std::ffi::c_void;
 use std::path::{Path, PathBuf};
 use windows_sys::core::GUID;
 use windows_sys::Win32::Foundation::CloseHandle;
+use windows_sys::Win32::Storage::FileSystem::SYNCHRONIZE;
 use windows_sys::Win32::System::Com::{
     CoCreateInstance, CoInitializeEx, CoTaskMemFree, CoUninitialize, CLSCTX_INPROC_SERVER,
     COINIT_APARTMENTTHREADED,
@@ -14,7 +15,7 @@ use windows_sys::Win32::System::Registry::{
     RegSetValueExW, HKEY, HKEY_CURRENT_USER, KEY_READ, KEY_WRITE, REG_DWORD, REG_OPTION_NON_VOLATILE, REG_SZ,
 };
 use windows_sys::Win32::System::Threading::{
-    CreateProcessW, CREATE_NO_WINDOW, PROCESS_INFORMATION, STARTUPINFOW,
+    CreateProcessW, GetCurrentProcessId, OpenProcess, WaitForSingleObject, PROCESS_INFORMATION, STARTUPINFOW,
 };
 use windows_sys::Win32::UI::Shell::{FOLDERID_LocalAppData, FOLDERID_Programs, SHGetKnownFolderPath};
 
@@ -121,13 +122,14 @@ fn uninstall_values(dir: &Path, exe: &Path, ico: &Path, size_kb: u32) -> Vec<(&'
     ]
 }
 
-/// Command line for the detached cleanup: waits a moment for this process to exit, then removes `dir`
-/// (retrying once). Run through `cmd.exe /d /s /c`, so the whole payload is wrapped in one pair of quotes.
-fn self_delete_command(dir: &Path) -> String {
-    let d = q(dir);
-    format!(
-        "cmd.exe /d /s /c \"ping -n 3 127.0.0.1 >nul & rmdir /s /q {d} & if exist {d} (ping -n 5 127.0.0.1 >nul & rmdir /s /q {d})\""
-    )
+/// Command line of the cleanup helper: `"<copy>" --finish-uninstall "<dir>" <pid>`.
+fn finish_uninstall_command(copy: &Path, dir: &Path, pid: u32) -> String {
+    format!("{} --finish-uninstall {} {pid}", q(copy), q(dir))
+}
+
+/// Where the cleanup helper copy of the exe goes: `%TEMP%\Spectrum-uninstall-<pid>.exe`.
+fn uninstall_copy_path(pid: u32) -> PathBuf {
+    std::env::temp_dir().join(format!("Spectrum-uninstall-{pid}.exe"))
 }
 
 // ---- Registry helpers ----
@@ -391,29 +393,38 @@ pub fn remove_entries() {
     }
 }
 
-/// Starts the detached `cmd /c` that deletes the install folder once this process has exited. Call it
-/// as the very last step before exiting: its delay starts immediately.
+/// Starts the cleanup helper that deletes the install folder once this process has exited: a copy of
+/// this exe in `%TEMP%` run with `--finish-uninstall`. Call it as the very last step before exiting.
 pub fn schedule_dir_removal() -> Result<(), String> {
     let dir = install_dir();
-    if dir.file_name().map(|n| n == "Spectrum").unwrap_or(false) && dir.exists() {
-        spawn_self_delete(&dir)?;
+    if is_install_dir_name(&dir) && dir.exists() {
+        spawn_finish_uninstall(&dir)?;
     }
     Ok(())
 }
 
-fn spawn_self_delete(dir: &Path) -> Result<(), String> {
-    let mut cmd = wide(&self_delete_command(dir));
+fn is_install_dir_name(dir: &Path) -> bool {
+    dir.file_name().map(|n| n == "Spectrum").unwrap_or(false)
+}
+
+fn spawn_finish_uninstall(dir: &Path) -> Result<(), String> {
+    let manual = "Delete the Spectrum folder in %LOCALAPPDATA%\\Programs by hand.";
+    let pid = unsafe { GetCurrentProcessId() };
+    let copy = uninstall_copy_path(pid);
+    let me = std::env::current_exe().map_err(|e| format!("Couldn't locate Spectrum: {e}. {manual}"))?;
+    std::fs::copy(&me, &copy).map_err(|e| format!("Couldn't prepare the cleanup: {e}. {manual}"))?;
+    let mut cmd = wide(&finish_uninstall_command(&copy, dir, pid));
     unsafe {
         let mut si: STARTUPINFOW = std::mem::zeroed();
         si.cb = std::mem::size_of::<STARTUPINFOW>() as u32;
         let mut pi: PROCESS_INFORMATION = std::mem::zeroed();
         let ok = CreateProcessW(
-            std::ptr::null(),
+            wide(&copy.to_string_lossy()).as_ptr(),
             cmd.as_mut_ptr(),
             std::ptr::null(),
             std::ptr::null(),
             0,
-            CREATE_NO_WINDOW,
+            0,
             std::ptr::null(),
             std::ptr::null(),
             &si,
@@ -421,7 +432,7 @@ fn spawn_self_delete(dir: &Path) -> Result<(), String> {
         );
         if ok == 0 {
             return Err(format!(
-                "Couldn't start the cleanup process: {}. Delete the Spectrum folder in %LOCALAPPDATA%\\Programs by hand.",
+                "Couldn't start the cleanup process: {}. {manual}",
                 std::io::Error::last_os_error()
             ));
         }
@@ -429,6 +440,37 @@ fn spawn_self_delete(dir: &Path) -> Result<(), String> {
         CloseHandle(pi.hProcess);
     }
     Ok(())
+}
+
+/// The `--finish-uninstall <dir> <pid>` side: waits (at most 10 s) for process `pid` to exit, then deletes
+/// `dir`, but only when it is exactly Spectrum's install folder. Returns the exit code.
+pub fn finish_uninstall(dir: &Path, pid: u32) -> i32 {
+    if !same_path(dir, &install_dir()) || !is_install_dir_name(dir) {
+        crate::util::log(&format!(
+            "finish-uninstall: refusing to delete {}, it is not the install folder",
+            dir.display()
+        ));
+        return 2;
+    }
+    unsafe {
+        let h = OpenProcess(SYNCHRONIZE, 0, pid);
+        if !h.is_null() {
+            WaitForSingleObject(h, 10_000);
+            CloseHandle(h);
+        }
+    }
+    // Antivirus or the shell may hold a file briefly: retry a few times.
+    for _ in 0..10 {
+        match std::fs::remove_dir_all(dir) {
+            Ok(()) => return 0,
+            Err(e) if e.kind() == std::io::ErrorKind::NotFound => return 0,
+            Err(e) => {
+                crate::util::log(&format!("finish-uninstall: {e}"));
+                std::thread::sleep(std::time::Duration::from_millis(500));
+            }
+        }
+    }
+    1
 }
 
 /// Where the install stands, for `--debug-dump` and the headless install check.
@@ -582,11 +624,23 @@ mod tests {
     }
 
     #[test]
-    fn self_delete_line() {
-        let c = self_delete_command(Path::new("C:\\x\\Spectrum"));
-        assert!(c.starts_with("cmd.exe /d /s /c \"ping"));
-        assert!(c.ends_with(")\""));
-        assert!(c.contains("rmdir /s /q \"C:\\x\\Spectrum\""));
+    fn finish_uninstall_line() {
+        let c = finish_uninstall_command(
+            Path::new(r"C:\t\Spectrum-uninstall-7.exe"),
+            Path::new(r"C:\x\Spectrum"),
+            7,
+        );
+        assert_eq!(
+            c,
+            r#""C:\t\Spectrum-uninstall-7.exe" --finish-uninstall "C:\x\Spectrum" 7"#
+        );
+    }
+
+    #[test]
+    fn finish_uninstall_refuses_other_dirs() {
+        let other = std::env::temp_dir().join("Spectrum");
+        assert_eq!(finish_uninstall(&other, 0), 2);
+        assert_eq!(finish_uninstall(Path::new(r"C:\Windows"), 0), 2);
     }
 
     #[test]

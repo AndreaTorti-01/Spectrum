@@ -29,6 +29,8 @@ enum Command {
     Default,
     Tray,
     Uninstall,
+    /// `--finish-uninstall <dir> <pid>`: the %TEMP% helper copy that removes the install folder.
+    FinishUninstall(String, u32),
     DebugDump {
         json: bool,
     },
@@ -70,6 +72,9 @@ fn parse_args<I: Iterator<Item = String>>(mut it: I) -> Args {
         match a.as_str() {
             "--tray" => args.command = Command::Tray,
             "--uninstall" => args.command = Command::Uninstall,
+            "--finish-uninstall" => {
+                args.command = Command::FinishUninstall(it.next().unwrap_or_default(), num(it.next()))
+            }
             "--theme" => args.dark = it.next().map(|v| v.eq_ignore_ascii_case("dark")),
             "--out" => args.out = it.next().map(PathBuf::from),
             "--json" => json = true,
@@ -303,6 +308,7 @@ fn main() {
         Command::Default => run_default(),
         Command::Tray => run_tray(),
         Command::Uninstall => uninstall(args.quiet),
+        Command::FinishUninstall(dir, pid) => installer::finish_uninstall(Path::new(&dir), pid),
         Command::DebugDump { json } => {
             debug::dump(json, out);
             0
