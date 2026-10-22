@@ -1,0 +1,66 @@
+name: Bug report
+description: Something in Spectrum doesn't work
+labels: [bug]
+body:
+  - type: textarea
+    id: happened
+    attributes:
+      label: What happened
+    validations:
+      required: true
+  - type: textarea
+    id: expected
+    attributes:
+      label: What you expected
+    validations:
+      required: true
+  - type: textarea
+    id: steps
+    attributes:
+      label: Steps to reproduce
+      placeholder: |
+        1. Right-click the tray icon
+        2. ...
+    validations:
+      required: true
+  - type: input
+    id: windows
+    attributes:
+      label: Windows version
+      description: Run winver and copy the version and build.
+      placeholder: Windows 11 24H2 (build 26100.xxxx)
+    validations:
+      required: true
+  - type: input
+    id: gpu
+    attributes:
+      label: GPU and driver version
+      placeholder: NVIDIA GeForce RTX 4070, 572.16
+    validations:
+      required: true
+  - type: input
+    id: monitors
+    attributes:
+      label: Monitor models
+      placeholder: MSI MAG 271QPX QD-OLED E2
+    validations:
+      required: true
+  - type: dropdown
+    id: hdr
+    attributes:
+      label: HDR in Windows
+      options:
+        - "Off"
+        - "On"
+    validations:
+      required: true
+  - type: textarea
+    id: log
+    attributes:
+      label: Log
+      description: Attach or paste %APPDATA%\Spectrum\spectrum.log.
+  - type: textarea
+    id: dump
+    attributes:
+      label: Debug dump
+      description: Run `Spectrum.exe --debug-dump --out dump.txt` and attach dump.txt.
