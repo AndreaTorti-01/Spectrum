@@ -129,7 +129,12 @@ fn allow_dark_menus() {
             }
             if let Some(set_mode) = GetProcAddress(lib, 135usize as *const u8) {
                 let f: unsafe extern "system" fn(i32) -> i32 = std::mem::transmute(set_mode);
-                f(1); // AllowDark
+                // Follow the system, unless --theme forces one (screenshots): ForceDark = 2, ForceLight = 3.
+                f(match crate::ui::draw::forced_theme() {
+                    Some(true) => 2,
+                    Some(false) => 3,
+                    None => 1,
+                });
             }
             if let Some(flush) = GetProcAddress(lib, 136usize as *const u8) {
                 let f: unsafe extern "system" fn() = std::mem::transmute(flush);

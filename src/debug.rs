@@ -27,8 +27,9 @@ use windows_sys::Win32::System::LibraryLoader::GetModuleHandleW;
 use windows_sys::Win32::UI::WindowsAndMessaging::{
     CreateWindowExW, DefWindowProcW, DestroyWindow, DispatchMessageW, EndMenu, FindWindowW, GetMessageW,
     PostMessageW, PostQuitMessage, RegisterClassExW, SendMessageW, SetTimer, SetWindowPos,
-    SystemParametersInfoW, TranslateMessage, HWND_TOP, MSG, SPI_GETWORKAREA, SWP_NOACTIVATE, SWP_SHOWWINDOW,
-    WM_CLOSE, WM_COPYDATA, WM_DESTROY, WNDCLASSEXW, WS_EX_NOACTIVATE, WS_EX_TOOLWINDOW, WS_POPUP,
+    SystemParametersInfoW, TranslateMessage, HWND_TOPMOST, MSG, SPI_GETWORKAREA, SWP_NOACTIVATE,
+    SWP_SHOWWINDOW, WM_CLOSE, WM_COPYDATA, WM_DESTROY, WNDCLASSEXW, WS_EX_NOACTIVATE, WS_EX_TOOLWINDOW,
+    WS_POPUP,
 };
 
 // ---------------------------------------------------------------------------------------------
@@ -752,8 +753,9 @@ unsafe extern "system" fn stage_proc(hwnd: HWND, msg: u32, wp: usize, lp: isize)
 /// `--debug-stage light|dark`: a borderless solid-color window over the primary work area, so screenshots
 /// of Spectrum's windows never pick up the desktop or other windows around them. Runs until closed.
 ///
-/// It sits at the top of the normal (non-topmost) z-order and does not take focus. Surfaces opened after it
-/// are raised above it by `app::raise`, so it ends up directly behind them.
+/// It is topmost (so no other window, such as the terminal that launched it, can come in front and end up in
+/// a capture) and does not take focus. While it exists, `app::raise` keeps the surfaces topmost too, and as
+/// they are raised after it, they sit above it.
 pub fn stage(theme: &str) -> i32 {
     // COLORREF is 0x00BBGGRR: these are 0xE9E6E1 and 0x202020 as RGB.
     let color: u32 = if theme.eq_ignore_ascii_case("dark") {
@@ -798,7 +800,7 @@ pub fn stage(theme: &str) -> i32 {
         }
         SetWindowPos(
             h,
-            HWND_TOP,
+            HWND_TOPMOST,
             wa.left,
             wa.top,
             wa.right - wa.left,
@@ -838,6 +840,9 @@ thread_local! {
 pub fn showcase_state() -> UiState {
     let mut st = app::snapshot();
     if let Some(m) = st.monitors.first_mut() {
+        if !m.sdr_options.is_empty() {
+            m.sdr_current = Some(0); // the EDID-derived profile
+        }
         m.hdr_supported = true;
         m.hdr_on = true;
         m.hdr_custom_active = true;
@@ -849,6 +854,20 @@ pub fn showcase_state() -> UiState {
         };
     }
     st
+}
+
+/// `open gamut-showcase`: the gamut window with the monitor's EDID-derived profile, sRGB and Display P3
+/// ticked. When that profile is not installed, an entry is built in memory from the EDID primaries.
+pub fn open_gamut_showcase() {
+    let st = showcase_state();
+    let Some((label, file)) = st.monitors.first().and_then(|m| m.sdr_options.first().cloned()) else {
+        ui::gamut_window::open(None);
+        return;
+    };
+    let prims = app::current_monitors()
+        .first()
+        .and_then(|m| m.edid.as_ref().map(|e| e.primaries));
+    ui::gamut_window::open_showcase(file, label, prims);
 }
 
 /// Starts the demo: tray menu, profile switch, main window, peak slider animation, exit. The windows run
@@ -883,10 +902,11 @@ fn switch_profile() {
         .sdr_current
         .and_then(|i| m.sdr_options.get(i))
         .map(|o| o.0.as_str());
-    let want = if current == Some("sRGB") {
-        "Display P3"
+    let first = m.sdr_options.first().map(|o| o.0.as_str());
+    let want = if current == Some("Display P3") {
+        first.unwrap_or("sRGB")
     } else {
-        "sRGB"
+        "Display P3"
     };
     if let Some(idx) = m.sdr_options.iter().position(|o| o.0 == want) {
         ui::dispatch(UiAction::SetSdr { mon: 0, idx });

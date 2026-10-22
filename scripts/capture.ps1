@@ -14,6 +14,9 @@
 .PARAMETER Theme  light, dark or both.
 .PARAMETER Out    Output folder for the README pictures (relative to the repo root).
 .PARAMETER SiteOut  Second output folder for the website.
+.PARAMETER Scale  UI scale factors (x the real DPI scale, --debug-scale). Default 1 and 2. A pass at 1 writes
+                  *-1x.png (README: GitHub shows images at pixel size) and the tray menu; any other pass writes the
+                  plain names (site, hi-DPI). The tray menu is drawn by Windows and is only captured at 1x.
 .PARAMETER Demo   Also record demo frames into screenshots-raw\demo-<theme>\frame-NNNN.png.
 .PARAMETER Exe    Path to Spectrum.exe (default: target\release\Spectrum.exe).
 #>
@@ -22,6 +25,7 @@ param(
     [ValidateSet('light', 'dark', 'both')][string]$Theme = 'both',
     [string]$Out = 'docs\screenshots',
     [string]$SiteOut = 'site\src\shots',
+    [double[]]$Scale = @(1, 2),
     [switch]$Demo,
     [string]$Exe = 'target\release\Spectrum.exe',
     [string]$RawOut = 'screenshots-raw'
@@ -85,6 +89,53 @@ public static class Cap
         return bmp;
     }
 
+    /// The 1 px DWM border of a window lets a little of what is behind the backdrop (wallpaper) shine through.
+    /// Paint the outermost ring of the rectangle in its median shade (corners, which are rounded, only gray).
+    public static void GrayRing(Bitmap b, int x, int y, int w, int h) {
+        var pts = new System.Collections.Generic.List<int[]>();
+        for (int i = 0; i < w; i++) { pts.Add(new int[] { x + i, y }); pts.Add(new int[] { x + i, y + h - 1 }); }
+        for (int j = 1; j < h - 1; j++) { pts.Add(new int[] { x, y + j }); pts.Add(new int[] { x + w - 1, y + j }); }
+        var lum = new System.Collections.Generic.List<int>();
+        foreach (var p in pts) {
+            if (p[0] < 0 || p[1] < 0 || p[0] >= b.Width || p[1] >= b.Height) continue;
+            lum.Add(Luma(b.GetPixel(p[0], p[1])));
+        }
+        lum.Sort();
+        int med = lum.Count > 0 ? lum[lum.Count / 2] : 0;
+        const int corner = 12;
+        foreach (var p in pts) {
+            if (p[0] < 0 || p[1] < 0 || p[0] >= b.Width || p[1] >= b.Height) continue;
+            bool nearCorner = (p[0] - x < corner || x + w - 1 - p[0] < corner) && (p[1] - y < corner || y + h - 1 - p[1] < corner);
+            int g = nearCorner ? Luma(b.GetPixel(p[0], p[1])) : med;
+            b.SetPixel(p[0], p[1], Color.FromArgb(g, g, g));
+        }
+    }
+    static int Luma(Color c) { return (int)Math.Round(0.299 * c.R + 0.587 * c.G + 0.114 * c.B); }
+
+    [DllImport("user32.dll", EntryPoint = "GetWindowLongW")] static extern int GetWindowLong(IntPtr h, int idx);
+    public static bool IsTopmost(IntPtr h) { return (GetWindowLong(h, -20) & 0x8) != 0; }
+
+    /// Number of pixels outside the given keep-rectangles (x,y,w,h) that differ from the backdrop color.
+    public static int Stray(Bitmap b, int r, int g, int bl, int[][] keep) {
+        var rect = new Rectangle(0, 0, b.Width, b.Height);
+        var d = b.LockBits(rect, System.Drawing.Imaging.ImageLockMode.ReadOnly, System.Drawing.Imaging.PixelFormat.Format24bppRgb);
+        int n = 0;
+        try {
+            byte[] row = new byte[Math.Abs(d.Stride)];
+            for (int y = 0; y < b.Height; y++) {
+                Marshal.Copy(new IntPtr(d.Scan0.ToInt64() + (long)y * d.Stride), row, 0, row.Length);
+                for (int x = 0; x < b.Width; x++) {
+                    bool inside = false;
+                    foreach (var k in keep) { if (x >= k[0] && x < k[0] + k[2] && y >= k[1] && y < k[1] + k[3]) { inside = true; break; } }
+                    if (inside) continue;
+                    int o = x * 3;
+                    if (Math.Abs(row[o + 2] - r) + Math.Abs(row[o + 1] - g) + Math.Abs(row[o] - bl) > 6) n++;
+                }
+            }
+        } finally { b.UnlockBits(d); }
+        return n;
+    }
+
     public static void Close(IntPtr h) { PostMessage(h, 0x0010, IntPtr.Zero, IntPtr.Zero); }
 
     public static void Escape(IntPtr menu) {
@@ -135,12 +186,14 @@ function Get-WindowShot([IntPtr]$Hwnd) {
     $r = [Cap]::FrameRect($Hwnd)
     $c = [Cap]::ClientRect($Hwnd)
     $bmp = [Cap]::Grab($r[0], $r[1], $r[2], $r[3])
+    [Cap]::GrayRing($bmp, 0, 0, $r[2], $r[3])
     @{ Rect = $r; Client = $c; Bitmap = $bmp }
 }
 
 function Open-Surface([string]$Name) {
-    # 'main' opens on a mock state with HDR on (the real monitor may have HDR off); nothing is applied.
-    $arg = if ($Name -eq 'main') { 'main-hdr' } else { $Name }
+    # The showcase variants run on a mock state (EDID profile selected, HDR on) or an in-memory gamut entry;
+    # nothing is applied and no file is written.
+    $arg = @{ main = 'main-hdr'; gamut = 'gamut-showcase'; traymenu = 'traymenu-showcase' }[$Name]
     & $Exe --debug-open $arg | Out-Null
 }
 
@@ -150,92 +203,115 @@ New-Item -ItemType Directory -Force -Path $Out, $SiteOut | Out-Null
 $classes = @{ main = 'SpectrumMainWindow'; gamut = 'SpectrumGamutWindow'; traymenu = '#32768' }
 
 foreach ($t in $themes) {
-    Write-Host "== $t =="
-    Stop-Spectrum
     $rects = @{}
-
-    $stage = Start-Process -FilePath $Exe -ArgumentList '--debug-stage', $t -PassThru
-    Wait-Window 'SpectrumStage' | Out-Null
-    $tray = Start-Process -FilePath $Exe -ArgumentList '--tray', '--theme', $t -PassThru
-    Start-Sleep -Milliseconds 1500
-
-    # main last: it switches the tray instance to a mock state (HDR on), which the others must not see.
-    foreach ($s in 'gamut', 'traymenu', 'main') {
-        Open-Surface $s
-        $h = Wait-Window $classes[$s]
-        Start-Sleep -Milliseconds 600
-        $shot = Get-WindowShot $h
-        $rects[$s] = $shot.Rect
-        $file = Join-Path $Out "$s-$t.png"
-        Save-Png $shot.Bitmap $file
-        Write-Host ("  {0}: {1}x{2} at {3},{4}" -f $s, $shot.Rect[2], $shot.Rect[3], $shot.Rect[0], $shot.Rect[1])
-
-        if ($s -eq 'main') {
-            # HDR section: client rows 308..550 of the 440 x 620 logical layout, full client width.
-            $scale = $shot.Client[2] / 440.0
-            $cx = $shot.Client[0] - $shot.Rect[0]
-            $cy = $shot.Client[1] - $shot.Rect[1]
-            $y0 = $cy + [int][Math]::Round(308 * $scale)
-            $y1 = $cy + [int][Math]::Round(550 * $scale)
-            $rect = New-Object System.Drawing.Rectangle $cx, $y0, $shot.Client[2], ($y1 - $y0)
-            $crop = $shot.Bitmap.Clone($rect, $shot.Bitmap.PixelFormat)
-            Save-Png $crop (Join-Path $Out "hdr-$t.png")
-            $crop.Dispose()
-        }
-        $shot.Bitmap.Dispose()
-
-        if ($s -eq 'traymenu') { [Cap]::Escape($h); if (-not (Wait-Gone $classes[$s] 800)) { [Cap]::EscapeKey() } } else { [Cap]::Close($h) }
-        if (-not (Wait-Gone $classes[$s])) { Write-Warning "$s did not close; stopping Spectrum"; Stop-Spectrum }
-        Start-Sleep -Milliseconds 300
-    }
-
-    if ($Demo) {
+    foreach ($sf in $Scale) {
+        $one = ($sf -eq 1)
+        $suffix = if ($one) { '-1x' } else { '' }
+        Write-Host "== $t, scale $sf =="
         Stop-Spectrum
+
         $stage = Start-Process -FilePath $Exe -ArgumentList '--debug-stage', $t -PassThru
         Wait-Window 'SpectrumStage' | Out-Null
-        # Union of the main window and the tray menu: both are inside the stage, nothing else is.
-        $m = $rects['main']; $q = $rects['traymenu']
-        $x0 = [Math]::Min($m[0], $q[0]); $y0 = [Math]::Min($m[1], $q[1])
-        $x1 = [Math]::Max($m[0] + $m[2], $q[0] + $q[2]); $y1 = [Math]::Max($m[1] + $m[3], $q[1] + $q[3])
-        # Never reach into the taskbar (clock, pinned apps, tray icons).
-        $bar = [Cap]::Find('Shell_TrayWnd')
-        if ($bar -ne [IntPtr]::Zero) {
-            $br = [Cap]::FrameRect($bar)
-            if ($br[1] -gt $y0) { $y1 = [Math]::Min($y1, $br[1]) }
-        }
-        $w = $x1 - $x0; $h = $y1 - $y0
-        $dir = Join-Path $RawOut "demo-$t"
-        if (Test-Path $dir) { Remove-Item $dir -Recurse -Force }
-        New-Item -ItemType Directory -Force -Path $dir | Out-Null
+        $trayArgs = @('--tray', '--theme', $t)
+        if (-not $one) { $trayArgs += @('--debug-scale', "$sf") }
+        $tray = Start-Process -FilePath $Exe -ArgumentList $trayArgs -PassThru
+        Start-Sleep -Milliseconds 1500
 
-        $demoProc = Start-Process -FilePath $Exe -ArgumentList '--debug-demo', '--theme', $t -PassThru
-        Wait-Window '#32768' 8000 | Out-Null
-        $frames = New-Object System.Collections.Generic.List[System.Drawing.Bitmap]
-        $sw = [Diagnostics.Stopwatch]::StartNew()
-        $next = 0
-        while (-not $demoProc.HasExited -and $sw.ElapsedMilliseconds -lt 14000) {
-            if ($sw.ElapsedMilliseconds -ge $next) {
-                $frames.Add([Cap]::Grab($x0, $y0, $w, $h))
-                $next += 100
+        $surfaces = if ($one) { @('gamut', 'traymenu', 'main') } else { @('gamut', 'main') }
+        foreach ($s in $surfaces) {
+            Open-Surface $s
+            $h = Wait-Window $classes[$s]
+            Start-Sleep -Milliseconds 600
+            if ($s -ne 'traymenu' -and -not [Cap]::IsTopmost($h)) { throw "$s is not above the backdrop; refusing to capture" }
+            $shot = Get-WindowShot $h
+            if ($one) { $rects[$s] = $shot.Rect }
+            if ($s -eq 'traymenu') {
+                Save-Png $shot.Bitmap (Join-Path $Out "traymenu-$t.png")
+                Save-Png $shot.Bitmap (Join-Path $Out "traymenu-$t-1x.png")
             } else {
-                Start-Sleep -Milliseconds 5
+                Save-Png $shot.Bitmap (Join-Path $Out "$s-$t$suffix.png")
             }
-        }
-        $i = 1
-        foreach ($f in $frames) {
-            Save-Png $f (Join-Path $dir ('frame-{0:D4}.png' -f $i))
-            $f.Dispose(); $i++
-        }
-        Write-Host ("  demo: {0} frames, {1}x{2} at {3},{4}" -f $frames.Count, $w, $h, $x0, $y0)
-    }
+            Write-Host ("  {0}: {1}x{2} at {3},{4}" -f $s, $shot.Rect[2], $shot.Rect[3], $shot.Rect[0], $shot.Rect[1])
 
-    Stop-Spectrum
+            if ($s -eq 'main') {
+                # HDR section: client rows 308..550 of the 440 x 620 logical layout, full client width.
+                $k = $shot.Client[2] / 440.0
+                $cx = $shot.Client[0] - $shot.Rect[0]
+                $cy = $shot.Client[1] - $shot.Rect[1]
+                $y0 = $cy + [int][Math]::Round(308 * $k)
+                $y1 = $cy + [int][Math]::Round(550 * $k)
+                $rect = New-Object System.Drawing.Rectangle $cx, $y0, $shot.Client[2], ($y1 - $y0)
+                $crop = $shot.Bitmap.Clone($rect, $shot.Bitmap.PixelFormat)
+                Save-Png $crop (Join-Path $Out "hdr-$t$suffix.png")
+                $crop.Dispose()
+            }
+            $shot.Bitmap.Dispose()
+
+            if ($s -eq 'traymenu') { [Cap]::Escape($h); if (-not (Wait-Gone $classes[$s] 800)) { [Cap]::EscapeKey() } } else { [Cap]::Close($h) }
+            if (-not (Wait-Gone $classes[$s])) { Write-Warning "$s did not close; stopping Spectrum"; Stop-Spectrum }
+            Start-Sleep -Milliseconds 300
+        }
+
+        if ($Demo -and $one) {
+            Stop-Spectrum
+            $stage = Start-Process -FilePath $Exe -ArgumentList '--debug-stage', $t -PassThru
+            Wait-Window 'SpectrumStage' | Out-Null
+            # Union of the main window and the tray menu: both are inside the stage, nothing else is.
+            $m = $rects['main']; $q = $rects['traymenu']
+            $x0 = [Math]::Min($m[0], $q[0]); $y0 = [Math]::Min($m[1], $q[1])
+            $x1 = [Math]::Max($m[0] + $m[2], $q[0] + $q[2]); $y1 = [Math]::Max($m[1] + $m[3], $q[1] + $q[3])
+            # Never reach into the taskbar (clock, pinned apps, tray icons).
+            $bar = [Cap]::Find('Shell_TrayWnd')
+            if ($bar -ne [IntPtr]::Zero) {
+                $br = [Cap]::FrameRect($bar)
+                if ($br[1] -gt $y0) { $y1 = [Math]::Min($y1, $br[1]) }
+            }
+            $w = $x1 - $x0; $h = $y1 - $y0
+            $dir = Join-Path $RawOut "demo-$t"
+            if (Test-Path $dir) { Remove-Item $dir -Recurse -Force }
+            New-Item -ItemType Directory -Force -Path $dir | Out-Null
+
+            $demoProc = Start-Process -FilePath $Exe -ArgumentList '--debug-demo', '--theme', $t -PassThru
+            Wait-Window '#32768' 8000 | Out-Null
+            $frames = New-Object System.Collections.Generic.List[System.Drawing.Bitmap]
+            $sw = [Diagnostics.Stopwatch]::StartNew()
+            $next = 0
+            while (-not $demoProc.HasExited -and $sw.ElapsedMilliseconds -lt 14000) {
+                if ($sw.ElapsedMilliseconds -ge $next) {
+                    $frames.Add([Cap]::Grab($x0, $y0, $w, $h))
+                    $next += 100
+                } else {
+                    Start-Sleep -Milliseconds 5
+                }
+            }
+            # Privacy check: outside the main window and the menu (plus their shadows) only the backdrop may show.
+            $sr, $sg, $sb = if ($t -eq 'dark') { 0x20, 0x20, 0x20 } else { 0xE9, 0xE6, 0xE1 }
+            $keep = @(
+                [int[]]@(($m[0] - $x0 - 80), ($m[1] - $y0 - 80), ($m[2] + 160), ($m[3] + 160)),
+                [int[]]@(($q[0] - $x0 - 80), ($q[1] - $y0 - 80), ($q[2] + 160), ($q[3] + 160)))
+            $bad = 0
+            foreach ($f in $frames) { if ([Cap]::Stray($f, $sr, $sg, $sb, [int[][]]$keep) -gt 0) { $bad++ } }
+            if ($bad -gt 0) {
+                Save-Png $frames[[int]($frames.Count / 2)] (Join-Path $RawOut 'failed-frame.png')
+                throw "$bad of $($frames.Count) demo frames contain something other than the backdrop; frames not saved (see failed-frame.png)"
+            }
+            $i = 1
+            foreach ($f in $frames) {
+                [Cap]::GrayRing($f, $m[0] - $x0, $m[1] - $y0, $m[2], $m[3])
+                Save-Png $f (Join-Path $dir ('frame-{0:D4}.png' -f $i))
+                $f.Dispose(); $i++
+            }
+            Write-Host ("  demo: {0} frames, {1}x{2} at {3},{4}" -f $frames.Count, $w, $h, $x0, $y0)
+        }
+
+        Stop-Spectrum
+    }
 }
 
 # Same pictures for the website.
 foreach ($t in $themes) {
-    foreach ($n in 'main', 'gamut', 'traymenu', 'hdr') {
-        Copy-Item -Force (Join-Path $Out "$n-$t.png") (Join-Path $SiteOut "$n-$t.png")
+    foreach ($f in Get-ChildItem (Join-Path $Out "*-$t*.png")) {
+        Copy-Item -Force $f.FullName (Join-Path $SiteOut $f.Name)
     }
 }
 Write-Host "done: $Out and $SiteOut"

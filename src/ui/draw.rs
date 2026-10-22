@@ -8,7 +8,7 @@
 
 use crate::util::wide;
 use std::ffi::c_void;
-use std::sync::atomic::{AtomicI8, AtomicU8, Ordering};
+use std::sync::atomic::{AtomicI8, AtomicU32, AtomicU8, Ordering};
 use std::sync::OnceLock;
 use windows_sys::Win32::Foundation::{HWND, LPARAM, RECT};
 use windows_sys::Win32::Graphics::Dwm::DwmSetWindowAttribute;
@@ -204,14 +204,39 @@ pub fn scf(v: f32, dpi: u32) -> f32 {
     v * dpi as f32 / 96.0
 }
 
+/// UI scale override in thousandths (`--debug-scale`, screenshots only): 1000 = the real DPI.
+static UI_SCALE_MILLI: AtomicU32 = AtomicU32::new(1000);
+
+/// Makes every window lay out and draw at `f` times the real DPI scale (screenshots only).
+pub fn set_ui_scale(f: f64) {
+    if f.is_finite() && (0.25..=4.0).contains(&f) {
+        UI_SCALE_MILLI.store((f * 1000.0).round() as u32, Ordering::Relaxed);
+    }
+}
+
+fn scaled(d: u32) -> u32 {
+    let m = UI_SCALE_MILLI.load(Ordering::Relaxed);
+    if m == 1000 {
+        d
+    } else {
+        (d as f64 * m as f64 / 1000.0).round() as u32
+    }
+}
+
+/// The DPI the system actually uses for window frames and title bars, given a (possibly scaled) UI DPI.
+pub fn frame_dpi(dpi: u32) -> u32 {
+    let m = UI_SCALE_MILLI.load(Ordering::Relaxed);
+    if m == 1000 {
+        dpi
+    } else {
+        (dpi as f64 * 1000.0 / m as f64).round() as u32
+    }
+}
+
 pub fn system_dpi() -> u32 {
     // SAFETY: no preconditions.
     let d = unsafe { GetDpiForSystem() };
-    if d == 0 {
-        96
-    } else {
-        d
-    }
+    scaled(if d == 0 { 96 } else { d })
 }
 
 pub fn window_dpi(hwnd: HWND) -> u32 {
@@ -220,7 +245,16 @@ pub fn window_dpi(hwnd: HWND) -> u32 {
     if d == 0 {
         system_dpi()
     } else {
-        d
+        scaled(d)
+    }
+}
+
+/// The theme forced with `--theme`, if any (true = dark).
+pub fn forced_theme() -> Option<bool> {
+    match FORCED.load(Ordering::Relaxed) {
+        1 => Some(true),
+        2 => Some(false),
+        _ => None,
     }
 }
 
