@@ -98,8 +98,8 @@ fn mock_apply(a: &UiAction) {
     });
     match a {
         UiAction::Highlight(Some(i)) => {
-            if let Some((r, n, c)) = rects.get(*i) {
-                overlay::show(*r, *n, *c);
+            if let Some((r, _, c)) = rects.get(*i) {
+                overlay::show(*r, *c);
             }
         }
         UiAction::Highlight(None) => overlay::hide_all(),

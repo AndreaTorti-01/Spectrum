@@ -860,7 +860,7 @@ pub fn execute(a: UiAction) -> Result<String, String> {
         }
         UiAction::Highlight(Some(i)) => {
             if let Some(m) = cached_monitors().get(i) {
-                ui::overlay::show(m.rect, m.num, m.accent);
+                ui::overlay::show(m.rect, m.accent);
             }
             Ok(String::new())
         }
