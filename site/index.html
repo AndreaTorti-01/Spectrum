@@ -1,0 +1,324 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Spectrum: monitor color profiles for Windows</title>
+  <meta name="description" content="Windows tray utility that builds an ICC profile from your monitor's EDID, writes MHC2 profiles for HDR and re-applies them after driver updates." />
+  <meta name="color-scheme" content="dark light" />
+  <meta name="theme-color" content="#121110" media="(prefers-color-scheme: dark)" />
+  <meta name="theme-color" content="#F2EEE7" media="(prefers-color-scheme: light)" />
+  <link rel="canonical" href="https://andreatorti-01.github.io/Spectrum/" />
+  <meta property="og:type" content="website" />
+  <meta property="og:site_name" content="Spectrum" />
+  <meta property="og:title" content="Spectrum: your monitor already knows its colors" />
+  <meta property="og:description" content="Windows tray utility that builds an ICC profile from your monitor's EDID, writes MHC2 profiles for HDR and re-applies them after driver updates." />
+  <meta property="og:url" content="https://andreatorti-01.github.io/Spectrum/" />
+  <meta property="og:image" content="https://andreatorti-01.github.io/Spectrum/og.png" />
+  <meta property="og:image:width" content="1200" />
+  <meta property="og:image:height" content="630" />
+  <meta name="twitter:card" content="summary_large_image" />
+  <meta name="twitter:title" content="Spectrum: your monitor already knows its colors" />
+  <meta name="twitter:description" content="Windows tray utility that builds an ICC profile from your monitor's EDID, writes MHC2 profiles for HDR and re-applies them after driver updates." />
+  <meta name="twitter:image" content="https://andreatorti-01.github.io/Spectrum/og.png" />
+  <link rel="icon" type="image/svg+xml" href="./favicon.svg" />
+  <script>
+    (function () {
+      var d = document.documentElement;
+      d.classList.add("js");
+      var pref = "system";
+      try {
+        pref = localStorage.getItem("spectrum-theme") || "system";
+      } catch (e) {}
+      if (pref !== "light" && pref !== "dark") pref = "system";
+      var q = new URLSearchParams(location.search).get("theme");
+      var light = matchMedia("(prefers-color-scheme: light)").matches;
+      var resolved = q === "light" || q === "dark" ? q : pref === "system" ? (light ? "light" : "dark") : pref;
+      d.setAttribute("data-theme", resolved);
+      d.setAttribute("data-theme-pref", pref);
+      setTimeout(function () { d.classList.add("ready"); }, 2500);
+    })();
+  </script>
+</head>
+<body>
+  <a class="skip" href="#main">Skip to content</a>
+
+  <header class="nav" id="nav">
+    <div class="nav-inner">
+      <a class="brand" href="#hero" aria-label="Spectrum home"><!--prism:30--><span class="brand-word">SPECTRUM</span></a>
+      <nav class="nav-links" aria-label="Main">
+        <a class="nav-link nav-hide-sm" href="#edid">How it works</a>
+        <a class="nav-link nav-hide-sm" href="%REPO%">GitHub</a>
+        <button class="theme-toggle needs-js" type="button" aria-label="Theme: system, light or dark"><span class="theme-label" aria-live="polite">System</span></button>
+        <a class="btn btn-sm" href="%RELEASES%">Download</a>
+      </nav>
+    </div>
+    <div class="nav-bar" aria-hidden="true"><canvas class="spectral-canvas"></canvas></div>
+  </header>
+
+  <noscript><p class="noscript-note">Demos need JavaScript. Screenshots follow.</p></noscript>
+
+  <main id="main">
+    <!-- 2. Hero -->
+    <section id="hero" class="hero" aria-labelledby="h-hero">
+      <div class="hero-stage">
+        <div class="wrap hero-grid">
+          <div class="hero-copy">
+            <p class="kicker">Windows 11 · MIT</p>
+            <h1 id="h-hero" class="display" data-reveal>Your monitor already knows its colors.</h1>
+            <p class="lead">Spectrum decodes the EDID your monitor reports, writes an ICC profile from it and keeps your SDR and HDR profiles applied.</p>
+            <div class="actions">
+              <a class="btn" href="%RELEASES%">Download for Windows</a>
+              <a class="btn btn-ghost" href="%REPO%">View on GitHub</a>
+            </div>
+            <dl class="facts">
+              <div><dt>exe</dt><dd>%EXE_KB% KB</dd></div>
+              <div><dt>idle RAM</dt><dd>%IDLE_MB% MB</dd></div>
+            </dl>
+          </div>
+          <div class="hero-diagram">
+            <canvas id="hero-cie" class="needs-js" role="img" aria-label="CIE 1931 xy chromaticity diagram. The gamut triangle morphs from sRGB through Display P3 and Adobe RGB (1998) to the author's monitor, an MSI MAG 271QPX E2."></canvas>
+            <noscript><shot name="gamut" alt-light="Spectrum gamut window, light theme. A CIE 1931 xy diagram with gamut triangles, and a checklist of color spaces with coverage figures." alt-dark="Spectrum gamut window, dark theme. A CIE 1931 xy diagram with gamut triangles, and a checklist of color spaces with coverage figures." sizes="(min-width: 900px) 50vw, 92vw" eager></shot></noscript>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- 3. EDID -->
+    <section id="edid" class="section edid" aria-labelledby="h-edid">
+      <spectral></spectral>
+      <div class="wrap edid-grid">
+        <div class="edid-dump" role="img" aria-label="Hex dump of the 128-byte EDID base block from the author's MSI MAG 271QPX E2. Bytes 0x19 to 0x22 are highlighted.">
+          <!--edid-hex-->
+        </div>
+        <ul class="edid-readout" aria-label="Decoded values">
+          <!--edid-readout-->
+        </ul>
+        <div class="edid-text">
+          <p class="kicker">EDID · bytes 0x19–0x22</p>
+          <h2 id="h-edid" data-reveal>Ten bytes define the gamut.</h2>
+          <p class="body">Spectrum decodes them and the gamma at byte 0x17, then writes an ICC v4 profile. ArgyllCMS and DisplayCAL aren't needed.</p>
+        </div>
+        <figure class="edid-plot needs-js">
+          <canvas id="edid-cie" role="img" aria-label="CIE 1931 xy diagram with the triangle drawn from the decoded primaries."></canvas>
+          <figcaption class="label">ICC v4 profile</figcaption>
+        </figure>
+        <svg class="edid-lines" aria-hidden="true"></svg>
+      </div>
+    </section>
+
+    <!-- 4. Main window -->
+    <section id="window" class="section win" aria-labelledby="h-window">
+      <spectral></spectral>
+      <div class="wrap">
+        <h2 id="h-window" data-reveal>One window, every monitor.</h2>
+        <div class="win-stage">
+          <figure class="slab slab-main" data-slab data-max-tilt="9">
+            <div class="slab-sway">
+              <div class="slab-tilt">
+                <shot name="main" strip="Spectrum" alt-light="Spectrum main window, light theme. A map of the connected monitors, an SDR profile dropdown, Read profile from monitor and Compare gamuts… buttons, an HDR toggle with four sliders, and a Start with Windows checkbox." alt-dark="Spectrum main window, dark theme. A map of the connected monitors, an SDR profile dropdown, Read profile from monitor and Compare gamuts… buttons, an HDR toggle with four sliders, and a Start with Windows checkbox." sizes="(min-width: 900px) 480px, 92vw"></shot>
+                <i class="slab-spec"></i>
+                <i class="slab-edge"></i>
+                <!--callouts-->
+              </div>
+            </div>
+            <i class="slab-caustic"></i>
+          </figure>
+          <ol class="callout-list">
+            <li><span class="callout-n">1</span>Hover a monitor and its real screen gets a border</li>
+            <li><span class="callout-n">2</span>The SDR profile applies on selection</li>
+            <li><span class="callout-n">3</span>HDR sliders write an MHC2 profile on release</li>
+          </ol>
+        </div>
+      </div>
+    </section>
+
+    <!-- 5. HDR lab -->
+    <section id="hdr" class="section hdr" aria-labelledby="h-hdr">
+      <spectral></spectral>
+      <div class="wrap">
+        <p class="kicker">HDR · MHC2</p>
+        <h2 id="h-hdr" data-reveal>Tune HDR with four sliders.</h2>
+        <div class="hdr-grid needs-js">
+          <div class="hdr-controls" role="group" aria-label="HDR sliders">
+            <div class="ctl" data-ctl="black">
+              <div class="ctl-head"><label for="r-black" class="label">Black level</label><output for="r-black" class="ctl-out" id="o-black">0.00 nits</output></div>
+              <input id="r-black" type="range" min="0" max="1000" step="1" value="0" />
+            </div>
+            <div class="ctl" data-ctl="peak">
+              <div class="ctl-head"><label for="r-peak" class="label">Peak brightness</label><output for="r-peak" class="ctl-out" id="o-peak">450 nits</output></div>
+              <input id="r-peak" type="range" min="0" max="1000" step="1" value="408" />
+            </div>
+            <div class="ctl" data-ctl="full">
+              <div class="ctl-head"><label for="r-full" class="label">Full-frame</label><output for="r-full" class="ctl-out" id="o-full">450 nits</output></div>
+              <input id="r-full" type="range" min="100" max="450" step="1" value="450" />
+            </div>
+            <div class="ctl" data-ctl="sat">
+              <div class="ctl-head"><label for="r-sat" class="label">Saturation</label><output for="r-sat" class="ctl-out" id="o-sat">0%</output></div>
+              <input id="r-sat" type="range" min="0" max="100" step="1" value="0" />
+            </div>
+          </div>
+          <div class="hdr-charts">
+            <figure class="chart chart-pq">
+              <div class="chart-head"><span class="label">PQ (ST 2084) response</span>
+                <ul class="legend"><li><i class="lg lg-ref"></i>Reference</li><li><i class="lg lg-disp"></i>Your display</li><li><i class="lg lg-ff"></i>Full-frame</li></ul>
+              </div>
+              <canvas id="hdr-pq" role="img" aria-label="Line chart of the PQ response from 0 to 10,000 nits, with the reference curve dashed and your display's curve clipped at peak brightness."></canvas>
+            </figure>
+            <div class="chart-row">
+              <figure class="chart chart-gamut">
+                <div class="chart-head"><span class="label">Gamut</span>
+                  <ul class="legend"><li><i class="lg lg-709"></i>BT.709</li><li><i class="lg lg-2020"></i>BT.2020</li><li><i class="lg lg-res"></i>Result</li></ul>
+                </div>
+                <canvas id="hdr-gamut" role="img" aria-label="CIE 1931 xy diagram with the BT.709 triangle growing toward BT.2020 as saturation rises."></canvas>
+              </figure>
+              <p class="caption">Same MHC2 layout as the Windows HDR Calibration app.</p>
+            </div>
+          </div>
+        </div>
+        <noscript><shot name="hdr" alt-light="Spectrum main window, light theme, HDR section: a toggle and four sliders for black level, peak brightness, full-frame and saturation." alt-dark="Spectrum main window, dark theme, HDR section: a toggle and four sliders for black level, peak brightness, full-frame and saturation." sizes="440px"></shot><p class="caption">Same MHC2 layout as the Windows HDR Calibration app.</p></noscript>
+      </div>
+    </section>
+
+    <!-- 6. Gamut -->
+    <section id="gamut" class="section gamut" aria-labelledby="h-gamut">
+      <spectral></spectral>
+      <div class="wrap">
+        <p class="kicker">Gamut · CIE 1931 xy</p>
+        <h2 id="h-gamut" data-reveal>Compare gamuts against six reference spaces.</h2>
+        <div class="gamut-grid">
+          <ul class="spec-list" aria-label="Reference spaces">
+            <!--spec-rows-->
+          </ul>
+          <figure class="slab slab-gamut" data-slab data-max-tilt="7">
+            <div class="slab-sway">
+              <div class="slab-tilt">
+                <shot name="gamut" strip="Spectrum: compare gamuts" alt-light="Spectrum gamut window, light theme. A CIE 1931 xy diagram with gamut triangles, and a checklist of color spaces with coverage figures." alt-dark="Spectrum gamut window, dark theme. A CIE 1931 xy diagram with gamut triangles, and a checklist of color spaces with coverage figures." sizes="(min-width: 900px) 62vw, 92vw"></shot>
+                <svg class="gamut-overlay" aria-hidden="true" preserveAspectRatio="none"></svg>
+                <i class="slab-spec"></i>
+                <i class="slab-edge"></i>
+              </div>
+            </div>
+            <i class="slab-caustic"></i>
+            <figcaption class="caption">Computed from the EDID of an MSI MAG 271QPX E2.</figcaption>
+          </figure>
+        </div>
+      </div>
+    </section>
+
+    <!-- 7. Tray -->
+    <section id="tray" class="section tray" aria-labelledby="h-tray">
+      <spectral></spectral>
+      <div class="wrap">
+        <h2 id="h-tray" data-reveal>Switch profiles from the tray.</h2>
+        <p class="caption">Left-click toggles the main window.</p>
+      </div>
+      <div class="taskbar" data-tray>
+        <div class="taskbar-inner">
+          <div class="taskbar-apps" aria-hidden="true"><i></i><i></i><i></i><i></i></div>
+          <div class="taskbar-tray">
+            <figure class="slab slab-tray" data-slab data-max-tilt="4" data-entry="none">
+              <div class="slab-sway">
+                <div class="slab-tilt">
+                  <shot name="traymenu" alt-light="Spectrum tray menu, light theme. For each monitor, a radio list of SDR profiles (MAG 271QPX E2 (EDID), sRGB, Display P3, Adobe RGB), an HDR check item, then Open Spectrum and Exit." alt-dark="Spectrum tray menu, dark theme. For each monitor, a radio list of SDR profiles (MAG 271QPX E2 (EDID), sRGB, Display P3, Adobe RGB), an HDR check item, then Open Spectrum and Exit." sizes="(min-width: 900px) 320px, 70vw"></shot>
+                  <i class="slab-spec"></i>
+                  <i class="slab-edge"></i>
+                </div>
+              </div>
+              <i class="slab-caustic"></i>
+            </figure>
+            <button class="tray-icon" type="button" aria-expanded="true" aria-label="Spectrum"><!--prism:22--><span class="tray-tip" aria-hidden="true">Spectrum</span></button>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- 8. Driver updates -->
+    <section id="drivers" class="section drivers" aria-labelledby="h-drivers">
+      <spectral></spectral>
+      <div class="wrap">
+        <h2 id="h-drivers" data-reveal>Survives driver updates.</h2>
+        <svg class="drv-diagram drv-h" viewBox="0 0 1000 150" role="img" aria-label="Three steps: the profile is applied, a driver update removes it, Spectrum restores it.">
+          <defs>
+            <linearGradient id="drv-sweep" gradientUnits="userSpaceOnUse" x1="0" y1="0" x2="1000" y2="0">
+              <stop offset="0" stop-color="#7a3cff" /><stop offset=".2" stop-color="#2f6bff" /><stop offset=".4" stop-color="#16c8c8" /><stop offset=".6" stop-color="#7ddc3f" /><stop offset=".8" stop-color="#ffc93c" /><stop offset="1" stop-color="#ff5a3c" />
+            </linearGradient>
+          </defs>
+          <g class="drv-lines" fill="none" stroke-width="2">
+            <line class="drv-seg drv-seg-1" x1="109" y1="46" x2="491" y2="46" />
+            <line class="drv-seg drv-seg-2a" x1="509" y1="46" x2="640" y2="46" />
+            <line class="drv-seg drv-seg-2b" x1="640" y1="46" x2="891" y2="46" />
+            <line class="drv-seg drv-seg-final" x1="509" y1="46" x2="891" y2="46" />
+            <line class="drv-seg drv-seg-sweep" x1="509" y1="46" x2="891" y2="46" stroke="url(#drv-sweep)" />
+          </g>
+          <g class="drv-nodes">
+            <circle class="drv-node" cx="100" cy="46" r="9" />
+            <circle class="drv-node drv-node-2" cx="500" cy="46" r="9" />
+            <circle class="drv-node" cx="900" cy="46" r="9" />
+          </g>
+          <g class="drv-labels">
+            <text x="100" y="100" text-anchor="middle">Profile applied</text>
+            <text x="500" y="100" text-anchor="middle">Driver update wipes it</text>
+            <text x="900" y="100" text-anchor="middle">Spectrum puts it back</text>
+          </g>
+        </svg>
+        <svg class="drv-diagram drv-v" viewBox="0 0 320 420" role="img" aria-label="Three steps: the profile is applied, a driver update removes it, Spectrum restores it.">
+          <defs>
+            <linearGradient id="drv-sweep-v" gradientUnits="userSpaceOnUse" x1="0" y1="0" x2="0" y2="420">
+              <stop offset="0" stop-color="#7a3cff" /><stop offset=".2" stop-color="#2f6bff" /><stop offset=".4" stop-color="#16c8c8" /><stop offset=".6" stop-color="#7ddc3f" /><stop offset=".8" stop-color="#ffc93c" /><stop offset="1" stop-color="#ff5a3c" />
+            </linearGradient>
+          </defs>
+          <g class="drv-lines" fill="none" stroke-width="2">
+            <line class="drv-seg drv-seg-1" x1="24" y1="39" x2="24" y2="201" />
+            <line class="drv-seg drv-seg-2a" x1="24" y1="219" x2="24" y2="320" />
+            <line class="drv-seg drv-seg-2b" x1="24" y1="320" x2="24" y2="381" />
+            <line class="drv-seg drv-seg-final" x1="24" y1="219" x2="24" y2="381" />
+            <line class="drv-seg drv-seg-sweep" x1="24" y1="219" x2="24" y2="381" stroke="url(#drv-sweep-v)" />
+          </g>
+          <g class="drv-nodes">
+            <circle class="drv-node" cx="24" cy="30" r="9" />
+            <circle class="drv-node drv-node-2" cx="24" cy="210" r="9" />
+            <circle class="drv-node" cx="24" cy="390" r="9" />
+          </g>
+          <g class="drv-labels">
+            <text x="52" y="34" font-size="13">Profile applied</text>
+            <text x="52" y="214" font-size="13">Driver update wipes it</text>
+            <text x="52" y="394" font-size="13">Spectrum puts it back</text>
+          </g>
+        </svg>
+        <p class="body">Monitors are keyed by EDID (manufacturer, product code, serial), and Spectrum keeps its own copy of every profile.</p>
+      </div>
+    </section>
+
+    <!-- 9. Download -->
+    <section id="download" class="section download" aria-labelledby="h-download">
+      <spectral></spectral>
+      <div class="wrap">
+        <h2 id="h-download" data-reveal>Installs without an admin prompt.</h2>
+        <p class="body">SpectrumSetup.exe puts Spectrum in %LOCALAPPDATA%\Programs\Spectrum. The portable Spectrum.exe is on the same release page.</p>
+        <dl class="stats">
+          <div><dt>exe</dt><dd>%EXE_KB% KB</dd></div>
+          <div><dt>idle RAM</dt><dd>%IDLE_MB% MB</dd></div>
+          <div><dt>admin prompts</dt><dd>0</dd></div>
+          <div><dt>network connections</dt><dd>0</dd></div>
+        </dl>
+        <div class="actions">
+          <a class="btn" href="%RELEASES%">Download SpectrumSetup.exe</a>
+          <a class="btn btn-ghost" href="%REPO%">View on GitHub</a>
+        </div>
+      </div>
+    </section>
+  </main>
+
+  <footer class="footer" id="footer">
+    <spectral></spectral>
+    <div class="wrap footer-inner">
+      <a href="%LICENSE%">MIT license</a>
+      <a href="%REPO%">GitHub</a>
+      <p>Built with Win32, GDI and a stubborn refusal to ship Electron.</p>
+    </div>
+  </footer>
+
+  <script type="module" src="/src/main.ts"></script>
+</body>
+</html>

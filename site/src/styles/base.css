@@ -1,0 +1,189 @@
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+}
+html {
+  -webkit-text-size-adjust: 100%;
+  overflow-x: clip;
+  scroll-padding-top: var(--nav-h);
+}
+html.lenis,
+html.lenis body {
+  height: auto;
+}
+.lenis.lenis-smooth {
+  scroll-behavior: auto !important;
+}
+.lenis.lenis-stopped {
+  overflow: clip;
+}
+body {
+  margin: 0;
+  background: var(--bg);
+  color: var(--ink);
+  font-family: var(--font-display);
+  font-variation-settings: "wdth" 100;
+  font-weight: 400;
+  font-size: 1.125rem;
+  line-height: 1.55;
+  overflow-x: clip;
+  text-rendering: optimizeLegibility;
+  -webkit-font-smoothing: antialiased;
+}
+h1,
+h2,
+p,
+figure,
+dl,
+dd,
+ol,
+ul {
+  margin: 0;
+  padding: 0;
+}
+ol,
+ul {
+  list-style: none;
+}
+img,
+canvas,
+svg {
+  display: block;
+  max-width: 100%;
+}
+a {
+  color: inherit;
+}
+button {
+  font: inherit;
+  color: inherit;
+}
+:focus-visible {
+  outline: 2px solid var(--ink);
+  outline-offset: 3px;
+}
+::selection {
+  background: var(--ink);
+  color: var(--bg);
+}
+
+.skip {
+  position: fixed;
+  left: 16px;
+  top: -80px;
+  z-index: 100;
+  padding: 10px 14px;
+  background: var(--ink);
+  color: var(--bg);
+  font: 500 0.75rem var(--font-mono);
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  text-decoration: none;
+}
+.skip:focus {
+  top: 12px;
+}
+
+.noscript-note,
+.kicker,
+.label {
+  font-family: var(--font-mono);
+  font-weight: 500;
+  font-size: 0.75rem;
+  line-height: 1.4;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--ink-dim);
+}
+.noscript-note {
+  padding: 16px var(--pad);
+}
+.kicker {
+  margin-bottom: 20px;
+}
+
+h1,
+h2 {
+  font-family: var(--font-display);
+  text-wrap: balance;
+}
+.display {
+  font-weight: 800;
+  font-variation-settings: "wdth" 125;
+  font-size: clamp(3.2rem, 8.5vw, 8rem);
+  line-height: 0.9;
+  letter-spacing: -0.025em;
+}
+h2 {
+  font-weight: 700;
+  font-variation-settings: "wdth" 112;
+  font-size: clamp(2rem, 4.5vw, 3.75rem);
+  line-height: 1;
+  letter-spacing: -0.02em;
+}
+.body,
+.lead {
+  max-width: 62ch;
+  text-wrap: pretty;
+}
+.lead {
+  font-size: 1.25rem;
+}
+.caption {
+  font-family: var(--font-mono);
+  font-size: 0.8125rem;
+  line-height: 1.5;
+  color: var(--ink-dim);
+  max-width: 62ch;
+}
+
+/* Buttons: solid ink, mono label, spectral underline wipes in on hover. */
+.btn {
+  --spectral: linear-gradient(90deg, #7a3cff, #2f6bff, #19c6d9, #5bd34a, #f1d12f, #ff8a2a, #ff3b30);
+  display: inline-block;
+  padding: 14px 20px;
+  border: 0;
+  border-radius: var(--r-ui);
+  background: var(--spectral) no-repeat left bottom / 0 2px, var(--ink);
+  color: var(--bg);
+  font: 500 0.75rem/1.2 var(--font-mono);
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  text-decoration: none;
+  cursor: pointer;
+  transition: background-size 0.45s cubic-bezier(0.22, 1, 0.36, 1);
+}
+.btn:hover,
+.btn:focus-visible {
+  background-size: 100% 2px, auto;
+}
+.btn-ghost {
+  background: var(--spectral) no-repeat left bottom / 0 2px, transparent;
+  color: var(--ink);
+  box-shadow: inset 0 0 0 1px var(--rule);
+}
+.btn-sm {
+  padding: 10px 14px;
+}
+
+html:not(.js) .needs-js {
+  display: none;
+}
+html.js:not(.ready) [data-reveal] {
+  visibility: hidden;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    transition-duration: 0.001s !important;
+    animation-duration: 0.001s !important;
+  }
+}
+
+/* Without JavaScript the spectral bars are a plain gradient. */
+html:not(.js) .spectral-canvas {
+  background: linear-gradient(90deg, #7a3cff, #2f6bff, #19c6d9, #5bd34a, #f1d12f, #ff8a2a, #ff3b30);
+}

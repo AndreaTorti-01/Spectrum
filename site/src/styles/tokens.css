@@ -1,0 +1,95 @@
+/* Design tokens. Dark is the default; the system preference and the data-theme attribute override it. */
+@font-face {
+  font-family: "Archivo Variable";
+  font-style: normal;
+  font-display: swap;
+  font-weight: 100 900;
+  font-stretch: 62% 125%;
+  src: url("@fontsource-variable/archivo/files/archivo-latin-wdth-normal.woff2") format("woff2-variations");
+  unicode-range: U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC, U+0304, U+0308, U+0329, U+2000-206F, U+20AC, U+2122, U+2191, U+2193, U+2212, U+2215, U+FEFF, U+FFFD;
+}
+@font-face {
+  font-family: "IBM Plex Mono";
+  font-style: normal;
+  font-display: swap;
+  font-weight: 400;
+  src: url("@fontsource/ibm-plex-mono/files/ibm-plex-mono-latin-400-normal.woff2") format("woff2");
+  unicode-range: U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC, U+0304, U+0308, U+0329, U+2000-206F, U+20AC, U+2122, U+2191, U+2193, U+2212, U+2215, U+FEFF, U+FFFD;
+}
+@font-face {
+  font-family: "IBM Plex Mono";
+  font-style: normal;
+  font-display: swap;
+  font-weight: 500;
+  src: url("@fontsource/ibm-plex-mono/files/ibm-plex-mono-latin-500-normal.woff2") format("woff2");
+  unicode-range: U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC, U+0304, U+0308, U+0329, U+2000-206F, U+20AC, U+2122, U+2191, U+2193, U+2212, U+2215, U+FEFF, U+FFFD;
+}
+
+:root {
+  --bg: #121110;
+  --bg-raise: #1a1917;
+  --ink: #ece7df;
+  --ink-dim: #a39d94;
+  --rule: #2e2b27;
+  --show-light: none;
+  --show-dark: block;
+  --shadow-a: 0, 0, 0;
+  --horseshoe-alpha: 0.36;
+  color-scheme: dark;
+
+  --acc-1: #ff5a3c;
+  --acc-2: #2ec4b6;
+  --acc-3: #ffc93c;
+  --acc-4: #4d9de0;
+  --acc-5: #9bd94a;
+  --acc-6: #f28ab2;
+
+  --c-r: #ff5a3c;
+  --c-g: #9bd94a;
+  --c-b: #4d9de0;
+
+  --font-display: "Archivo Variable", "Archivo", system-ui, sans-serif;
+  --font-mono: "IBM Plex Mono", ui-monospace, "Cascadia Mono", Consolas, monospace;
+
+  --max: 1360px;
+  --gap: 24px;
+  --pad: clamp(16px, 4vw, 56px);
+  --section-y: clamp(96px, 14vh, 180px);
+  --nav-h: 64px;
+  --r-ui: 2px;
+  --r-win: 10px;
+}
+
+:root[data-theme="light"] {
+  --bg: #f2eee7;
+  --bg-raise: #e9e4db;
+  --ink: #161412;
+  --ink-dim: #5e5850;
+  --rule: #d3ccc1;
+  --show-light: block;
+  --show-dark: none;
+  --shadow-a: 40, 30, 15;
+  --horseshoe-alpha: 0.62;
+  --c-r: #c2361b;
+  --c-g: #46780b;
+  --c-b: #1b66ad;
+  color-scheme: light;
+}
+
+@media (prefers-color-scheme: light) {
+  :root:not([data-theme]) {
+    --bg: #f2eee7;
+    --bg-raise: #e9e4db;
+    --ink: #161412;
+    --ink-dim: #5e5850;
+    --rule: #d3ccc1;
+    --show-light: block;
+    --show-dark: none;
+    --shadow-a: 40, 30, 15;
+    --horseshoe-alpha: 0.62;
+    --c-r: #c2361b;
+    --c-g: #46780b;
+    --c-b: #1b66ad;
+    color-scheme: light;
+  }
+}
