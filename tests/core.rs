@@ -168,24 +168,49 @@ fn hdr_profile_reproduces_windows_app_bytes() {
     };
     let built = build_hdr_profile(&info.desc, &prims, &params);
 
-    assert_eq!(built.len(), fx.len(), "profile size");
+    // Documented exceptions: cprt (we write "Created by Spectrum (MIT license)", not Microsoft's notice) and the
+    // header creator signature 'SPCT' (80..84). The shorter cprt shifts every later offset and the total size by
+    // the same padded delta.
+    let cprt_size = |d: &[u8]| {
+        tag_table(d)
+            .iter()
+            .find(|t| &t.0 == b"cprt")
+            .unwrap()
+            .2
+            .div_ceil(4)
+            * 4
+    };
+    let delta = cprt_size(&fx) - cprt_size(&built);
+    assert_eq!(built.len() + delta, fx.len(), "profile size");
+    assert_eq!(&built[80..84], b"SPCT");
+    assert_eq!(&fx[80..84], b"MSFT");
 
-    // Header: identical except the creation date (24..36) and the MD5 profile ID (84..100), which depends on
-    // the date and on the colorant scale below.
-    assert_eq!(&built[..24], &fx[..24], "header start");
-    assert_eq!(&built[36..84], &fx[36..84], "header middle");
+    // Header: identical except the size, the creation date (24..36), the creator (80..84) and the MD5 profile
+    // ID (84..100), which depends on the date and on the colorant scale below.
+    assert_eq!(&built[4..24], &fx[4..24], "header start");
+    assert_eq!(&built[36..80], &fx[36..80], "header middle");
     assert_eq!(&built[100..128], &fx[100..128], "header tail");
     assert_ne!(&built[84..100], &[0u8; 16]);
 
     // Tag table and tag data.
     let (tb, tf) = (tag_table(&built), tag_table(&fx));
-    assert_eq!(tb, tf, "tag table (signatures, offsets, sizes)");
+    assert_eq!(tb.len(), tf.len());
+    for (a, b) in tb.iter().zip(&tf) {
+        assert_eq!(a.0, b.0, "tag order");
+        if &a.0 != b"cprt" {
+            assert_eq!(a.2, b.2, "tag size {:?}", a.0);
+            assert_eq!(a.1 + delta, b.1, "tag offset {:?}", a.0);
+        }
+    }
     // Intentional exception: the colorant and white-point XYZ. The app scales them with luminance factors we
     // could not derive (colorant Y sum 1.42, white Y 0.569); we write textbook scales (white Y = 1). The
     // chromaticities, which are all Windows uses, must still match.
     let exempt: [&[u8; 4]; 4] = [b"rXYZ", b"gXYZ", b"bXYZ", b"wtpt"];
     for (sig, off, size) in &tb {
         let name = String::from_utf8_lossy(sig).to_string();
+        if sig == b"cprt" {
+            continue;
+        }
         if exempt.contains(&sig) {
             let (a, b) = (raw_xyz(&built, sig), raw_xyz(&fx, sig));
             let (xa, xb) = (color::xyz_to_xy(a), color::xyz_to_xy(b));
@@ -194,7 +219,8 @@ fn hdr_profile_reproduces_windows_app_bytes() {
                 "{name} chromaticity: built {xa:?} app {xb:?}"
             );
         } else {
-            assert_eq!(built[*off..off + size], fx[*off..off + size], "tag {name}");
+            let foff = tf.iter().find(|t| &t.0 == sig).unwrap().1;
+            assert_eq!(built[*off..off + size], fx[foff..foff + size], "tag {name}");
         }
     }
     // Padding / gaps between tags are zeros in both.

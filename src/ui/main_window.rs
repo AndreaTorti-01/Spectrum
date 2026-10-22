@@ -752,6 +752,20 @@ pub fn is_open() -> bool {
     !hwnd().is_null()
 }
 
+/// Index of the monitor currently selected in the open window (0 when closed).
+pub fn selected() -> usize {
+    with(|m| m.sel).unwrap_or(0)
+}
+
+/// Demo hook: shows `nits` on the peak slider (and lowers full-frame to fit) without applying anything.
+pub fn demo_set_peak(nits: f64) {
+    with(|m| {
+        m.peak = nits.clamp(widgets::PEAK_MIN_NITS, widgets::PEAK_MAX_NITS);
+        m.full = m.full.min(m.peak);
+        m.invalidate();
+    });
+}
+
 pub fn hwnd() -> HWND {
     HWND_CELL.with(|c| c.get()) as HWND
 }

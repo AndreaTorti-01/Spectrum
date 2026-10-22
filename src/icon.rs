@@ -14,6 +14,9 @@ type V = (f32, f32);
 
 const SS: u32 = 4;
 const SIZES: [u32; 5] = [16, 24, 32, 48, 256];
+/// Largest size that gets the zoomed-in tray composition, and its zoom factor.
+const SMALL_MAX: u32 = 24;
+const SMALL_ZOOM: f32 = 1.35;
 
 // ---- geometry in unit coordinates (v grows downward) -----------------------------------------
 
@@ -187,7 +190,14 @@ pub fn render_bgra(size: u32) -> Vec<u8> {
     let sc = Scene::new();
     let mut out = vec![0u8; (size * size * 4) as usize];
     let inv = 1.0 / (size * SS) as f32;
-    let soft = 1.0 * inv * 1.2;
+    // Tray sizes (16 to 24 px) zoom the whole scene about the prism's center so the prism fills about 85 %
+    // of the frame width; beam and rainbow scale with it and the rainbow runs off the right edge.
+    let (zoom, cx, cy) = if size <= SMALL_MAX {
+        (SMALL_ZOOM, 0.49, 0.467)
+    } else {
+        (1.0, 0.5, 0.5)
+    };
+    let soft = 1.0 * inv * 1.2 / zoom;
     let n = (SS * SS) as f32;
     for y in 0..size {
         for x in 0..size {
@@ -195,8 +205,8 @@ pub fn render_bgra(size: u32) -> Vec<u8> {
             for sy in 0..SS {
                 for sx in 0..SS {
                     let p = (
-                        ((x * SS + sx) as f32 + 0.5) * inv,
-                        ((y * SS + sy) as f32 + 0.5) * inv,
+                        (((x * SS + sx) as f32 + 0.5) * inv - 0.5) / zoom + cx,
+                        (((y * SS + sy) as f32 + 0.5) * inv - 0.5) / zoom + cy,
                     );
                     let s = shade(&sc, p, soft);
                     acc.r += s.r;

@@ -4,6 +4,7 @@
 pub mod app;
 pub mod color;
 pub mod config;
+pub mod debug;
 pub mod edid;
 pub mod icc_read;
 pub mod icc_write;

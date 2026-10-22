@@ -164,7 +164,7 @@ fn write_bmp(path: &str, w: usize, h: usize, rgb: &[u8]) {
 
 /// Icon sheet: sizes 16/24/32/48 shown 1:1 and enlarged (nearest) on a dark and a light background.
 fn icon_sheet(path: &str) {
-    let sizes = [(16usize, 12usize), (24, 8), (32, 6), (48, 4)];
+    let sizes = [(16usize, 12usize), (20, 10), (24, 8), (32, 6), (48, 4)];
     let tile_w = 48 * 4 + 20;
     let (w, h) = (tile_w * sizes.len() + 20, 2 * (48 * 4 + 60));
     let mut img = vec![0u8; w * h * 3];
