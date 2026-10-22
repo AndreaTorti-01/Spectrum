@@ -15,8 +15,8 @@
 .PARAMETER Out    Output folder for the README pictures (relative to the repo root).
 .PARAMETER SiteOut  Second output folder for the website.
 .PARAMETER Scale  UI scale factors (x the real DPI scale, --debug-scale). Default 1 and 2. A pass at 1 writes
-                  *-1x.png (README: GitHub shows images at pixel size) and the tray menu; any other pass writes the
-                  plain names (site, hi-DPI). The tray menu is drawn by Windows and is only captured at 1x.
+                  full-window *-1x.png (title bar included) (README: GitHub shows images at pixel size) and the tray menu; any other pass writes the
+                  plain names (site, hi-DPI) as client area only: the system title bar does not scale. The tray menu is drawn by Windows and is only captured at 1x.
 .PARAMETER Demo   Also record demo frames into screenshots-raw\demo-<theme>\frame-NNNN.png.
 .PARAMETER Exe    Path to Spectrum.exe (default: target\release\Spectrum.exe).
 #>
@@ -182,11 +182,12 @@ function Save-Png([System.Drawing.Bitmap]$Bmp, [string]$Path) {
 }
 
 # Capture the exact rectangle of a window; returns @{ Rect = x,y,w,h; Bitmap = ...; Client = x,y,w,h }
-function Get-WindowShot([IntPtr]$Hwnd) {
-    $r = [Cap]::FrameRect($Hwnd)
+# With -ClientOnly the rectangle is the client area (no title bar, no border).
+function Get-WindowShot([IntPtr]$Hwnd, [switch]$ClientOnly) {
     $c = [Cap]::ClientRect($Hwnd)
+    $r = if ($ClientOnly) { $c } else { [Cap]::FrameRect($Hwnd) }
     $bmp = [Cap]::Grab($r[0], $r[1], $r[2], $r[3])
-    [Cap]::GrayRing($bmp, 0, 0, $r[2], $r[3])
+    if (-not $ClientOnly) { [Cap]::GrayRing($bmp, 0, 0, $r[2], $r[3]) }
     @{ Rect = $r; Client = $c; Bitmap = $bmp }
 }
 
@@ -223,7 +224,7 @@ foreach ($t in $themes) {
             $h = Wait-Window $classes[$s]
             Start-Sleep -Milliseconds 600
             if ($s -ne 'traymenu' -and -not [Cap]::IsTopmost($h)) { throw "$s is not above the backdrop; refusing to capture" }
-            $shot = Get-WindowShot $h
+            $shot = if ($one) { Get-WindowShot $h } else { Get-WindowShot $h -ClientOnly }
             if ($one) { $rects[$s] = $shot.Rect }
             if ($s -eq 'traymenu') {
                 Save-Png $shot.Bitmap (Join-Path $Out "traymenu-$t.png")

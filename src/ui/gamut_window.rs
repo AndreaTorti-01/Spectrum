@@ -219,7 +219,9 @@ fn build_entries(selected_file: Option<&str>) -> (Vec<Entry>, Option<usize>) {
             } else {
                 "not plottable".to_string()
             },
-            detail: if plottable {
+            detail: if plottable && file.starts_with("Spectrum") && file.ends_with("EDID.icm") {
+                "Built by Spectrum from the monitor's EDID".to_string()
+            } else if plottable {
                 format!("{file} \u{b7} matrix/TRC profile")
             } else {
                 format!("{file} \u{b7} LUT-based profile, no triangle to plot")
@@ -426,23 +428,18 @@ impl Gamut {
             Some((i, p)) => {
                 let cov =
                     |idx: usize| (math_coverage(&p, &STANDARD_SPACES[idx].prims) * 100.0).round() as i32;
-                let best = (0..STANDARD_SPACES.len())
-                    .max_by(|&a, &b| {
-                        math_iou(&p, &STANDARD_SPACES[a].prims)
-                            .partial_cmp(&math_iou(&p, &STANDARD_SPACES[b].prims))
-                            .unwrap_or(std::cmp::Ordering::Equal)
-                    })
-                    .unwrap_or(0);
+                let best = closest_space(&p);
+                // No-break spaces inside each "Name NN%" unit: a line may only break between units.
+                let unit = |idx: usize| {
+                    format!("{} {}%", short_name(STANDARD_SPACES[idx].name), cov(idx)).replace(' ', "\u{a0}")
+                };
                 (
                     self.entries[i].name.clone(),
                     format!(
-                        "Coverage: {} {}% \u{b7} {} {}% \u{b7} {} {}%\nClosest match: {}",
-                        short_name(STANDARD_SPACES[0].name),
-                        cov(0),
-                        short_name(STANDARD_SPACES[1].name),
-                        cov(1),
-                        short_name(STANDARD_SPACES[2].name),
-                        cov(2),
+                        "{} \u{b7} {} \u{b7} {}\nClosest match: {}",
+                        unit(0),
+                        unit(1),
+                        unit(2),
                         short_name(STANDARD_SPACES[best].name),
                     ),
                 )
@@ -806,6 +803,23 @@ impl Gamut {
 
 fn xy_rgb8(x: f64, y: f64) -> [u8; 3] {
     color::xyz_to_srgb8(color::xy_to_xyz(Xy { x, y }, 1.0))
+}
+
+/// Index of the reference space closest to `p`: highest overlap (IoU); spaces within 0.005 of the best
+/// (Display P3 and DCI-P3 share primaries) are separated by the white-point distance.
+fn closest_space(p: &Primaries) -> usize {
+    let ious: Vec<f64> = STANDARD_SPACES.iter().map(|s| math_iou(p, &s.prims)).collect();
+    let top = ious.iter().cloned().fold(f64::MIN, f64::max);
+    let dist =
+        |s: &color::StandardSpace| ((p.w.x - s.prims.w.x).powi(2) + (p.w.y - s.prims.w.y).powi(2)).sqrt();
+    (0..STANDARD_SPACES.len())
+        .filter(|&i| ious[i] >= top - 0.005)
+        .min_by(|&a, &b| {
+            dist(&STANDARD_SPACES[a])
+                .partial_cmp(&dist(&STANDARD_SPACES[b]))
+                .unwrap_or(std::cmp::Ordering::Equal)
+        })
+        .unwrap_or(0)
 }
 
 fn math_coverage(a: &Primaries, r: &Primaries) -> f64 {
@@ -1212,6 +1226,24 @@ mod tests {
     fn shortens_names() {
         assert_eq!(short_name("Adobe RGB (1998)"), "Adobe RGB");
         assert_eq!(short_name("sRGB"), "sRGB");
+    }
+
+    #[test]
+    fn closest_match_breaks_primary_ties_by_white_point() {
+        // The MAG 271QPX E2 EDID: Display P3 primaries with a near-D65 white. DCI-P3 shares the primaries
+        // (a tie on overlap), but its white is far greener, so Display P3 must win.
+        let xy = |x, y| Xy { x, y };
+        let mag = Primaries {
+            r: xy(0.6855, 0.3037),
+            g: xy(0.2402, 0.7119),
+            b: xy(0.1436, 0.0576),
+            w: xy(0.3135, 0.3291),
+        };
+        assert_eq!(STANDARD_SPACES[closest_space(&mag)].name, "Display P3");
+        let p3 = STANDARD_SPACES[1].prims;
+        assert_eq!(STANDARD_SPACES[closest_space(&p3)].name, "Display P3");
+        let dci = STANDARD_SPACES[5].prims;
+        assert_eq!(STANDARD_SPACES[closest_space(&dci)].name, "DCI-P3");
     }
 
     #[test]
