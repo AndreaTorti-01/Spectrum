@@ -236,39 +236,8 @@ pub fn move_full(full: f64, peak: f64) -> f64 {
     full.min(peak)
 }
 
-/// Magnet zone around the SDR content peak, in logical px.
-pub const SNAP_MAGNET_PX: f32 = 8.0;
-/// Distance past the peak, in logical px, a drag needs to break out of the detent.
-pub const SNAP_ESCAPE_PX: f32 = 14.0;
-
-/// Drag detent: returns the thumb x and whether it is stuck on `peak`. A drag entering the magnet zone, or
-/// jumping across the peak, sticks; a stuck thumb leaves only once the pointer is `escape` px away.
-pub fn detent(x: f32, prev: f32, peak: f32, stuck: bool, magnet: f32, escape: f32) -> (f32, bool) {
-    let d = (x - peak).abs();
-    let crossed = (prev - peak) * (x - peak) < 0.0;
-    let stick = if stuck {
-        d <= escape
-    } else {
-        d <= magnet || crossed
-    };
-    if stick {
-        (peak, true)
-    } else {
-        (x, false)
-    }
-}
-
-/// A wheel or key step from `cur` to `next` that crosses `target` lands on it first.
-pub fn step_through(cur: f64, next: f64, target: f64) -> f64 {
-    if (cur < target && next > target) || (cur > target && next < target) {
-        target
-    } else {
-        next
-    }
-}
-
-/// The SDR content value the peak detent lands on: the highest 4-nit step not above the peak. `None` when
-/// the peak is outside the slider's range.
+/// The SDR content value the peak tick sits on: the highest 4-nit step not above the peak. `None` when the
+/// peak is outside the slider's range.
 pub fn sdr_peak_target(peak: f64) -> Option<f64> {
     use crate::monitors::{SDR_WHITE_MAX_NITS as MAX, SDR_WHITE_MIN_NITS as MIN};
     if !(MIN..MAX).contains(&peak.round()) {
@@ -276,11 +245,11 @@ pub fn sdr_peak_target(peak: f64) -> Option<f64> {
     }
     Some(MIN + ((peak.round() - MIN) / 4.0).floor() * 4.0)
 }
-/// Windows "SDR content brightness": 80 to 480 nits.
-pub fn white_scale() -> Scale {
+/// Windows "SDR content brightness": 80 nits up to `max` (the EDID cap, or 480).
+pub fn white_scale(max: f64) -> Scale {
     Scale::Linear {
         min: crate::monitors::SDR_WHITE_MIN_NITS,
-        max: crate::monitors::SDR_WHITE_MAX_NITS,
+        max,
     }
 }
 
@@ -1004,29 +973,7 @@ mod tests {
     }
 
     #[test]
-    fn sdr_detent_snaps_and_releases() {
-        let (m, e) = (SNAP_MAGNET_PX, SNAP_ESCAPE_PX);
-        // far away: free
-        assert_eq!(detent(50.0, 49.0, 100.0, false, m, e), (50.0, false));
-        // inside the magnet: sticks
-        assert_eq!(detent(93.0, 90.0, 100.0, false, m, e), (100.0, true));
-        // stuck: stays until 14 px past
-        assert_eq!(detent(112.0, 108.0, 100.0, true, m, e), (100.0, true));
-        assert_eq!(detent(115.0, 112.0, 100.0, true, m, e), (115.0, false));
-        // free again just outside the magnet
-        assert_eq!(detent(116.0, 115.0, 100.0, false, m, e), (116.0, false));
-        // a fast jump across the peak sticks
-        assert_eq!(detent(130.0, 70.0, 100.0, false, m, e), (100.0, true));
-        // escape works in both directions
-        assert_eq!(detent(85.0, 90.0, 100.0, true, m, e), (85.0, false));
-    }
-
-    #[test]
-    fn sdr_steps_land_on_the_peak() {
-        assert!(close(step_through(440.0, 460.0, 452.0), 452.0));
-        assert!(close(step_through(460.0, 440.0, 452.0), 452.0));
-        assert!(close(step_through(452.0, 460.0, 452.0), 460.0));
-        assert!(close(step_through(400.0, 420.0, 452.0), 420.0));
+    fn sdr_peak_tick_sits_on_the_grid() {
         assert_eq!(sdr_peak_target(455.0), Some(452.0));
         assert_eq!(sdr_peak_target(452.0), Some(452.0));
         assert_eq!(sdr_peak_target(1000.0), None);

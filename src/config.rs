@@ -15,6 +15,8 @@ pub struct MonitorCfg {
     pub sdr: Option<String>,
     pub hdr: Option<HdrParams>,
     pub hdr_file: Option<String>,
+    /// "Allow SDR content above the monitor peak"; `None` means off.
+    pub sdr_above_peak: Option<bool>,
 }
 
 #[derive(Clone, Debug, Default)]
@@ -233,6 +235,7 @@ impl Config {
                 "sdr" => m.sdr = opt(),
                 "hdr" => m.hdr = parse_hdr(value),
                 "hdr_file" => m.hdr_file = opt(),
+                "sdr_above_peak" => m.sdr_above_peak = Some(value == "1"),
                 _ => {}
             }
         }
@@ -267,6 +270,9 @@ advanced=1
             if let Some(v) = &m.hdr_file {
                 s.push_str(&format!("hdr_file={}\n", clean(v)));
             }
+            if let Some(on) = m.sdr_above_peak {
+                s.push_str(&format!("sdr_above_peak={}\n", u8::from(on)));
+            }
             s.push('\n');
         }
         s
@@ -291,6 +297,7 @@ mod tests {
                 saturation: 0.25,
             });
             m.hdr_file = Some("Spectrum HDR MSI A.icc".into());
+            m.sdr_above_peak = Some(true);
         }
         c.monitor_mut("DEL-1234-0").name = "Dell = weird [name]".into();
         c

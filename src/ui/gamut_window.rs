@@ -19,14 +19,13 @@ use windows_sys::Win32::UI::Input::KeyboardAndMouse::{
     VK_RETURN, VK_SPACE, VK_UP,
 };
 use windows_sys::Win32::UI::WindowsAndMessaging::{
-    CreateWindowExW, DefWindowProcW, DestroyIcon, DestroyWindow, GetClientRect, IsIconic, KillTimer,
-    LoadCursorW, RegisterClassExW, SendMessageW, SetForegroundWindow, SetTimer, SetWindowPos, ShowWindow,
-    SystemParametersInfoW, CS_HREDRAW, CS_VREDRAW, HICON, HWND_TOPMOST, ICON_BIG, ICON_SMALL, IDC_ARROW,
-    SM_CXICON, SM_CXSMICON, SPI_GETWORKAREA, SWP_NOACTIVATE, SWP_NOZORDER, SWP_SHOWWINDOW, SW_HIDE,
-    SW_RESTORE, SW_SHOW, WM_CAPTURECHANGED, WM_CLOSE, WM_CREATE, WM_DESTROY, WM_DPICHANGED, WM_ERASEBKGND,
-    WM_KEYDOWN, WM_LBUTTONDOWN, WM_LBUTTONUP, WM_MOUSEMOVE, WM_MOUSEWHEEL, WM_NCHITTEST, WM_PAINT,
-    WM_SETICON, WM_SETTINGCHANGE, WM_TIMER, WNDCLASSEXW, WS_CAPTION, WS_EX_NOACTIVATE, WS_EX_TOOLWINDOW,
-    WS_EX_TOPMOST, WS_MINIMIZEBOX, WS_OVERLAPPED, WS_POPUP, WS_SYSMENU,
+    CreateWindowExW, DefWindowProcW, DestroyIcon, DestroyWindow, GetClientRect, IsIconic, LoadCursorW,
+    RegisterClassExW, SendMessageW, SetForegroundWindow, SetWindowPos, ShowWindow, SystemParametersInfoW,
+    CS_HREDRAW, CS_VREDRAW, HICON, ICON_BIG, ICON_SMALL, IDC_ARROW, SM_CXICON, SM_CXSMICON, SPI_GETWORKAREA,
+    SWP_NOACTIVATE, SWP_NOZORDER, SW_RESTORE, SW_SHOW, WM_CAPTURECHANGED, WM_CLOSE, WM_CREATE, WM_DESTROY,
+    WM_DPICHANGED, WM_ERASEBKGND, WM_KEYDOWN, WM_LBUTTONDOWN, WM_LBUTTONUP, WM_MOUSEMOVE, WM_MOUSEWHEEL,
+    WM_PAINT, WM_SETICON, WM_SETTINGCHANGE, WNDCLASSEXW, WS_CAPTION, WS_MINIMIZEBOX, WS_OVERLAPPED,
+    WS_SYSMENU,
 };
 
 const CLASS: &str = "SpectrumGamutWindow";
@@ -72,9 +71,6 @@ struct Gamut {
     kbd: bool,
     hover: Option<usize>,
     tracking: bool,
-    /// Profile (by entry index) the stats line talks about when nothing else is ticked.
-    monitor_entry: Option<usize>,
-    stats: (String, String),
     /// Physical height of the info block (measured while painting).
     info_h: i32,
     /// Scrollbar thumb drag: offset of the mouse from the thumb top.
@@ -427,20 +423,20 @@ impl Gamut {
         Some((track, t, len, max_scroll))
     }
 
-    /// Height of the info block for the current selection (mirrors the layout in `draw`).
+    /// Height of the info block: the tallest text it can show, so the list does not resize on hover.
     fn info_height(&self, c: &mut Canvas, width: i32) -> i32 {
         let dpi = self.dpi;
         let dim = self.fonts.dim;
-        let mut h = 0;
-        if !self.stats.1.is_empty() {
-            h += c.measure_wrapped(width, &self.stats.1, dim) + sc(18, dpi);
-        } else if !self.stats.0.is_empty() {
-            h += c.measure_wrapped(width, &self.stats.0, dim);
+        let block = |c: &mut Canvas, body: &str| c.measure_wrapped(width, body, dim) + sc(18, dpi);
+        let mut tallest = 0;
+        for i in 0..self.entries.len() {
+            let (_, body) = self.row_info(i);
+            tallest = tallest.max(block(c, &body));
+            if let Some((_, body)) = self.coverage_info(i) {
+                tallest = tallest.max(block(c, &body));
+            }
         }
-        if !self.stats.1.is_empty() || !self.stats.0.is_empty() {
-            h += sc(16, dpi);
-        }
-        h
+        tallest + sc(16, dpi)
     }
 
     /// Mouse press at (x, y): thumb starts a drag, track pages by the visible row count. True if handled.
@@ -514,26 +510,10 @@ impl Gamut {
         None
     }
 
-    /// On-screen rect of entry `i`'s row, when it is scrolled into view.
-    fn row_rect(&self, entry: usize) -> Option<R> {
-        let g = self.geo();
-        let mut top = g.list.t - self.scroll;
-        for r in &self.rows {
-            let h = row_h(r, self.dpi);
-            if matches!(r, Row::Entry(i) if *i == entry) {
-                let inside = top >= g.list.t && top + h <= g.list.b;
-                return inside.then(|| R::new(g.list.l, top, g.list.r, top + h));
-            }
-            top += h;
-        }
-        None
-    }
-
     fn toggle(&mut self, i: usize) {
         if self.entries[i].prims.is_some() {
             self.entries[i].checked = !self.entries[i].checked;
         }
-        self.recompute();
     }
 
     fn move_selection(&mut self, dir: i32) {
@@ -560,7 +540,6 @@ impl Gamut {
         self.selected = Some(order[next as usize]);
         self.kbd = true;
         self.ensure_visible(order[next as usize]);
-        self.recompute();
     }
 
     fn ensure_visible(&mut self, entry: usize) {
@@ -581,42 +560,57 @@ impl Gamut {
         self.clamp_scroll();
     }
 
-    /// Stats line: coverage of sRGB / P3 / Adobe by the first ticked non-reference profile (or the monitor's).
-    fn recompute(&mut self) {
-        let pick = self
-            .selected
-            .filter(|&i| !self.entries[i].reference && self.entries[i].prims.is_some())
-            .or_else(|| {
-                self.entries
-                    .iter()
-                    .position(|e| !e.reference && e.checked && e.prims.is_some())
-            })
-            .or(self.monitor_entry.filter(|&i| self.entries[i].prims.is_some()));
-        self.stats = match pick.and_then(|i| self.entries[i].prims.map(|p| (i, p))) {
-            None => (
-                "Tick an installed profile to see its coverage.".to_string(),
-                String::new(),
-            ),
-            Some((i, p)) => {
-                let cov =
-                    |idx: usize| (math_coverage(&p, &STANDARD_SPACES[idx].prims) * 100.0).round() as i32;
-                let best = closest_space(&p);
-                // No-break spaces inside each "Name NN%" unit: a line may only break between units.
-                let unit = |idx: usize| {
-                    format!("{} {}%", short_name(STANDARD_SPACES[idx].name), cov(idx)).replace(' ', "\u{a0}")
-                };
-                (
-                    self.entries[i].name.clone(),
-                    format!(
-                        "{} \u{b7} {} \u{b7} {}\nClosest match: {}",
-                        unit(0),
-                        unit(1),
-                        unit(2),
-                        short_name(STANDARD_SPACES[best].name),
-                    ),
-                )
-            }
+    /// Name and description of row `i`. An installed profile also lists its primaries.
+    fn row_info(&self, i: usize) -> (String, String) {
+        let e = &self.entries[i];
+        let mut body = e.detail.clone();
+        if let (false, Some(p)) = (e.reference, e.prims) {
+            body.push_str(&format!(
+                "\nR {:.3}, {:.3}  G {:.3}, {:.3}  B {:.3}, {:.3}",
+                p.r.x, p.r.y, p.g.x, p.g.y, p.b.x, p.b.y
+            ));
+        }
+        (e.name.clone(), body)
+    }
+
+    /// Coverage of sRGB, Display P3 and Adobe RGB by installed profile `i`, and its closest reference space.
+    fn coverage_info(&self, i: usize) -> Option<(String, String)> {
+        let e = &self.entries[i];
+        if e.reference {
+            return None;
+        }
+        let p = e.prims?;
+        let cov = |idx: usize| (math_coverage(&p, &STANDARD_SPACES[idx].prims) * 100.0).round() as i32;
+        let best = closest_space(&p);
+        // No-break spaces inside each "Name NN%" unit: a line may only break between units.
+        let unit = |idx: usize| {
+            format!("{} {}%", short_name(STANDARD_SPACES[idx].name), cov(idx)).replace(' ', "\u{a0}")
         };
+        Some((
+            e.name.clone(),
+            format!(
+                "{} \u{b7} {} \u{b7} {}\nClosest match: {}",
+                unit(0),
+                unit(1),
+                unit(2),
+                short_name(STANDARD_SPACES[best].name),
+            ),
+        ))
+    }
+
+    /// Info block for the current state: the hovered row, else the first ticked installed profile.
+    /// None when neither applies.
+    fn info(&self) -> Option<(String, String)> {
+        match self.hover {
+            Some(i) => Some(self.row_info(i)),
+            None => {
+                let i = self
+                    .entries
+                    .iter()
+                    .position(|e| !e.reference && e.checked && e.prims.is_some())?;
+                self.coverage_info(i)
+            }
+        }
     }
 
     fn invalidate(&self) {
@@ -925,43 +919,32 @@ impl Gamut {
         c.stroke_rrect(g.panel, radius, scf(1.0, dpi).floor().max(1.0), th.line, 1.0);
         c.text(g.head_r, "Compare gamuts", self.fonts.heading, th.text, TA_LEFT);
 
-        // --- right: one info block anchored to the bottom ---
+        // --- right: one info block anchored to the bottom, under a divider ---
         let width = g.info.w();
         let mut y = g.info.b;
-        // coverage lines
-        if !self.stats.1.is_empty() {
-            let h = c.measure_wrapped(width, &self.stats.1, self.fonts.dim);
+        if let Some((title, body)) = self.info() {
+            let h = c.measure_wrapped(width, &body, self.fonts.dim);
             y -= h;
             c.text_wrapped(
                 R::new(g.info.l, y, g.info.r, y + h),
-                &self.stats.1,
+                &body,
                 self.fonts.dim,
                 th.text_dim,
             );
-        } else if !self.stats.0.is_empty() {
-            let h = c.measure_wrapped(width, &self.stats.0, self.fonts.dim);
-            y -= h;
-            c.text_wrapped(
-                R::new(g.info.l, y, g.info.r, y + h),
-                &self.stats.0,
-                self.fonts.dim,
-                th.text_dim,
-            );
-        }
-        if !self.stats.1.is_empty() {
-            // name the profile the coverage belongs to
-            let h = sc(18, dpi);
-            y -= h;
+            y -= sc(18, dpi);
             c.text(
-                R::new(g.info.l, y, g.info.r, y + h),
-                &self.stats.0,
-                self.fonts.dim,
+                R::new(g.info.l, y, g.info.r, y + sc(18, dpi)),
+                &title,
+                self.fonts.title,
                 th.text,
                 TA_LEFT,
             );
         }
-        y -= sc(8, dpi);
-        c.fill_rect(R::new(g.info.l, y, g.info.r, y + sc(1, dpi).max(1)), th.line);
+        let line_y = g.info.t + sc(8, dpi);
+        c.fill_rect(
+            R::new(g.info.l, line_y, g.info.r, line_y + sc(1, dpi).max(1)),
+            th.line,
+        );
     }
 
     fn draw_row(&self, c: &mut Canvas, ctx: &Ctx, i: usize, r: R) {
@@ -1141,14 +1124,11 @@ pub fn open(selected_monitor_profile: Option<String>, mon: usize) {
         kbd: false,
         hover: None,
         tracking: false,
-        monitor_entry,
-        stats: (String::new(), String::new()),
         info_h: sc(110, dpi),
         drag: None,
         icons: [std::ptr::null_mut(); 2],
     };
     g.rebuild_rows();
-    g.recompute();
     GAMUT.with(|m| *m.borrow_mut() = Some(g));
 
     let style = WS_OVERLAPPED | WS_CAPTION | WS_SYSMENU | WS_MINIMIZEBOX;
@@ -1376,18 +1356,12 @@ unsafe extern "system" fn wnd_proc(hwnd: HWND, msg: u32, wp: WPARAM, lp: LPARAM)
                 let h = g.row_at(x, y);
                 if h != g.hover {
                     g.hover = h;
-                    if h.is_some() {
-                        tip_arm(hwnd);
-                    } else {
-                        tip_hide(hwnd);
-                    }
                     g.invalidate();
                 }
             });
             0
         }
         WM_MOUSELEAVE => {
-            tip_hide(hwnd);
             with(|g| {
                 g.tracking = false;
                 if g.hover.take().is_some() {
@@ -1399,7 +1373,6 @@ unsafe extern "system" fn wnd_proc(hwnd: HWND, msg: u32, wp: WPARAM, lp: LPARAM)
         WM_LBUTTONDOWN => {
             let (x, y) = (lo(lp), hi(lp));
             SetFocus(hwnd);
-            tip_hide(hwnd);
             with(|g| {
                 g.kbd = false;
                 if g.scrollbar_press(hwnd, x, y) {
@@ -1426,7 +1399,6 @@ unsafe extern "system" fn wnd_proc(hwnd: HWND, msg: u32, wp: WPARAM, lp: LPARAM)
             let delta = ((wp >> 16) & 0xFFFF) as i16 as i32;
             let mut pt = POINT { x: lo(lp), y: hi(lp) };
             ScreenToClient(hwnd, &mut pt);
-            tip_hide(hwnd);
             with(|g| {
                 // one row per wheel notch
                 let steps = (delta.abs() / 120).max(1) * delta.signum();
@@ -1457,36 +1429,11 @@ unsafe extern "system" fn wnd_proc(hwnd: HWND, msg: u32, wp: WPARAM, lp: LPARAM)
             });
             0
         }
-        WM_TIMER if wp == TIMER_TIP => {
-            KillTimer(hwnd, TIMER_TIP);
-            let info = with(|g| {
-                let i = g.hover?;
-                let e = &g.entries[i];
-                let mut text = e.detail.clone();
-                if let (false, Some(p)) = (e.reference, e.prims) {
-                    text.push_str(&format!(
-                        "\nR {:.3}, {:.3}  G {:.3}, {:.3}  B {:.3}, {:.3}",
-                        p.r.x, p.r.y, p.g.x, p.g.y, p.b.x, p.b.y
-                    ));
-                }
-                Some((g.row_rect(i)?, text, g.dpi))
-            })
-            .flatten();
-            if let Some((r, text, dpi)) = info {
-                tip_show(hwnd, r, text, dpi);
-            }
-            0
-        }
         WM_CLOSE => {
             DestroyWindow(hwnd);
             0
         }
         WM_DESTROY => {
-            KillTimer(hwnd, TIMER_TIP);
-            let t = tip_hwnd();
-            if !t.is_null() {
-                DestroyWindow(t);
-            }
             HWND_CELL.with(|c| c.set(0));
             let g = GAMUT.with(|m| m.try_borrow_mut().ok().and_then(|mut b| b.take()));
             if let Some(g) = &g {
@@ -1540,144 +1487,5 @@ mod tests {
         assert_eq!(reference_file_id("sRGB Color Space Profile.icm"), Some(0));
         assert_eq!(reference_file_id("Spectrum Display P3.icm"), Some(1));
         assert_eq!(reference_file_id("foo.icc"), None);
-    }
-}
-
-// ---------------------------------------------------------------------------------------------
-// Row tooltip: an owned popup with the row's description, shown after a short hover
-// ---------------------------------------------------------------------------------------------
-
-const TIP_CLASS: &str = "SpectrumGamutTip";
-const TIMER_TIP: usize = 7;
-const TIP_DELAY_MS: u32 = 400;
-const TIP_W: i32 = 280;
-
-thread_local! {
-    static TIP: std::cell::Cell<isize> = const { std::cell::Cell::new(0) };
-    static TIP_TEXT: RefCell<String> = const { RefCell::new(String::new()) };
-}
-
-fn tip_hwnd() -> HWND {
-    TIP.with(|t| t.get()) as HWND
-}
-
-/// Hides the tooltip and cancels a pending one.
-fn tip_hide(owner: HWND) {
-    // SAFETY: valid window handles.
-    unsafe {
-        KillTimer(owner, TIMER_TIP);
-        let t = tip_hwnd();
-        if !t.is_null() {
-            ShowWindow(t, SW_HIDE);
-        }
-    }
-}
-
-/// Re-arms the hover delay for a new row.
-fn tip_arm(owner: HWND) {
-    tip_hide(owner);
-    // SAFETY: valid window handle.
-    unsafe { SetTimer(owner, TIMER_TIP, TIP_DELAY_MS, None) };
-}
-
-/// Shows `text` under the row rect `row` (client coordinates of `owner`).
-fn tip_show(owner: HWND, row: R, text: String, dpi: u32) {
-    tip_register();
-    let fonts = Fonts::new(dpi);
-    let pad = sc(8, dpi);
-    let w = sc(TIP_W, dpi);
-    let Some(mut probe) = Canvas::new(1, 1) else {
-        return;
-    };
-    let h = probe.measure_wrapped(w - 2 * pad, &text, fonts.dim) + 2 * pad;
-    TIP_TEXT.with(|t| *t.borrow_mut() = text);
-    let mut p = POINT {
-        x: row.l + sc(28, dpi),
-        y: row.b + sc(2, dpi),
-    };
-    // SAFETY: plain Win32 calls with valid pointers; GAMUT is not borrowed here.
-    unsafe {
-        windows_sys::Win32::Graphics::Gdi::ClientToScreen(owner, &mut p);
-        let mut wa: RECT = std::mem::zeroed();
-        SystemParametersInfoW(SPI_GETWORKAREA, 0, &mut wa as *mut RECT as *mut _, 0);
-        if p.y + h > wa.bottom {
-            p.y -= h + row.h() + sc(4, dpi);
-        }
-        let x = p.x.min(wa.right - w).max(wa.left);
-        let mut t = tip_hwnd();
-        if t.is_null() {
-            let cls = wide(TIP_CLASS);
-            t = CreateWindowExW(
-                WS_EX_TOOLWINDOW | WS_EX_NOACTIVATE | WS_EX_TOPMOST,
-                cls.as_ptr(),
-                std::ptr::null(),
-                WS_POPUP,
-                x,
-                p.y,
-                w,
-                h,
-                owner,
-                std::ptr::null_mut(),
-                GetModuleHandleW(std::ptr::null()),
-                std::ptr::null(),
-            );
-            if t.is_null() {
-                return;
-            }
-            TIP.with(|c| c.set(t as isize));
-        }
-        SetWindowPos(t, HWND_TOPMOST, x, p.y, w, h, SWP_NOACTIVATE | SWP_SHOWWINDOW);
-        InvalidateRect(t, std::ptr::null(), 0);
-    }
-}
-
-fn tip_register() {
-    static ONCE: std::sync::Once = std::sync::Once::new();
-    ONCE.call_once(|| {
-        let cls = wide(TIP_CLASS);
-        // SAFETY: class data outlives the call.
-        unsafe {
-            let mut wc: WNDCLASSEXW = std::mem::zeroed();
-            wc.cbSize = std::mem::size_of::<WNDCLASSEXW>() as u32;
-            wc.lpfnWndProc = Some(tip_proc);
-            wc.hInstance = GetModuleHandleW(std::ptr::null());
-            wc.hCursor = LoadCursorW(std::ptr::null_mut(), IDC_ARROW);
-            wc.lpszClassName = cls.as_ptr();
-            RegisterClassExW(&wc);
-        }
-    });
-}
-
-unsafe extern "system" fn tip_proc(hwnd: HWND, msg: u32, wp: WPARAM, lp: LPARAM) -> LRESULT {
-    match msg {
-        WM_ERASEBKGND => 1,
-        // HTTRANSPARENT: the pointer goes through to the list underneath.
-        WM_NCHITTEST => -1,
-        WM_PAINT => {
-            let mut ps: PAINTSTRUCT = std::mem::zeroed();
-            let hdc = BeginPaint(hwnd, &mut ps);
-            let mut rc: RECT = std::mem::zeroed();
-            GetClientRect(hwnd, &mut rc);
-            let dpi = window_dpi(hwnd);
-            let fonts = Fonts::new(dpi);
-            if let Some(mut c) = Canvas::new(rc.right, rc.bottom) {
-                let th = theme();
-                let full = R::new(0, 0, rc.right, rc.bottom);
-                c.clear(th.surface);
-                c.stroke_rrect(full, 0.0, 1.0, th.line, 1.0);
-                let pad = sc(8, dpi);
-                TIP_TEXT.with(|t| {
-                    c.text_wrapped(full.inset(pad), &t.borrow(), fonts.dim, th.text);
-                });
-                c.present(hdc, 0, 0);
-            }
-            EndPaint(hwnd, &ps);
-            0
-        }
-        WM_DESTROY => {
-            TIP.with(|c| c.set(0));
-            0
-        }
-        _ => DefWindowProcW(hwnd, msg, wp, lp),
     }
 }

@@ -3,9 +3,9 @@
 
 /** Targets of the three callouts on the main window screenshot: Identify link, SDR dropdown, HDR slider. */
 export const MAIN_CALLOUTS: ReadonlyArray<{ x: number; y: number }> = [
-  { x: 0.945, y: 0.039 },
-  { x: 0.953, y: 0.27 },
-  { x: 0.976, y: 0.733 },
+  { x: 0.945, y: 0.038 },
+  { x: 0.953, y: 0.265 },
+  { x: 0.976, y: 0.713 },
 ];
 
 /** Plot area of the gamut window screenshot: data (x, y) to fractions of the image. */

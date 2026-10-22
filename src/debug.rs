@@ -239,6 +239,23 @@ fn dump_text(mons: &[Monitor], cfg: &Config, ui: &UiState) -> String {
             "  sdr white:      {}",
             crate::monitors::sdr_white_nits(m).map_or("(unavailable)".to_string(), |n| format!("{n} nits"))
         );
+        let cap = crate::monitors::sdr_white_cap(
+            m.edid
+                .as_ref()
+                .and_then(|e| e.hdr.as_ref())
+                .and_then(|h| h.max_nits),
+        );
+        let above = cfg
+            .monitors
+            .get(&m.key)
+            .and_then(|c| c.sdr_above_peak)
+            .unwrap_or(false);
+        let _ = writeln!(
+            s,
+            "  sdr cap:        {} (allow above peak: {})",
+            cap.map_or("(none)".to_string(), |c| format!("{c} nits")),
+            if above { "on" } else { "off" }
+        );
         let _ = writeln!(
             s,
             "  windows reports: {}",
@@ -648,6 +665,28 @@ fn fail(out: Option<&Path>, msg: &str) -> i32 {
 fn target(num: &str) -> Result<(u32, usize), String> {
     let n = parse_num(num)?;
     Ok((n, ui_index(n)?))
+}
+
+/// `--debug-sdr-cap <num> on|off`: the "Allow SDR content above the monitor peak" toggle, through the
+/// same action the window sends (turning it off snaps SDR content down to the cap).
+pub fn sdr_cap(num: &str, state: &str, out: Option<&Path>) -> i32 {
+    let on = match parse_on_off(state) {
+        Ok(o) => o,
+        Err(e) => return fail(out, &e),
+    };
+    let (num, mon) = match target(num) {
+        Ok(t) => t,
+        Err(e) => return fail(out, &e),
+    };
+    run_action(
+        &format!(
+            "allow sdr content above the peak {} on monitor {num}",
+            if on { "on" } else { "off" }
+        ),
+        num,
+        UiAction::SetSdrAbovePeak { mon, on },
+        out,
+    )
 }
 
 /// `--debug-sdr <num> <option-index>`
@@ -1136,6 +1175,7 @@ pub fn showcase_state() -> UiState {
         m.hdr_on = true;
         m.sdr_white_nits = Some(240.0);
         m.hdr_custom_active = true;
+        m.sdr_above_peak = false;
         // Realistic values: what the EDID says and what Windows reports for the profile.
         m.hdr_profile = app::HdrProfile::Spectrum;
         m.edid_hdr = Some(crate::edid::HdrStatic {

@@ -515,6 +515,21 @@ pub fn round_sdr_white_nits(nits: f64) -> f64 {
     (SDR_WHITE_MIN_NITS + steps * SDR_WHITE_STEP_NITS).clamp(SDR_WHITE_MIN_NITS, SDR_WHITE_MAX_NITS)
 }
 
+/// The highest SDR content value the slider offers while "Allow SDR content above the monitor peak" is
+/// off: the EDID HDR max luminance rounded down to the 4-nit grid, clamped to 80..=480. `None` without an
+/// EDID max, which means no cap.
+pub fn sdr_white_cap(edid_max: Option<f64>) -> Option<u32> {
+    let max = edid_max.filter(|v| v.is_finite() && *v > 0.0)?;
+    let steps = ((max - SDR_WHITE_MIN_NITS) / SDR_WHITE_STEP_NITS).floor();
+    let nits = SDR_WHITE_MIN_NITS + steps * SDR_WHITE_STEP_NITS;
+    Some(nits.clamp(SDR_WHITE_MIN_NITS, SDR_WHITE_MAX_NITS) as u32)
+}
+
+/// The value SDR content must drop to when the cap applies: `cap` when `current` is above it.
+pub fn snap_back(current: u32, cap: u32) -> Option<u32> {
+    (current > cap).then_some(cap)
+}
+
 /// Raw SDR white level of a monitor (1000 = 80 nits), `None` when Windows does not answer.
 pub fn sdr_white_raw(m: &Monitor) -> Option<u32> {
     unsafe {
@@ -635,6 +650,23 @@ mod tests {
         assert_eq!(round_sdr_white_nits(243.0), 244.0);
         assert_eq!(round_sdr_white_nits(900.0), 480.0);
         assert_eq!(round_sdr_white_nits(0.0), 80.0);
+    }
+
+    #[test]
+    fn sdr_white_cap_rounds_down_to_the_grid() {
+        assert_eq!(sdr_white_cap(Some(455.5)), Some(452));
+        assert_eq!(sdr_white_cap(Some(480.0)), Some(480));
+        assert_eq!(sdr_white_cap(Some(600.0)), Some(480));
+        assert_eq!(sdr_white_cap(Some(79.0)), Some(80));
+        assert_eq!(sdr_white_cap(Some(0.0)), None);
+        assert_eq!(sdr_white_cap(None), None);
+    }
+
+    #[test]
+    fn snap_back_only_lowers_values_above_the_cap() {
+        assert_eq!(snap_back(480, 452), Some(452));
+        assert_eq!(snap_back(452, 452), None);
+        assert_eq!(snap_back(240, 452), None);
     }
 
     #[test]
