@@ -453,23 +453,39 @@ fn parse_profile_list(buf: &[u8]) -> Vec<String> {
         .collect()
 }
 
-/// "srgb" gives SRGB_INBOX; "display-p3" gives "Spectrum Display P3.icm"; "adobe-rgb" gives
-/// "Spectrum Adobe RGB compatible.icm" (generated via icc_write if missing).
+/// Reference spaces that become monitor profiles: (space id, picker label, file name). sRGB is the inbox
+/// profile, the rest are generated into the color folder on first use.
+pub const REFERENCE_PROFILES: [(&str, &str, &str); 6] = [
+    ("srgb", "sRGB", SRGB_INBOX),
+    ("display-p3", "Display P3", "Spectrum Display P3.icm"),
+    ("adobe-rgb", "Adobe RGB", "Spectrum Adobe RGB compatible.icm"),
+    ("prophoto", "ProPhoto RGB", "Spectrum ProPhoto RGB.icm"),
+    ("rec2020", "Rec. 2020", "Spectrum Rec. 2020.icm"),
+    ("dci-p3", "DCI-P3", "Spectrum DCI-P3.icm"),
+];
+
+/// File name and ICC description of a generated reference profile ("Spectrum Display P3.icm" and
+/// "Spectrum Display P3"); `None` for sRGB (the inbox profile) and unknown ids.
+pub fn reference_profile_spec(space_id: &str) -> Option<(&'static str, String)> {
+    let (_, _, file) = REFERENCE_PROFILES
+        .iter()
+        .find(|(id, _, f)| *id == space_id && !f.eq_ignore_ascii_case(SRGB_INBOX))?;
+    let desc = file.strip_suffix(".icm").unwrap_or(file).to_string();
+    Some((file, desc))
+}
+
+/// "srgb" gives SRGB_INBOX; the other five give "Spectrum <name>.icm" (generated via icc_write if missing).
 pub fn ensure_reference_profile(space_id: &str) -> Result<String, String> {
-    let (file, desc) = match space_id {
-        "srgb" => return Ok(SRGB_INBOX.to_string()),
-        "display-p3" => ("Spectrum Display P3.icm", "Spectrum Display P3"),
-        "adobe-rgb" => (
-            "Spectrum Adobe RGB compatible.icm",
-            "Spectrum Adobe RGB compatible",
-        ),
-        other => return Err(format!("no reference profile for {other:?}")),
-    };
+    if space_id == "srgb" {
+        return Ok(SRGB_INBOX.to_string());
+    }
+    let (file, desc) =
+        reference_profile_spec(space_id).ok_or_else(|| format!("no reference profile for {space_id:?}"))?;
     if profile_exists(file) || restore_from_backup(file) {
         return Ok(file.to_string());
     }
     let sp = crate::color::space(space_id).ok_or_else(|| format!("unknown color space {space_id:?}"))?;
-    let bytes = crate::icc_write::build_sdr_profile(desc, &sp.prims, sp.trc);
+    let bytes = crate::icc_write::build_sdr_profile(&desc, &sp.prims, sp.trc);
     install_profile(file, &bytes)?;
     Ok(file.to_string())
 }
@@ -506,6 +522,24 @@ mod tests {
         assert_eq!(parse_profile_list(&buf), vec!["a.icm", "b.icc"]);
         assert!(parse_profile_list(&utf16_list(&[])).is_empty());
         assert!(parse_profile_list(&[]).is_empty());
+    }
+
+    #[test]
+    fn reference_profile_names() {
+        for (id, label, file) in REFERENCE_PROFILES {
+            assert!(valid_file_name(file), "{file}");
+            assert!(crate::color::space(id).is_some(), "{id}");
+            assert!(!label.is_empty());
+            match reference_profile_spec(id) {
+                Some((f, desc)) => {
+                    assert_eq!(f, file);
+                    assert!(f.starts_with("Spectrum ") && f.ends_with(".icm"));
+                    assert_eq!(format!("{desc}.icm"), f);
+                }
+                None => assert_eq!(id, "srgb"),
+            }
+        }
+        assert_eq!(REFERENCE_PROFILES.len(), crate::color::STANDARD_SPACES.len());
     }
 
     #[test]

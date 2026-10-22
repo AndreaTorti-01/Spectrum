@@ -54,12 +54,20 @@ const WM_RUN_CMD: u32 = WM_APP + 3;
 /// Ignore repeated tray notifications (v4 sends several per click) for this long.
 const TRAY_DEBOUNCE: Duration = Duration::from_millis(300);
 
-const P3_FILE: &str = "Spectrum Display P3.icm";
-const ADOBE_FILE: &str = "Spectrum Adobe RGB compatible.icm";
-
 // ---------------------------------------------------------------------------------------------
 // UI contract types
 // ---------------------------------------------------------------------------------------------
+
+/// Which HDR profile Windows uses for a monitor.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum HdrProfile {
+    /// No HDR profile is associated: Windows uses the monitor's EDID values.
+    None,
+    /// One of Spectrum's own HDR profiles.
+    Spectrum,
+    /// Someone else's profile (its description).
+    Other(String),
+}
 
 #[derive(Clone, Debug)]
 pub struct UiMonitor {
@@ -79,6 +87,90 @@ pub struct UiMonitor {
     pub hdr_custom_active: bool,
     /// Windows "SDR content brightness" in nits; `None` when the driver does not report it.
     pub sdr_white_nits: Option<f64>,
+    pub hdr_profile: HdrProfile,
+    /// Luminance Windows reports for the output (read through DXGI); `None` with HDR off or when DXGI fails.
+    pub reported: Option<crate::dxgi::Reported>,
+    /// The HDR static metadata block of the monitor's EDID.
+    pub edid_hdr: Option<crate::edid::HdrStatic>,
+}
+
+impl UiMonitor {
+    /// Highest brightness the monitor can show: what Windows reports, else the EDID peak.
+    pub fn effective_peak(&self) -> Option<f64> {
+        self.reported
+            .as_ref()
+            .map(|r| r.max_nits)
+            .filter(|v| *v > 0.0)
+            .or_else(|| {
+                self.edid_hdr
+                    .as_ref()
+                    .and_then(|h| h.max_nits)
+                    .filter(|v| *v > 0.0)
+            })
+    }
+
+    /// "HDR profile: Spectrum"; `None` for a monitor without HDR.
+    pub fn hdr_profile_line(&self) -> Option<String> {
+        if !self.hdr_supported {
+            return None;
+        }
+        Some(match &self.hdr_profile {
+            HdrProfile::None => "HDR profile: none, using the monitor's EDID values".to_string(),
+            HdrProfile::Spectrum => "HDR profile: Spectrum".to_string(),
+            HdrProfile::Other(d) => format!("HDR profile: {d}"),
+        })
+    }
+
+    /// "Windows reports: peak 450 \u{b7} full-frame 250 \u{b7} black 0.00 nits".
+    pub fn reported_line(&self) -> Option<String> {
+        if !self.hdr_supported {
+            return None;
+        }
+        Some(match &self.reported {
+            Some(r) => format!("Windows reports: {}", crate::dxgi::summary(r)),
+            None if !self.hdr_on => "Windows reports: unavailable while HDR is off".to_string(),
+            None => "Windows reports: unavailable".to_string(),
+        })
+    }
+
+    /// "Monitor EDID: peak 455 \u{b7} full-frame 254 \u{b7} black 0 nits".
+    pub fn edid_hdr_line(&self) -> Option<String> {
+        if !self.hdr_supported {
+            return None;
+        }
+        const NONE: &str = "No HDR values in this monitor's EDID";
+        let Some(h) = &self.edid_hdr else {
+            return Some(NONE.to_string());
+        };
+        let nits = |v: f64| format!("{}", v.round() as i64);
+        let black = |v: f64| {
+            if v < 0.005 {
+                "0".to_string()
+            } else {
+                format!("{v:.2}")
+            }
+        };
+        let mut parts = Vec::new();
+        if let Some(v) = h.max_nits {
+            parts.push(format!("peak {}", nits(v)));
+        }
+        if let Some(v) = h.max_frame_avg_nits {
+            parts.push(format!("full-frame {}", nits(v)));
+        }
+        if let Some(v) = h.min_nits {
+            parts.push(format!("black {}", black(v)));
+        }
+        if parts.is_empty() {
+            return Some(NONE.to_string());
+        }
+        Some(format!("Monitor EDID: {} nits", parts.join(" \u{b7} ")))
+    }
+
+    /// "Above this monitor's 455-nit peak" when the SDR content brightness `white` exceeds the peak.
+    pub fn white_warning(&self, white: f64) -> Option<String> {
+        let peak = self.effective_peak()?;
+        (white > peak.round()).then(|| format!("Above this monitor's {}-nit peak", peak.round() as i64))
+    }
 }
 
 #[derive(Clone, Debug)]
@@ -101,7 +193,6 @@ pub enum UiAction {
     OpenProfiles,
     DeleteProfile { file: String },
     Identify,
-    Highlight(Option<usize>),
     CloseMain,
 }
 
@@ -111,7 +202,7 @@ pub enum UiAction {
 
 thread_local! {
     static STATUS: RefCell<Option<String>> = const { RefCell::new(None) };
-    /// Monitors from the most recent enumeration; used for cheap lookups (hover highlight, identify).
+    /// Monitors from the most recent enumeration; used for cheap lookups (identify, the gamut window).
     static CACHE: RefCell<Vec<Monitor>> = const { RefCell::new(Vec::new()) };
     static HWND_CELL: Cell<isize> = const { Cell::new(0) };
     /// True when the tray icon is up; false for the short-lived debug windows (they quit with the UI).
@@ -197,15 +288,10 @@ fn safe_name(s: &str) -> String {
 }
 
 fn reference_id(file: &str) -> Option<&'static str> {
-    if eq(file, wcs::SRGB_INBOX) {
-        Some("srgb")
-    } else if eq(file, P3_FILE) {
-        Some("display-p3")
-    } else if eq(file, ADOBE_FILE) {
-        Some("adobe-rgb")
-    } else {
-        None
-    }
+    wcs::REFERENCE_PROFILES
+        .iter()
+        .find(|(_, _, f)| eq(f, file))
+        .map(|(id, _, _)| *id)
 }
 
 /// EDID primaries for the HDR profile; BT.709 when the EDID is missing or its chromaticities are bogus.
@@ -260,18 +346,22 @@ fn read_label(file: &str) -> String {
 // Snapshot
 // ---------------------------------------------------------------------------------------------
 
-/// SDR picker entries for one monitor: EDID profile, sRGB, Display P3, Adobe RGB, then any other profile
-/// associated with the monitor. Second value: index of the current default.
+/// File name of the monitor's EDID profile, built or not (the configured one, else the default name).
+fn edid_option_file(m: &Monitor, cfg: &MonitorCfg) -> String {
+    edid_file_name(&monitor_name(m), &m.key, cfg.edid_profile.as_deref())
+}
+
+/// SDR picker entries for one monitor: EDID profile (always, when the monitor has an EDID; picking it builds
+/// the profile first), the six reference spaces, then any other profile associated with the monitor.
+/// Second value: index of the current default.
 fn sdr_options(m: &Monitor, cfg: &MonitorCfg) -> (Vec<(String, String)>, Option<usize>) {
     let mut list: Vec<(String, String)> = Vec::new();
-    if let Some(f) = &cfg.edid_profile {
-        if wcs::profile_exists(f) || backup_has(f) {
-            list.push((format!("{} (EDID)", monitor_name(m)), f.clone()));
-        }
+    if m.edid.is_some() {
+        list.push((format!("{} (EDID)", monitor_name(m)), edid_option_file(m, cfg)));
     }
-    list.push(("sRGB".into(), wcs::SRGB_INBOX.into()));
-    list.push(("Display P3".into(), P3_FILE.into()));
-    list.push(("Adobe RGB".into(), ADOBE_FILE.into()));
+    for (_, label, file) in wcs::REFERENCE_PROFILES {
+        list.push((label.into(), file.into()));
+    }
     for f in wcs::associated(m, false).unwrap_or_default() {
         let hdr_ours = cfg.hdr_file.as_deref().map(|h| eq(h, &f)).unwrap_or(false);
         if hdr_ours || list.iter().any(|(_, x)| eq(x, &f)) {
@@ -335,6 +425,14 @@ fn initial_hdr(m: &Monitor, cfg: &MonitorCfg) -> HdrParams {
     }
 }
 
+fn hdr_profile_of(m: &Monitor) -> HdrProfile {
+    match wcs::default_profile(m, true) {
+        None => HdrProfile::None,
+        Some(f) if is_ours(&f) => HdrProfile::Spectrum,
+        Some(f) => HdrProfile::Other(profile_label(&f)),
+    }
+}
+
 fn build_ui_monitor(m: &Monitor, cfg: &Config) -> UiMonitor {
     let entry = cfg.monitors.get(&m.key).cloned().unwrap_or_default();
     let (sdr_options, sdr_current) = sdr_options(m, &entry);
@@ -363,6 +461,17 @@ fn build_ui_monitor(m: &Monitor, cfg: &Config) -> UiMonitor {
         } else {
             None
         },
+        hdr_profile: if m.hdr_supported {
+            hdr_profile_of(m)
+        } else {
+            HdrProfile::None
+        },
+        reported: if m.hdr_supported && m.hdr_enabled {
+            crate::dxgi::reported(&m.gdi_name)
+        } else {
+            None
+        },
+        edid_hdr: m.edid.as_ref().and_then(|e| e.hdr.clone()),
     }
 }
 
@@ -424,6 +533,14 @@ fn set_sdr(idx_mon: usize, idx: usize) -> Result<String, String> {
         }
         format!("Couldn't apply {label} to monitor {}. Try again.", m.num)
     };
+    if m.edid.is_some()
+        && eq(&file, &edid_option_file(&m, &entry))
+        && !wcs::profile_exists(&file)
+        && !backup_has(&file)
+    {
+        // The EDID profile is not built yet: same flow as "Read profile from monitor".
+        return read_edid(idx_mon);
+    }
     ensure_file(&file).map_err(fail)?;
     wcs::ensure_user_scope(&m).map_err(fail)?;
     wcs::set_default(&m, &file, false).map_err(fail)?;
@@ -739,11 +856,15 @@ pub fn list_profiles() -> Vec<ProfileRow> {
     }
     wcs::list_installed()
         .into_iter()
-        .map(|file| {
+        .filter_map(|file| {
             let u = uses.get(&file.to_ascii_lowercase());
             let in_hdr = u.map(|l| l.iter().any(|x| x.hdr)).unwrap_or(false);
             let in_sdr = u.map(|l| l.iter().any(|x| x.sdr)).unwrap_or(false);
             let info = wcs::read_profile(&file).and_then(|b| icc_read::parse(&b).ok());
+            // Print, scanner and abstract profiles are not monitor profiles; an unreadable file stays listed.
+            if info.as_ref().is_some_and(|i| !i.is_display_rgb()) {
+                return None;
+            }
             let kind = match &info {
                 Some(i) => profile_kind(i.mhc2.is_some(), i.is_matrix_trc, in_hdr, in_sdr),
                 None => profile_kind(false, true, in_hdr, in_sdr),
@@ -751,13 +872,13 @@ pub fn list_profiles() -> Vec<ProfileRow> {
             let users: Vec<(u32, bool)> = u
                 .map(|l| l.iter().map(|x| (x.num, x.default)).collect())
                 .unwrap_or_default();
-            ProfileRow {
+            Some(ProfileRow {
                 name: profile_label(&file),
                 kind,
                 used: used_by_text(&users),
                 deletable: wcs::can_delete(&file),
                 file,
-            }
+            })
         })
         .collect()
 }
@@ -858,16 +979,6 @@ pub fn execute(a: UiAction) -> Result<String, String> {
             identify();
             Ok(String::new())
         }
-        UiAction::Highlight(Some(i)) => {
-            if let Some(m) = cached_monitors().get(i) {
-                ui::overlay::show(m.rect, m.accent);
-            }
-            Ok(String::new())
-        }
-        UiAction::Highlight(None) => {
-            ui::overlay::hide_all();
-            Ok(String::new())
-        }
         UiAction::CloseMain => {
             ui::overlay::hide_all();
             draw::trim_working_set();
@@ -891,11 +1002,7 @@ pub fn dispatch(a: UiAction) {
 pub fn dispatch_result(a: UiAction) -> Result<String, String> {
     let quiet = matches!(
         a,
-        UiAction::Highlight(_)
-            | UiAction::CloseMain
-            | UiAction::OpenGamut
-            | UiAction::OpenProfiles
-            | UiAction::Identify
+        UiAction::CloseMain | UiAction::OpenGamut | UiAction::OpenProfiles | UiAction::Identify
     );
     let r = execute(a);
     match &r {
@@ -1075,8 +1182,12 @@ fn known_files(m: &Monitor, cfg: &Config, hdr: bool) -> Vec<String> {
         v.push(hdr_file_name(m, "A"));
         v.push(hdr_file_name(m, "B"));
     } else {
-        v.push(P3_FILE.to_string());
-        v.push(ADOBE_FILE.to_string());
+        v.extend(
+            wcs::REFERENCE_PROFILES
+                .iter()
+                .map(|(_, _, f)| f.to_string())
+                .filter(|f| !eq(f, wcs::SRGB_INBOX)),
+        );
     }
     if let Some(e) = cfg.monitors.get(&m.key) {
         let cfg_files = if hdr {
@@ -1605,6 +1716,92 @@ mod tests {
             used_by_text(&[(1, true), (2, false)]),
             "Used by monitors 1 (default), 2"
         );
+    }
+
+    fn ui_mon() -> UiMonitor {
+        UiMonitor {
+            num: 1,
+            rect: Rect::default(),
+            accent: 0,
+            name: "M".into(),
+            width: 0,
+            height: 0,
+            hdr_supported: true,
+            hdr_on: true,
+            sdr_options: Vec::new(),
+            sdr_current: None,
+            has_edid: true,
+            hdr: HdrParams {
+                min_nits: 0.0,
+                peak_nits: 1000.0,
+                full_frame_nits: 400.0,
+                saturation: 0.0,
+            },
+            hdr_custom_active: false,
+            sdr_white_nits: Some(240.0),
+            hdr_profile: HdrProfile::None,
+            reported: None,
+            edid_hdr: Some(crate::edid::HdrStatic {
+                max_nits: Some(455.0),
+                max_frame_avg_nits: Some(254.0),
+                min_nits: Some(0.0),
+                pq: true,
+            }),
+        }
+    }
+
+    #[test]
+    fn hdr_info_lines() {
+        let mut m = ui_mon();
+        assert_eq!(
+            m.hdr_profile_line().unwrap(),
+            "HDR profile: none, using the monitor's EDID values"
+        );
+        assert_eq!(
+            m.edid_hdr_line().unwrap(),
+            "Monitor EDID: peak 455 \u{b7} full-frame 254 \u{b7} black 0 nits"
+        );
+        assert_eq!(m.reported_line().unwrap(), "Windows reports: unavailable");
+        m.hdr_on = false;
+        assert_eq!(
+            m.reported_line().unwrap(),
+            "Windows reports: unavailable while HDR is off"
+        );
+        m.hdr_profile = HdrProfile::Spectrum;
+        assert_eq!(m.hdr_profile_line().unwrap(), "HDR profile: Spectrum");
+        m.edid_hdr = None;
+        assert_eq!(m.edid_hdr_line().unwrap(), "No HDR values in this monitor's EDID");
+        m.hdr_supported = false;
+        assert!(m.hdr_profile_line().is_none() && m.reported_line().is_none());
+    }
+
+    #[test]
+    fn sdr_white_warning_uses_the_best_peak() {
+        let mut m = ui_mon();
+        assert_eq!(m.white_warning(372.0), None);
+        assert_eq!(
+            m.white_warning(460.0).unwrap(),
+            "Above this monitor's 455-nit peak"
+        );
+        // The value Windows reports wins over the EDID.
+        m.reported = Some(crate::dxgi::Reported {
+            min_nits: 0.0,
+            max_nits: 450.0,
+            max_full_frame_nits: 250.0,
+            color_space: 12,
+            bits_per_color: 10,
+            red: [0.0; 2],
+            green: [0.0; 2],
+            blue: [0.0; 2],
+            white: [0.0; 2],
+        });
+        assert_eq!(
+            m.white_warning(452.0).unwrap(),
+            "Above this monitor's 450-nit peak"
+        );
+        m.reported = None;
+        m.edid_hdr = None;
+        assert_eq!(m.white_warning(480.0), None);
     }
 
     #[test]

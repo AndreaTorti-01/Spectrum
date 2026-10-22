@@ -4,6 +4,7 @@ use spectrum::color::{self, Primaries, Trc, Xy, Xyz, BT709, SPECTRAL_LOCUS, STAN
 use spectrum::edid;
 use spectrum::icc_read;
 use spectrum::icc_write::{build_hdr_profile, build_sdr_profile, HdrParams};
+use spectrum::wcs;
 
 fn fixture(name: &str) -> Vec<u8> {
     let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
@@ -471,6 +472,13 @@ mod windows_validation {
         for id in ["srgb", "display-p3", "adobe-rgb", "prophoto", "rec2020", "dci-p3"] {
             let s = color::space(id).unwrap();
             cases.push((id.to_string(), build_sdr_profile(s.name, &s.prims, s.trc)));
+        }
+        // The exact files Spectrum installs for the monitor picker (name, description, curve).
+        for (id, _, _) in wcs::REFERENCE_PROFILES {
+            if let Some((_, desc)) = wcs::reference_profile_spec(id) {
+                let s = color::space(id).unwrap();
+                cases.push((format!("ref_{id}"), build_sdr_profile(&desc, &s.prims, s.trc)));
+            }
         }
         let e = edid::parse(&fixture("edid_mag271qpx_active.bin")).unwrap();
         cases.push((

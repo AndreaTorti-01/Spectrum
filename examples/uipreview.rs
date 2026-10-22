@@ -2,10 +2,11 @@
 //! UI preview harness: opens Spectrum's windows against a realistic mock data provider so they can be
 //! looked at (and screenshotted) without the app/monitor/WCS layers.
 //!
-//! Usage: `uipreview <main|gamut|overlay|identify|tray|icon> [--theme dark|light] [--hdr on|off|none]
+//! Usage: `uipreview <main|gamut|identify|tray|icon> [--theme dark|light] [--hdr on|off|none]
 //!         [--mons 1|2] [--secs N] [--out file.bmp]`
 
-use spectrum::app::{UiMonitor, UiState};
+use spectrum::app::{HdrProfile, UiMonitor, UiState};
+use spectrum::edid::HdrStatic;
 use spectrum::icc_write::HdrParams;
 use spectrum::monitors::Rect;
 use spectrum::tray::{MenuMonitor, TrayCmd};
@@ -73,6 +74,14 @@ fn mock_state(args: &[String]) -> UiState {
         },
         hdr_custom_active: true,
         sdr_white_nits: Some(240.0),
+        hdr_profile: HdrProfile::Spectrum,
+        reported: None,
+        edid_hdr: Some(HdrStatic {
+            max_nits: Some(455.0),
+            max_frame_avg_nits: Some(254.0),
+            min_nits: Some(0.0),
+            pq: true,
+        }),
     };
     let m2 = UiMonitor {
         num: 2,
@@ -99,6 +108,9 @@ fn mock_state(args: &[String]) -> UiState {
         },
         hdr_custom_active: false,
         sdr_white_nits: Some(120.0),
+        hdr_profile: HdrProfile::None,
+        reported: None,
+        edid_hdr: None,
     };
     UiState {
         monitors: if mons == 1 { vec![m1] } else { vec![m1, m2] },
@@ -239,7 +251,7 @@ fn main() {
             ui::gamut_window::open(Some("Spectrum MAG 271QPX E2 EDID.icm".into()), 0);
             pump(secs, || !gamut_open());
         }
-        "overlay" | "identify" => {
+        "identify" => {
             let st = mock_state(&args);
             // SAFETY: plain metric queries.
             let (w, h) = unsafe { (GetSystemMetrics(SM_CXSCREEN), GetSystemMetrics(SM_CYSCREEN)) };
@@ -249,11 +261,7 @@ fn main() {
                 right: w,
                 bottom: h,
             };
-            if mode == "overlay" {
-                ui::overlay::show(r, st.monitors[0].accent);
-            } else {
-                ui::overlay::identify_all(&[(r, 1, st.monitors[0].accent)]);
-            }
+            ui::overlay::identify_all(&[(r, 1, st.monitors[0].accent)]);
             pump(secs.max(4), || false);
         }
         "tray" => {

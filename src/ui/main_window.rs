@@ -30,18 +30,21 @@ use windows_sys::Win32::UI::WindowsAndMessaging::{
     SetWindowPos, ShowWindow, SystemParametersInfoW, CS_HREDRAW, CS_VREDRAW, CW_USEDEFAULT, HICON, ICON_BIG,
     ICON_SMALL, IDC_ARROW, IDC_HAND, SM_CXICON, SM_CXSMICON, SPI_GETWORKAREA, SWP_NOACTIVATE, SWP_NOZORDER,
     SW_RESTORE, SW_SHOW, WM_ACTIVATE, WM_APP, WM_CAPTURECHANGED, WM_CLOSE, WM_CREATE, WM_DESTROY,
-    WM_DPICHANGED, WM_ERASEBKGND, WM_KEYDOWN, WM_KILLFOCUS, WM_LBUTTONDOWN, WM_LBUTTONUP, WM_MOUSEMOVE,
-    WM_MOUSEWHEEL, WM_NCDESTROY, WM_PAINT, WM_SETCURSOR, WM_SETFOCUS, WM_SETICON, WM_SETTINGCHANGE, WM_TIMER,
-    WNDCLASSEXW, WS_CAPTION, WS_MINIMIZEBOX, WS_OVERLAPPED, WS_SYSMENU,
+    WM_DISPLAYCHANGE, WM_DPICHANGED, WM_ERASEBKGND, WM_KEYDOWN, WM_KILLFOCUS, WM_LBUTTONDOWN, WM_LBUTTONUP,
+    WM_MOUSEMOVE, WM_MOUSEWHEEL, WM_NCDESTROY, WM_PAINT, WM_SETCURSOR, WM_SETFOCUS, WM_SETICON,
+    WM_SETTINGCHANGE, WM_TIMER, WNDCLASSEXW, WS_CAPTION, WS_MINIMIZEBOX, WS_OVERLAPPED, WS_SYSMENU,
 };
 
 const CLASS: &str = "SpectrumMainWindow";
 const CLIENT_W: i32 = 440;
-const CLIENT_H: i32 = 700;
+const CLIENT_H: i32 = 702;
 const MARGIN: i32 = 20;
 const WM_DROPDOWN_DONE: u32 = WM_APP + 10;
 const TIMER_COMMIT: usize = 1;
 const COMMIT_DELAY_MS: u32 = 400;
+/// Re-reads what Windows reports after a change; it takes a moment to apply a profile or a mode.
+const TIMER_REFRESH: usize = 2;
+const REFRESH_DELAY_MS: u32 = 600;
 
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
 enum Id {
@@ -89,7 +92,6 @@ struct Main {
     dirty: bool,
     pending: Vec<Pending>,
     tracking: bool,
-    highlight: Option<usize>,
     dd_closed_at: Option<Instant>,
     icons: [HICON; 2],
     geo: Geo,
@@ -120,10 +122,14 @@ struct Geo {
     div1: i32,
     hdr_head: R,
     hdr_hint: R,
+    /// Profile, Windows-reported and EDID lines under the HDR header.
+    hdr_info: [R; 3],
     toggle: R,
     /// (label, slider, value) per slider row
     rows: [(R, R, R); 5],
     reset: R,
+    /// Warning beside Reset when SDR content is above the monitor's peak.
+    warn: R,
     div2: i32,
     autostart: R,
     status: R,
@@ -134,11 +140,11 @@ fn geo(dpi: u32) -> Geo {
     let right = CLIENT_W - MARGIN;
     let mut rows = [(R::default(), R::default(), R::default()); 5];
     for (i, row) in rows.iter_mut().enumerate() {
-        let y = 398 + i as i32 * 38;
+        let y = 428 + i as i32 * 34;
         *row = (
-            R::new(s(MARGIN), s(y), s(134), s(y + 38)),
-            R::new(s(138), s(y + 5), s(322), s(y + 33)),
-            R::new(s(326), s(y), s(right), s(y + 38)),
+            R::new(s(MARGIN), s(y), s(134), s(y + 34)),
+            R::new(s(138), s(y + 3), s(322), s(y + 31)),
+            R::new(s(326), s(y), s(right), s(y + 34)),
         );
     }
     Geo {
@@ -148,17 +154,19 @@ fn geo(dpi: u32) -> Geo {
         sdr_label: R::new(s(MARGIN), s(170), s(122), s(204)),
         sdr: R::new(s(126), s(170), s(right), s(204)),
         read: R::new(s(MARGIN), s(216), s(right), s(250)),
-        compare: R::new(s(MARGIN), s(258), s(right), s(292)),
-        manage: R::new(s(MARGIN), s(300), s(right), s(334)),
-        div1: s(348),
-        hdr_head: R::new(s(MARGIN), s(358), s(120), s(390)),
-        hdr_hint: R::new(s(120), s(358), s(right - 58), s(390)),
-        toggle: R::new(s(right - 44), s(363), s(right), s(385)),
+        compare: R::new(s(MARGIN), s(256), s(right), s(290)),
+        manage: R::new(s(MARGIN), s(296), s(right), s(330)),
+        div1: s(340),
+        hdr_head: R::new(s(MARGIN), s(348), s(120), s(380)),
+        hdr_hint: R::new(s(120), s(348), s(right - 58), s(380)),
+        toggle: R::new(s(right - 44), s(353), s(right), s(375)),
+        hdr_info: [0, 1, 2].map(|i| R::new(s(MARGIN), s(380 + i * 14), s(right), s(394 + i * 14))),
         rows,
-        reset: R::new(s(MARGIN), s(594), s(MARGIN + 92), s(622)),
-        div2: s(632),
-        autostart: R::new(s(MARGIN), s(642), s(right), s(666)),
-        status: R::new(s(MARGIN), s(672), s(right), s(692)),
+        reset: R::new(s(MARGIN), s(604), s(MARGIN + 92), s(632)),
+        warn: R::new(s(MARGIN + 100), s(604), s(right), s(632)),
+        div2: s(640),
+        autostart: R::new(s(MARGIN), s(648), s(right), s(672)),
+        status: R::new(s(MARGIN), s(676), s(right), s(696)),
     }
 }
 
@@ -359,14 +367,6 @@ impl Main {
         if self.ui.hover != h {
             self.ui.hover = h;
             self.invalidate();
-        }
-        let tile = match h {
-            Some(Id::Tile(i)) => Some(i),
-            _ => None,
-        };
-        if tile != self.highlight {
-            self.highlight = tile;
-            self.pending.push(Pending::Dispatch(UiAction::Highlight(tile)));
         }
     }
 
@@ -601,6 +601,14 @@ impl Main {
             mon.map(|m| m.hdr_on).unwrap_or(false),
             ui.state(Id::HdrToggle),
         );
+        if let Some(m) = mon {
+            let lines = [m.hdr_profile_line(), m.reported_line(), m.edid_hdr_line()];
+            for (r, line) in g.hdr_info.iter().zip(lines) {
+                if let Some(line) = line {
+                    c.text(*r, &line, self.fonts.dim, th.text_dim, TA_LEFT);
+                }
+            }
+        }
         let labels = [
             "Black level",
             "Peak brightness",
@@ -627,6 +635,12 @@ impl Main {
             c.text(val, &self.slider_text(*id), self.fonts.body, vcol, TA_RIGHT);
         }
         draw_button(c, &ctx, g.reset, "Reset HDR", ui.state(Id::Reset), BtnStyle::Text);
+        if let (true, Some(m)) = (enabled, mon) {
+            if let Some(w) = m.white_warning(self.white) {
+                let amber = if th.dark { 0xFFB347 } else { 0xB45309 };
+                c.text(g.warn, &w, self.fonts.dim, amber, TA_RIGHT);
+            }
+        }
 
         // footer
         c.fill_rect(
@@ -721,7 +735,6 @@ pub fn open() {
         dirty: false,
         pending: Vec::new(),
         tracking: false,
-        highlight: None,
         dd_closed_at: None,
         icons: [std::ptr::null_mut(); 2],
         geo: geo(dpi),
@@ -891,12 +904,31 @@ fn flush_pending() {
         }
         for p in items {
             match p {
-                Pending::Dispatch(a) => super::dispatch(a),
+                Pending::Dispatch(a) => {
+                    let hdr_change = matches!(
+                        a,
+                        UiAction::ApplyHdr { .. }
+                            | UiAction::ResetHdr { .. }
+                            | UiAction::SetHdrEnabled { .. }
+                    );
+                    super::dispatch(a);
+                    if hdr_change {
+                        arm_refresh();
+                    }
+                }
                 Pending::OpenDropdown => open_dropdown_now(),
                 Pending::Close => close_requested(),
             }
         }
     }
+}
+
+/// Refreshes the window shortly after Windows had time to apply a change.
+fn arm_refresh() {
+    with(|m| {
+        // SAFETY: valid window handle; re-arming replaces the pending one-shot.
+        unsafe { SetTimer(m.hwnd, TIMER_REFRESH, REFRESH_DELAY_MS, None) };
+    });
 }
 
 fn open_dropdown_now() {
@@ -1206,7 +1238,14 @@ unsafe fn handle(hwnd: HWND, msg: u32, wp: WPARAM, lp: LPARAM) -> LRESULT {
             if wp == TIMER_COMMIT {
                 KillTimer(hwnd, TIMER_COMMIT);
                 with(|m| m.commit());
+            } else if wp == TIMER_REFRESH {
+                KillTimer(hwnd, TIMER_REFRESH);
+                refresh();
             }
+            0
+        }
+        WM_DISPLAYCHANGE => {
+            arm_refresh();
             0
         }
         WM_DROPDOWN_DONE => {
@@ -1257,7 +1296,7 @@ unsafe fn handle(hwnd: HWND, msg: u32, wp: WPARAM, lp: LPARAM) -> LRESULT {
         }
         WM_DESTROY => {
             KillTimer(hwnd, TIMER_COMMIT);
-            let had_highlight = with(|m| m.highlight.take().is_some()).unwrap_or(false);
+            KillTimer(hwnd, TIMER_REFRESH);
             HWND_CELL.with(|c| c.set(0));
             let main = MAIN.with(|m| m.try_borrow_mut().ok().and_then(|mut b| b.take()));
             if let Some(m) = &main {
@@ -1268,9 +1307,6 @@ unsafe fn handle(hwnd: HWND, msg: u32, wp: WPARAM, lp: LPARAM) -> LRESULT {
                 }
             }
             drop(main); // fonts, canvas (DIB + DC)
-            if had_highlight {
-                super::dispatch(UiAction::Highlight(None));
-            }
             trim_working_set();
             0
         }
