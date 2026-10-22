@@ -361,7 +361,7 @@ pub fn snapshot() -> UiState {
     let mons = enumerate_cached();
     UiState {
         monitors: mons.iter().map(|m| build_ui_monitor(m, &cfg)).collect(),
-        autostart: crate::installer::autostart_enabled(),
+        autostart: crate::autostart::autostart_enabled(),
         status: STATUS.with(|s| s.borrow().clone()),
     }
 }
@@ -636,7 +636,7 @@ pub fn execute(a: UiAction) -> Result<String, String> {
         UiAction::SetHdrEnabled { mon, on } => set_hdr_enabled(mon, on),
         UiAction::ApplyHdr { mon, params } => apply_hdr(mon, params),
         UiAction::ResetHdr { mon } => reset_hdr(mon),
-        UiAction::SetAutostart(on) => crate::installer::set_autostart(on)
+        UiAction::SetAutostart(on) => crate::autostart::set_autostart(on)
             .map(|_| String::new())
             .map_err(|e| {
                 log(&format!("autostart {on}: {e}"));

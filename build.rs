@@ -7,6 +7,11 @@
 use std::path::PathBuf;
 
 #[allow(dead_code)]
+mod icon_png {
+    include!("src/icon_png.rs");
+}
+
+#[allow(dead_code)]
 mod icon_render {
     include!("src/icon_render.rs");
 }
@@ -27,6 +32,7 @@ const COPYRIGHT: &str = "MIT License";
 fn main() {
     println!("cargo:rerun-if-changed=build.rs");
     println!("cargo:rerun-if-changed=src/icon_render.rs");
+    println!("cargo:rerun-if-changed=src/icon_png.rs");
     println!("cargo:rerun-if-changed=Cargo.toml");
 
     let target_os = std::env::var("CARGO_CFG_TARGET_OS").unwrap_or_default();
@@ -37,6 +43,8 @@ fn main() {
     let out_dir = PathBuf::from(std::env::var("OUT_DIR").expect("OUT_DIR"));
     let version = std::env::var("CARGO_PKG_VERSION").unwrap_or_else(|_| "0.0.0".into());
 
+    write_ico();
+
     let resources = build_resources(&version);
     let obj = coff_object(&resources);
     let path = out_dir.join("spectrum_resources.o");
@@ -45,6 +53,21 @@ fn main() {
         "cargo:rustc-link-arg-bins={}",
         path.to_string_lossy().replace('\\', "/")
     );
+}
+
+/// Writes `target/spectrum.ico` (next to, not inside, the profile folders) for the installer's wizard
+/// icon. The path is stable on purpose: `installer/spectrum.iss` refers to `target/spectrum.ico`.
+fn write_ico() {
+    let manifest = PathBuf::from(std::env::var("CARGO_MANIFEST_DIR").expect("CARGO_MANIFEST_DIR"));
+    let dir = manifest.join("target");
+    let bytes = icon_render::ico_bytes();
+    let path = dir.join("spectrum.ico");
+    if std::fs::read(&path).map(|old| old == bytes).unwrap_or(false) {
+        return;
+    }
+    if std::fs::create_dir_all(&dir).is_err() || std::fs::write(&path, bytes).is_err() {
+        println!("cargo:warning=could not write {}", path.display());
+    }
 }
 
 // ---- resources ---------------------------------------------------------------------------------
@@ -61,7 +84,7 @@ fn build_resources(version: &str) -> Vec<Res> {
     push_u16(&mut group, icon_render::SIZES.len() as u16);
     for (i, &size) in icon_render::SIZES.iter().enumerate() {
         let id = (i + 1) as u16;
-        let dib = icon_render::dib_entry(size);
+        let dib = icon_render::entry(size);
         let dim = if size >= 256 { 0 } else { size as u8 };
         group.extend_from_slice(&[dim, dim, 0, 0]);
         push_u16(&mut group, 1); // planes

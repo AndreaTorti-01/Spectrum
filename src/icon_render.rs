@@ -223,9 +223,9 @@ pub fn render_bgra(size: u32) -> Vec<u8> {
     out
 }
 
-/// All [`SIZES`], each a 32-bit BMP DIB entry (straight alpha, as the ICO format wants).
+/// All [`SIZES`] as an .ico file: 32-bit BMP DIB entries, and a PNG for the 256 px one.
 pub fn ico_bytes() -> Vec<u8> {
-    let images: Vec<(u32, Vec<u8>)> = SIZES.iter().map(|&s| (s, dib_entry(s))).collect();
+    let images: Vec<(u32, Vec<u8>)> = SIZES.iter().map(|&s| (s, entry(s))).collect();
     let mut out = Vec::new();
     out.extend_from_slice(&0u16.to_le_bytes()); // reserved
     out.extend_from_slice(&1u16.to_le_bytes()); // type: icon
@@ -246,6 +246,27 @@ pub fn ico_bytes() -> Vec<u8> {
         out.extend_from_slice(&data);
     }
     out
+}
+
+/// One ICO image / RT_ICON resource: a PNG from 256 px up (about a tenth of the DIB), a DIB below.
+pub fn entry(size: u32) -> Vec<u8> {
+    if size >= 256 {
+        png_entry(size)
+    } else {
+        dib_entry(size)
+    }
+}
+
+/// PNG-compressed icon image (straight alpha, as PNG wants).
+pub fn png_entry(size: u32) -> Vec<u8> {
+    let px = render_bgra(size);
+    let mut rgba = Vec::with_capacity(px.len());
+    for p in px.chunks(4) {
+        let a = p[3] as u32;
+        let un = |c: u8| -> u8 { ((c as u32 * 255 + a / 2).checked_div(a).unwrap_or(0)).min(255) as u8 };
+        rgba.extend_from_slice(&[un(p[2]), un(p[1]), un(p[0]), p[3]]);
+    }
+    super::icon_png::encode_rgba(size, &rgba)
 }
 
 /// One ICO image / RT_ICON resource: BITMAPINFOHEADER + bottom-up BGRA pixels + 1-bit AND mask.
@@ -311,6 +332,13 @@ mod tests {
             let off = u32le(&b, e + 12) as usize;
             assert_eq!(off, end, "entry {i} offset");
             end = off + len;
+            if s >= 256 {
+                assert_eq!(
+                    &b[off..off + 8],
+                    &[0x89, b'P', b'N', b'G', 0x0D, 0x0A, 0x1A, 0x0A]
+                );
+                continue;
+            }
             // BITMAPINFOHEADER
             assert_eq!(u32le(&b, off), 40);
             assert_eq!(u32le(&b, off + 4), s);

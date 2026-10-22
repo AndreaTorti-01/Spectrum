@@ -1,36 +1,33 @@
 #![windows_subsystem = "windows"]
-//! Thin CLI shell: parses switches, handles single instance and the first-run install flow, and hands off
-//! to the library.
+//! Thin CLI shell: parses switches, handles single instance, and hands off to the library. The app never
+//! installs itself: `installer/spectrum.iss` does that, and `--cleanup` / `--quit` serve its uninstaller.
 
 use spectrum::app::{self, RunOpts};
 use spectrum::ui::draw;
-use spectrum::ui::install_window::{self, InstallChoice};
-use spectrum::util::{log, wide};
-use spectrum::{debug, installer};
-use std::path::{Path, PathBuf};
-use std::time::SystemTime;
+use spectrum::util::wide;
+use spectrum::{autostart, debug};
+use std::path::PathBuf;
 use windows_sys::Win32::Foundation::{CloseHandle, GetLastError, ERROR_ALREADY_EXISTS, HANDLE};
-use windows_sys::Win32::System::Threading::{
-    CreateMutexW, CreateProcessW, PROCESS_INFORMATION, STARTUPINFOW,
-};
+use windows_sys::Win32::System::Threading::CreateMutexW;
 use windows_sys::Win32::UI::HiDpi::{
     SetProcessDpiAwarenessContext, DPI_AWARENESS_CONTEXT_PER_MONITOR_AWARE_V2,
 };
 use windows_sys::Win32::UI::WindowsAndMessaging::{
-    AllowSetForegroundWindow, GetWindowThreadProcessId, MessageBoxW, PostMessageW, RegisterWindowMessageW,
-    MB_ICONERROR, MB_ICONINFORMATION, MB_OK,
+    AllowSetForegroundWindow, GetWindowThreadProcessId, PostMessageW, RegisterWindowMessageW,
 };
 
 const MUTEX_NAME: &str = "Local\\Spectrum.SingleInstance";
 
 #[derive(Debug, PartialEq)]
 enum Command {
-    /// No switches: install prompt / launch installed copy / run.
+    /// No switches: run with the main window open.
     Default,
+    /// `--tray`: run in the tray only.
     Tray,
-    Uninstall,
-    /// `--finish-uninstall <dir> <pid>`: the %TEMP% helper copy that removes the install folder.
-    FinishUninstall(String, u32),
+    /// `--cleanup`: remove Spectrum's associations, profiles, Startup shortcut and data (the uninstaller).
+    Cleanup,
+    /// `--quit`: ask a running instance to exit.
+    Quit,
     DebugDump {
         json: bool,
     },
@@ -44,7 +41,6 @@ enum Command {
     DebugHdr(String, String),
     DebugHdrReset(String),
     DebugHdrToggle(String, String),
-    DebugInstall,
     DebugAutostart(String),
 }
 
@@ -55,8 +51,6 @@ struct Args {
     dark: Option<bool>,
     /// `--out <file>`: debug output target (console otherwise).
     out: Option<PathBuf>,
-    /// `--quiet`: no message boxes (uninstall).
-    quiet: bool,
 }
 
 fn parse_args<I: Iterator<Item = String>>(mut it: I) -> Args {
@@ -64,21 +58,17 @@ fn parse_args<I: Iterator<Item = String>>(mut it: I) -> Args {
         command: Command::Default,
         dark: None,
         out: None,
-        quiet: false,
     };
     let mut json = false;
     let mut dump = false;
     while let Some(a) = it.next() {
         match a.as_str() {
             "--tray" => args.command = Command::Tray,
-            "--uninstall" => args.command = Command::Uninstall,
-            "--finish-uninstall" => {
-                args.command = Command::FinishUninstall(it.next().unwrap_or_default(), num(it.next()))
-            }
+            "--cleanup" => args.command = Command::Cleanup,
+            "--quit" => args.command = Command::Quit,
             "--theme" => args.dark = it.next().map(|v| v.eq_ignore_ascii_case("dark")),
             "--out" => args.out = it.next().map(PathBuf::from),
             "--json" => json = true,
-            "--quiet" => args.quiet = true,
             "--debug-dump" => dump = true,
             "--debug-edid" => args.command = Command::DebugEdid(num(it.next())),
             "--debug-wipe" => args.command = Command::DebugWipe(num(it.next())),
@@ -97,7 +87,6 @@ fn parse_args<I: Iterator<Item = String>>(mut it: I) -> Args {
                 args.command =
                     Command::DebugHdrToggle(it.next().unwrap_or_default(), it.next().unwrap_or_default())
             }
-            "--debug-install" => args.command = Command::DebugInstall,
             "--debug-autostart" => args.command = Command::DebugAutostart(it.next().unwrap_or_default()),
             _ => {}
         }
@@ -110,18 +99,6 @@ fn parse_args<I: Iterator<Item = String>>(mut it: I) -> Args {
 
 fn num(s: Option<String>) -> u32 {
     s.and_then(|v| v.parse().ok()).unwrap_or(0)
-}
-
-fn message_box(text: &str, error: bool) {
-    // SAFETY: both strings are NUL-terminated and outlive the call.
-    unsafe {
-        MessageBoxW(
-            std::ptr::null_mut(),
-            wide(text).as_ptr(),
-            wide("Spectrum").as_ptr(),
-            MB_OK | if error { MB_ICONERROR } else { MB_ICONINFORMATION },
-        );
-    }
 }
 
 /// Takes the single-instance mutex. `None` when another instance already holds it.
@@ -155,50 +132,6 @@ fn show_running() {
     }
 }
 
-/// Starts `exe` with `args` as a detached process.
-fn spawn(exe: &Path, args: &str) -> bool {
-    let mut cmd = wide(&format!("\"{}\" {args}", exe.display()));
-    // SAFETY: zeroed STARTUPINFOW/PROCESS_INFORMATION are valid inputs; handles are closed right away.
-    unsafe {
-        let mut si: STARTUPINFOW = std::mem::zeroed();
-        si.cb = std::mem::size_of::<STARTUPINFOW>() as u32;
-        let mut pi: PROCESS_INFORMATION = std::mem::zeroed();
-        let ok = CreateProcessW(
-            std::ptr::null(),
-            cmd.as_mut_ptr(),
-            std::ptr::null(),
-            std::ptr::null(),
-            0,
-            0,
-            std::ptr::null(),
-            std::ptr::null(),
-            &si,
-            &mut pi,
-        );
-        if ok == 0 {
-            return false;
-        }
-        CloseHandle(pi.hThread);
-        CloseHandle(pi.hProcess);
-    }
-    true
-}
-
-/// True only when the running exe was modified after the installed one. `fs::copy` keeps the source's
-/// modification time, so an installed copy is never "older" than the exe it came from, and running an
-/// older download never replaces a newer install.
-fn is_newer(cur: Option<SystemTime>, installed: Option<SystemTime>) -> bool {
-    matches!((cur, installed), (Some(a), Some(b)) if a > b)
-}
-
-fn newer_than_installed() -> bool {
-    let modified = |p: PathBuf| std::fs::metadata(p).and_then(|m| m.modified()).ok();
-    is_newer(
-        std::env::current_exe().ok().and_then(modified),
-        modified(installer::installed_exe()),
-    )
-}
-
 fn run_interactive() -> i32 {
     app::run(RunOpts {
         tray: true,
@@ -207,56 +140,13 @@ fn run_interactive() -> i32 {
     })
 }
 
-/// No switches: first-run install box, launch of the installed copy, or just run.
+/// No switches: open the main window, or the one of the running instance.
 fn run_default() -> i32 {
-    let Some(mutex) = acquire_instance() else {
+    if acquire_instance().is_none() {
         show_running();
         return 0;
-    };
-    if installer::is_running_installed() {
-        return run_interactive();
     }
-    let installed = installer::installed_exe().exists();
-    if installed {
-        // Another copy (Downloads, a build folder) was started: update the installed one if this one is
-        // newer, then hand over to it.
-        if newer_than_installed() {
-            if let Err(e) = installer::install(installer::autostart_enabled()) {
-                log(&format!("update of the installed copy failed: {e}"));
-            }
-        }
-        // SAFETY: releasing our own handle so the launched copy can take the mutex.
-        unsafe { CloseHandle(mutex) };
-        if spawn(&installer::installed_exe(), "") {
-            return 0;
-        }
-        message_box("Couldn't start the installed copy of Spectrum.", true);
-        return 1;
-    }
-    match install_window::run() {
-        InstallChoice::Install { autostart } => match installer::install(autostart) {
-            Ok(exe) => {
-                // SAFETY: releasing our own handle so the installed copy can take the mutex.
-                unsafe { CloseHandle(mutex) };
-                if spawn(&exe, "") {
-                    0
-                } else {
-                    message_box(
-                        "Installed, but couldn't start Spectrum. Start it from the Start menu.",
-                        true,
-                    );
-                    1
-                }
-            }
-            Err(e) => {
-                log(&format!("install failed: {e}"));
-                message_box(&e, true);
-                1
-            }
-        },
-        InstallChoice::JustRun => run_interactive(),
-        InstallChoice::Cancel => 0,
-    }
+    run_interactive()
 }
 
 fn run_tray() -> i32 {
@@ -266,22 +156,18 @@ fn run_tray() -> i32 {
     app::run_tray()
 }
 
-/// Order matters: profiles and associations first, then the registry and shortcut, then the message.
-/// The folder removal starts last, so its delay begins after the box is dismissed.
-fn uninstall(quiet: bool) -> i32 {
-    debug::stop_running(3000);
+/// `--cleanup`: the uninstaller's step. Stops a running copy first so it can't re-associate anything, then
+/// removes associations and profiles (SDR and HDR), the Startup shortcut and `%APPDATA%\Spectrum`.
+fn cleanup() -> i32 {
+    debug::stop_running(5000);
     app::remove_all_profiles();
-    installer::remove_entries();
-    if !quiet {
-        message_box("Uninstalled Spectrum.", false);
-    }
-    if let Err(e) = installer::schedule_dir_removal() {
-        log(&format!("uninstall: {e}"));
-        if !quiet {
-            message_box(&e, true);
-        }
-        return 1;
-    }
+    let _ = autostart::set_autostart(false);
+    0
+}
+
+/// `--quit`: asks a running instance to exit and waits up to 5 s.
+fn quit() -> i32 {
+    debug::stop_running(5000);
     0
 }
 
@@ -307,8 +193,8 @@ fn main() {
     let code = match args.command {
         Command::Default => run_default(),
         Command::Tray => run_tray(),
-        Command::Uninstall => uninstall(args.quiet),
-        Command::FinishUninstall(dir, pid) => installer::finish_uninstall(Path::new(&dir), pid),
+        Command::Cleanup => cleanup(),
+        Command::Quit => quit(),
         Command::DebugDump { json } => {
             debug::dump(json, out);
             0
@@ -329,7 +215,6 @@ fn main() {
         Command::DebugHdr(n, v) => debug::apply_hdr(&n, &v, out),
         Command::DebugHdrReset(n) => debug::reset_hdr(&n, out),
         Command::DebugHdrToggle(n, v) => debug::toggle_hdr(&n, &v, out),
-        Command::DebugInstall => debug::install(out),
         Command::DebugAutostart(v) => debug::autostart(&v, out),
         Command::DebugOpen(what) => debug_open(format!("open {what}")),
         Command::DebugTrayCmd(id) => debug_open(format!("tray-cmd {id}")),
@@ -345,16 +230,40 @@ fn main() {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use std::time::Duration;
+
+    fn parse(a: &[&str]) -> Args {
+        parse_args(a.iter().map(|s| s.to_string()))
+    }
 
     #[test]
-    fn only_a_newer_exe_updates_the_install() {
-        let old = SystemTime::UNIX_EPOCH + Duration::from_secs(1000);
-        let new = old + Duration::from_secs(60);
-        assert!(is_newer(Some(new), Some(old)));
-        assert!(!is_newer(Some(old), Some(new)));
-        assert!(!is_newer(Some(old), Some(old)));
-        assert!(!is_newer(None, Some(old)));
-        assert!(!is_newer(Some(new), None));
+    fn plain_launch_runs_the_app() {
+        assert_eq!(parse(&[]).command, Command::Default);
+        assert_eq!(parse(&["--tray"]).command, Command::Tray);
+    }
+
+    #[test]
+    fn cleanup_and_quit_switches() {
+        assert_eq!(parse(&["--cleanup"]).command, Command::Cleanup);
+        assert_eq!(parse(&["--quit"]).command, Command::Quit);
+    }
+
+    #[test]
+    fn removed_install_switches_are_ignored() {
+        for sw in [
+            "--uninstall",
+            "--finish-uninstall",
+            "--debug-install",
+            "--install",
+        ] {
+            assert_eq!(parse(&[sw]).command, Command::Default, "{sw}");
+        }
+    }
+
+    #[test]
+    fn debug_dump_wins_and_keeps_json() {
+        assert_eq!(
+            parse(&["--cleanup", "--debug-dump", "--json"]).command,
+            Command::DebugDump { json: true }
+        );
     }
 }

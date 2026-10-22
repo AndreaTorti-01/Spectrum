@@ -45,3 +45,21 @@ jobs:
           name: Spectrum-exe
           path: target/release/Spectrum.exe
           if-no-files-found: error
+
+      - name: Build the installer
+        shell: pwsh
+        run: |
+          $iscc = "C:\Program Files (x86)\Inno Setup 6\iscc.exe"
+          if (-not (Test-Path $iscc)) {
+            choco install innosetup -y --no-progress
+            $iscc = "C:\Program Files (x86)\Inno Setup 6\iscc.exe"
+          }
+          & $iscc installer\spectrum.iss
+          if ($LASTEXITCODE -ne 0) { throw "iscc failed with exit code $LASTEXITCODE" }
+
+      - name: Upload SpectrumSetup.exe
+        uses: actions/upload-artifact@v4
+        with:
+          name: SpectrumSetup-exe
+          path: target/installer/SpectrumSetup.exe
+          if-no-files-found: error
