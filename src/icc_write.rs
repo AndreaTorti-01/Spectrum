@@ -15,8 +15,8 @@ pub struct HdrParams {
 }
 
 /// `cprt` text of the Windows HDR Calibration app, reproduced verbatim so the profile bytes match its output.
-const HDR_CPRT: &str = "Copyright (C) Microsoft Corporation.";
-const SDR_CPRT: &str = "Created by Spectrum \u{2014} MIT licensed";
+const HDR_CPRT: &str = "Created by Spectrum (MIT license)";
+const SDR_CPRT: &str = "Created by Spectrum (MIT license)";
 /// The app's private-use `MSCA` text tag, which marks the colorants as raw (not D50-adapted) D65 values.
 const HDR_MSCA: &str = "{'Appversion':'1.0.152.0','D65Adapted':True}";
 
@@ -358,7 +358,7 @@ pub fn build_hdr_profile(desc: &str, prims: &Primaries, p: &HdrParams) -> Vec<u8
         cmm: *b"SICC",
         attributes: 1, // transparency
         intent: 1,     // relative colorimetric
-        creator: *b"MSFT",
+        creator: *b"SPCT",
     };
     assemble(&header, &tags, &blobs)
 }

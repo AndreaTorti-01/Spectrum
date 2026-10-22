@@ -768,129 +768,19 @@ impl Gamut {
 }
 
 // ---------------------------------------------------------------------------------------------
-// Math (real `color` module; small local fallback while a mock provider is installed because the
-// color functions may not be implemented yet in preview builds)
+// Math: thin wrappers over `crate::color`
 // ---------------------------------------------------------------------------------------------
 
 fn xy_rgb8(x: f64, y: f64) -> [u8; 3] {
-    if super::is_mock() {
-        fallback::xy_rgb8(x, y)
-    } else {
-        color::xyz_to_srgb8(color::xy_to_xyz(Xy { x, y }, 1.0))
-    }
+    color::xyz_to_srgb8(color::xy_to_xyz(Xy { x, y }, 1.0))
 }
 
 fn math_coverage(a: &Primaries, r: &Primaries) -> f64 {
-    if super::is_mock() {
-        fallback::coverage(a, r)
-    } else {
-        color::coverage(a, r)
-    }
+    color::coverage(a, r)
 }
 
 fn math_iou(a: &Primaries, b: &Primaries) -> f64 {
-    if super::is_mock() {
-        fallback::iou(a, b)
-    } else {
-        color::iou(a, b)
-    }
-}
-
-mod fallback {
-    use super::{Primaries, Xy};
-
-    pub fn xy_rgb8(x: f64, y: f64) -> [u8; 3] {
-        let (xx, yy, zz) = (x / y, 1.0, (1.0 - x - y) / y);
-        let lin = [
-            3.2406 * xx - 1.5372 * yy - 0.4986 * zz,
-            -0.9689 * xx + 1.8758 * yy + 0.0415 * zz,
-            0.0557 * xx - 0.2040 * yy + 1.0570 * zz,
-        ];
-        let m = lin.iter().cloned().fold(1e-9, f64::max);
-        lin.map(|v| {
-            let v = (v.max(0.0) / m).clamp(0.0, 1.0);
-            let e = if v <= 0.0031308 {
-                12.92 * v
-            } else {
-                1.055 * v.powf(1.0 / 2.4) - 0.055
-            };
-            (e * 255.0).round() as u8
-        })
-    }
-
-    fn tri(p: &Primaries) -> Vec<Xy> {
-        vec![p.r, p.g, p.b]
-    }
-
-    fn area(p: &[Xy]) -> f64 {
-        let mut a = 0.0;
-        for i in 0..p.len() {
-            let (u, v) = (p[i], p[(i + 1) % p.len()]);
-            a += u.x * v.y - v.x * u.y;
-        }
-        a.abs() / 2.0
-    }
-
-    fn clip(subject: &[Xy], clipper: &[Xy]) -> Vec<Xy> {
-        // orientation of clipper
-        let mut s = 0.0;
-        for i in 0..clipper.len() {
-            let (u, v) = (clipper[i], clipper[(i + 1) % clipper.len()]);
-            s += u.x * v.y - v.x * u.y;
-        }
-        let sign = if s >= 0.0 { 1.0 } else { -1.0 };
-        let mut out = subject.to_vec();
-        for i in 0..clipper.len() {
-            let (a, b) = (clipper[i], clipper[(i + 1) % clipper.len()]);
-            let inside = |p: Xy| sign * ((b.x - a.x) * (p.y - a.y) - (b.y - a.y) * (p.x - a.x)) >= 0.0;
-            let input = std::mem::take(&mut out);
-            for j in 0..input.len() {
-                let (p, q) = (input[j], input[(j + 1) % input.len()]);
-                let isect = || {
-                    let (dx, dy) = (q.x - p.x, q.y - p.y);
-                    let (ex, ey) = (b.x - a.x, b.y - a.y);
-                    let den = dx * ey - dy * ex;
-                    let t = if den.abs() < 1e-12 {
-                        0.0
-                    } else {
-                        ((a.x - p.x) * ey - (a.y - p.y) * ex) / den
-                    };
-                    Xy {
-                        x: p.x + t * dx,
-                        y: p.y + t * dy,
-                    }
-                };
-                match (inside(p), inside(q)) {
-                    (true, true) => out.push(q),
-                    (true, false) => out.push(isect()),
-                    (false, true) => {
-                        out.push(isect());
-                        out.push(q);
-                    }
-                    _ => {}
-                }
-            }
-            if out.is_empty() {
-                break;
-            }
-        }
-        out
-    }
-
-    pub fn coverage(a: &Primaries, r: &Primaries) -> f64 {
-        let i = clip(&tri(a), &tri(r));
-        if i.len() < 3 {
-            0.0
-        } else {
-            (area(&i) / area(&tri(r))).min(1.0)
-        }
-    }
-
-    pub fn iou(a: &Primaries, b: &Primaries) -> f64 {
-        let i = clip(&tri(a), &tri(b));
-        let inter = if i.len() < 3 { 0.0 } else { area(&i) };
-        inter / (area(&tri(a)) + area(&tri(b)) - inter).max(1e-12)
-    }
+    color::iou(a, b)
 }
 
 /// Fills the horseshoe once: ARGB pixels (alpha 0xFF inside the locus, 0 outside), colors dimmed to 55 %.
@@ -932,6 +822,16 @@ fn build_horseshoe(w: i32, h: i32) -> Option<Dib> {
 // ---------------------------------------------------------------------------------------------
 // Public API
 // ---------------------------------------------------------------------------------------------
+
+/// The window handle (null when closed).
+pub fn hwnd() -> HWND {
+    HWND_CELL.with(|c| c.get()) as HWND
+}
+
+/// True while the window exists.
+pub fn is_open() -> bool {
+    !(HWND_CELL.with(|c| c.get()) as HWND).is_null()
+}
 
 pub fn open(selected_monitor_profile: Option<String>) {
     let existing = HWND_CELL.with(|c| c.get()) as HWND;
@@ -1249,17 +1149,6 @@ fn _unused(_: Theme) {}
 #[cfg(test)]
 mod tests {
     use super::*;
-
-    #[test]
-    fn fallback_coverage_is_sane() {
-        let s = &STANDARD_SPACES;
-        assert!((fallback::coverage(&s[0].prims, &s[0].prims) - 1.0).abs() < 1e-9);
-        // P3 covers all of sRGB; sRGB covers well under all of P3
-        assert!(fallback::coverage(&s[1].prims, &s[0].prims) > 0.99);
-        let c = fallback::coverage(&s[0].prims, &s[1].prims);
-        assert!(c > 0.6 && c < 0.8, "{c}");
-        assert!(fallback::iou(&s[0].prims, &s[1].prims) < 1.0);
-    }
 
     #[test]
     fn shortens_names() {

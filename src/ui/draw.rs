@@ -41,8 +41,8 @@ static FORCED: AtomicU8 = AtomicU8::new(0);
 /// -1 = unknown, 0 = light, 1 = dark.
 static SYSTEM_DARK: AtomicI8 = AtomicI8::new(-1);
 
-/// WM_MOUSELEAVE (lives in the Controls feature, which this crate does not enable).
-pub const WM_MOUSELEAVE: u32 = 675;
+/// WM_MOUSELEAVE, re-exported for the UI modules.
+pub use windows_sys::Win32::UI::Controls::WM_MOUSELEAVE;
 
 pub const DEFAULT_ACCENT: u32 = 0xFF5A3C;
 
