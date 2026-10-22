@@ -1,13 +1,34 @@
-// Joins screenshots-raw/demo-{light,dark}/frame-*.png into docs/demo-light.webp and docs/demo-dark.webp
-// (animated WebP, 100 ms per frame, loop forever, at most 2 MB each). Run: npm run demo
+// Joins screenshots-raw/demo-{light,dark}/frame-*.png (recorded at 10 fps by scripts/capture.ps1 -Demo) into
+// docs/demo-light.webp and docs/demo-dark.webp: animated, looping forever, 100 ms per frame, with runs of
+// identical frames (the holds) merged into one frame with a longer delay. At most 2 MB each. Run: npm run demo
 import sharp from "sharp";
 import { mkdirSync, readdirSync, statSync } from "node:fs";
 import { join } from "node:path";
 import { repoRoot } from "./lib.mjs";
 
 const MAX = 2 * 1024 * 1024;
+const FRAME_MS = 100;
 const outDir = join(repoRoot, "docs");
 mkdirSync(outDir, { recursive: true });
+
+/** Pixels that differ by more than this (any channel) count as a change between two frames. */
+const PIXEL_TOLERANCE = 6;
+/** Frames with at most this many changed pixels are the same picture. */
+const SAME_PIXELS = 12;
+
+function changed(a, b) {
+  let n = 0;
+  for (let i = 0; i < a.length; i += 3) {
+    if (
+      Math.abs(a[i] - b[i]) > PIXEL_TOLERANCE ||
+      Math.abs(a[i + 1] - b[i + 1]) > PIXEL_TOLERANCE ||
+      Math.abs(a[i + 2] - b[i + 2]) > PIXEL_TOLERANCE
+    ) {
+      if (++n > SAME_PIXELS) break;
+    }
+  }
+  return n;
+}
 
 async function build(theme) {
   const dir = join(repoRoot, "screenshots-raw", `demo-${theme}`);
@@ -18,40 +39,38 @@ async function build(theme) {
   if (!files.length) throw new Error(`no frames in ${dir}`);
   const out = join(outDir, `demo-${theme}.webp`);
 
-  // The capture region is larger than the app: crop every frame to the union of what changes from the backdrop.
-  const meta = await sharp(files[0]).metadata();
-  let box = { l: meta.width, t: meta.height, r: 0, b: 0 };
+  // Merge each run of identical frames into the first one of the run, with a longer delay.
+  const kept = [];
+  const delays = [];
+  let prev = null;
   for (const f of files) {
-    const { info } = await sharp(f).trim({ threshold: 12 }).toBuffer({ resolveWithObject: true });
-    const l = -(info.trimOffsetLeft ?? 0);
-    const t = -(info.trimOffsetTop ?? 0);
-    box = { l: Math.min(box.l, l), t: Math.min(box.t, t), r: Math.max(box.r, l + info.width), b: Math.max(box.b, t + info.height) };
+    const raw = await sharp(f).removeAlpha().raw().toBuffer();
+    if (prev && changed(prev, raw) <= SAME_PIXELS) {
+      delays[delays.length - 1] += FRAME_MS;
+    } else {
+      kept.push(f);
+      delays.push(FRAME_MS);
+      prev = raw;
+    }
   }
-  const pad = 24;
-  const crop = {
-    left: Math.max(0, box.l - pad),
-    top: Math.max(0, box.t - pad),
-  };
-  crop.width = Math.min(meta.width, box.r + pad) - crop.left;
-  crop.height = Math.min(meta.height, box.b + pad) - crop.top;
-  console.log(theme, "crop", JSON.stringify(crop));
+  const meta = await sharp(files[0]).metadata();
+  console.log(theme, `${files.length} frames recorded, ${kept.length} distinct, ${meta.width}x${meta.height}`, `holds: ${delays.filter((d) => d > FRAME_MS).join(", ")} ms`);
 
-  // Attempts, in order: full rate at 1000 px, then smaller, then every other frame (200 ms per frame keeps the pace).
+  // Attempts, in order: lossless at native size (the UI is flat color and text, and the lossy encoder
+  // leaves ghosts between frames), then lossy at decreasing quality, then smaller.
   const attempts = [
-    { width: 1000, step: 1, quality: 80 },
-    { width: 900, step: 1, quality: 78 },
-    { width: 800, step: 1, quality: 76 },
-    { width: 800, step: 2, quality: 78 },
-    { width: 700, step: 2, quality: 74 },
+    { width: meta.width, lossless: true },
+    { width: meta.width, quality: 92 },
+    { width: meta.width, quality: 80 },
+    { width: Math.round(meta.width * 0.85), quality: 75 },
   ];
   for (const a of attempts) {
-    const picked = files.filter((_, i) => i % a.step === 0);
-    const frames = await Promise.all(picked.map((f) => sharp(f).extract(crop).resize({ width: Math.min(a.width, crop.width) }).png().toBuffer()));
+    const frames = await Promise.all(kept.map((f) => sharp(f).resize({ width: a.width }).png().toBuffer()));
     await sharp(frames, { join: { animated: true } })
-      .webp({ quality: a.quality, effort: 5, delay: 100 * a.step, loop: 0, smartSubsample: true })
+      .webp({ lossless: a.lossless ?? false, quality: a.quality ?? 100, effort: 5, delay: delays, loop: 0 })
       .toFile(out);
     const size = statSync(out).size;
-    console.log(theme, `${picked.length} frames`, `${a.width}px`, `${(size / 1024).toFixed(0)} KB`);
+    console.log(theme, `${a.width}px`, a.lossless ? "lossless" : `q${a.quality}`, `${(size / 1024).toFixed(0)} KB`);
     if (size <= MAX) return;
   }
   throw new Error(`${theme} demo is still over 2 MB`);

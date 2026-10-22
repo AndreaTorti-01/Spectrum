@@ -93,6 +93,8 @@ struct Main {
 thread_local! {
     static MAIN: RefCell<Option<Main>> = const { RefCell::new(None) };
     static HWND_CELL: Cell<isize> = const { Cell::new(0) };
+    /// Where the next `open` puts the window's top-left corner (screenshots); `None` centers it.
+    static OPEN_AT: Cell<Option<(i32, i32)>> = const { Cell::new(None) };
 }
 
 fn with<T>(f: impl FnOnce(&mut Main) -> T) -> Option<T> {
@@ -636,6 +638,13 @@ fn tile_rects(mons: &[UiMonitor], area: R, dpi: u32) -> Vec<R> {
 // Public API
 // ---------------------------------------------------------------------------------------------
 
+/// Opens the window with its top-left corner at (x, y) in screen pixels (screenshots).
+pub fn open_at(x: i32, y: i32) {
+    OPEN_AT.with(|c| c.set(Some((x, y))));
+    open();
+    OPEN_AT.with(|c| c.set(None));
+}
+
 pub fn open() {
     if is_open() {
         let hwnd = hwnd();
@@ -697,8 +706,10 @@ pub fn open() {
         AdjustWindowRectExForDpi(&mut r, style, 0, 0, super::draw::frame_dpi(dpi));
         SystemParametersInfoW(SPI_GETWORKAREA, 0, &mut wa as *mut RECT as *mut _, 0);
         let (w, h) = (r.right - r.left, r.bottom - r.top);
-        let x = wa.left + ((wa.right - wa.left) - w) / 2;
-        let y = wa.top + ((wa.bottom - wa.top) - h) / 2;
+        let (x, y) = OPEN_AT.with(|c| c.get()).unwrap_or((
+            wa.left + ((wa.right - wa.left) - w) / 2,
+            wa.top + ((wa.bottom - wa.top) - h) / 2,
+        ));
         let cls = wide(CLASS);
         let title = wide("Spectrum");
         let hwnd = CreateWindowExW(
@@ -775,6 +786,23 @@ pub fn demo_set_peak(nits: f64) {
         m.full = m.full.min(m.peak);
         m.invalidate();
     });
+}
+
+/// Demo hook: screen position of the peak slider's thumb when it shows `nits`.
+pub fn demo_peak_thumb(nits: f64) -> Option<(i32, i32)> {
+    with(|m| {
+        let r = m.ui.get(Id::Peak)?.rect;
+        let (a, b) = widgets::slider_span(r, m.dpi);
+        let x = a + (b - a) * peak_scale().to_t(nits) as f32;
+        let mut p = POINT {
+            x: x.round() as i32,
+            y: r.cy().round() as i32,
+        };
+        // SAFETY: valid window handle and POINT.
+        unsafe { windows_sys::Win32::Graphics::Gdi::ClientToScreen(m.hwnd, &mut p) };
+        Some((p.x, p.y))
+    })
+    .flatten()
 }
 
 pub fn hwnd() -> HWND {

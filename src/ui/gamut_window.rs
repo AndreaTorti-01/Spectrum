@@ -191,7 +191,8 @@ thread_local! {
 }
 
 /// Opens the window with the monitor's EDID-derived profile, sRGB and Display P3 ticked (screenshots).
-pub fn open_showcase(file: String, label: String, prims: Option<Primaries>) {
+/// `mon` is the 0-based monitor index whose associations tag the profiles.
+pub fn open_showcase(file: String, label: String, prims: Option<Primaries>, mon: usize) {
     SHOWCASE.with(|s| {
         *s.borrow_mut() = Some(Showcase {
             file: file.clone(),
@@ -199,11 +200,11 @@ pub fn open_showcase(file: String, label: String, prims: Option<Primaries>) {
             prims,
         })
     });
-    open(Some(file));
+    open(Some(file), mon);
     SHOWCASE.with(|s| *s.borrow_mut() = None);
 }
 
-fn build_entries(selected_file: Option<&str>) -> (Vec<Entry>, Option<usize>) {
+fn build_entries(selected_file: Option<&str>, mon: usize) -> (Vec<Entry>, Option<usize>) {
     let mut entries: Vec<Entry> = STANDARD_SPACES
         .iter()
         .map(|s| Entry {
@@ -227,7 +228,7 @@ fn build_entries(selected_file: Option<&str>) -> (Vec<Entry>, Option<usize>) {
     let mut profiles = if super::is_mock() && showcase.is_none() {
         mock_profiles()
     } else {
-        installed_profiles()
+        installed_profiles(mon)
     };
     // Spectrum's EDID profile, then SDR-associated, then other plottable, then HDR, then not plottable.
     profiles.sort_by_key(|p| {
@@ -292,10 +293,10 @@ fn build_entries(selected_file: Option<&str>) -> (Vec<Entry>, Option<usize>) {
     (entries, monitor_entry)
 }
 
-/// (file, name, primaries when matrix/TRC, tag)
-fn installed_profiles() -> Vec<(String, String, Option<Primaries>, String)> {
+/// (file, name, primaries when matrix/TRC, tag). Tags follow the associations of monitor `mon_idx` (0-based).
+fn installed_profiles(mon_idx: usize) -> Vec<(String, String, Option<Primaries>, String)> {
     let mut out = Vec::new();
-    let mon = crate::app::current_monitors().into_iter().next();
+    let mon = crate::app::current_monitors().into_iter().nth(mon_idx);
     let assoc = |hdr: bool| {
         mon.as_ref()
             .and_then(|m| crate::wcs::associated(m, hdr).ok())
@@ -1148,7 +1149,9 @@ pub fn is_open() -> bool {
     !(HWND_CELL.with(|c| c.get()) as HWND).is_null()
 }
 
-pub fn open(selected_monitor_profile: Option<String>) {
+/// `mon` is the 0-based index of the monitor selected in the main window: its SDR and HDR associations
+/// decide which profiles are tagged SDR and HDR.
+pub fn open(selected_monitor_profile: Option<String>, mon: usize) {
     let existing = HWND_CELL.with(|c| c.get()) as HWND;
     if !existing.is_null() {
         // SAFETY: valid window handle.
@@ -1162,7 +1165,7 @@ pub fn open(selected_monitor_profile: Option<String>) {
     }
     register_class();
     let dpi = system_dpi();
-    let (entries, monitor_entry) = build_entries(selected_monitor_profile.as_deref());
+    let (entries, monitor_entry) = build_entries(selected_monitor_profile.as_deref(), mon);
     let selected = monitor_entry.or(Some(0));
     let mut g = Gamut {
         hwnd: std::ptr::null_mut(),

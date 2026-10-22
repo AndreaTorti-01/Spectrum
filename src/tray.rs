@@ -29,6 +29,16 @@ const ID_SDR_BASE: u32 = 1000;
 /// Menu items per monitor are limited so ids stay decodable.
 const MAX_PER_MONITOR: usize = 99;
 
+thread_local! {
+    /// Screen point the next menu is anchored at, instead of the cursor (screenshots).
+    static ANCHOR: std::cell::Cell<Option<(i32, i32)>> = const { std::cell::Cell::new(None) };
+}
+
+/// Makes the next menus open with their bottom-left corner at `p` instead of at the cursor.
+pub fn set_menu_anchor(p: Option<(i32, i32)>) {
+    ANCHOR.with(|a| a.set(p));
+}
+
 /// The HICON currently owned by the tray entry (0 = none).
 static ICON: AtomicIsize = AtomicIsize::new(0);
 
@@ -244,6 +254,9 @@ pub fn show_menu(hwnd: HWND, monitors: &[MenuMonitor]) -> Option<TrayCmd> {
 
         let mut pt = POINT { x: 0, y: 0 };
         GetCursorPos(&mut pt);
+        if let Some((x, y)) = ANCHOR.with(|a| a.get()) {
+            pt = POINT { x, y };
+        }
         SetForegroundWindow(hwnd);
         let id = TrackPopupMenu(
             menu,

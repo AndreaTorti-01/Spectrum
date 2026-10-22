@@ -234,7 +234,7 @@ fn main() {
         }
         "gamut" => {
             ui::set_mock(Some(mock_state(&args)));
-            ui::gamut_window::open(Some("Spectrum MAG 271QPX E2 EDID.icm".into()));
+            ui::gamut_window::open(Some("Spectrum MAG 271QPX E2 EDID.icm".into()), 0);
             pump(secs, || !gamut_open());
         }
         "overlay" | "identify" => {

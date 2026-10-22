@@ -9,27 +9,31 @@ use crate::color::Primaries;
 use crate::config::Config;
 use crate::icc_write::HdrParams;
 use crate::monitors::Monitor;
+use crate::tray;
 use crate::ui;
 use crate::util::wide;
 use crate::wcs;
-use std::cell::Cell;
+use std::cell::{Cell, RefCell};
 use std::fmt::Write as _;
 use std::io::Write as _;
 use std::path::Path;
 use std::time::Instant;
-use windows_sys::Win32::Foundation::{HWND, INVALID_HANDLE_VALUE};
-use windows_sys::Win32::Graphics::Gdi::CreateSolidBrush;
+use windows_sys::Win32::Foundation::{HWND, INVALID_HANDLE_VALUE, RECT};
+use windows_sys::Win32::Graphics::Dwm::DwmGetWindowAttribute;
+use windows_sys::Win32::Graphics::Gdi::{CreateSolidBrush, InvalidateRect, UpdateWindow};
 use windows_sys::Win32::System::Console::{
     AttachConsole, GetStdHandle, ATTACH_PARENT_PROCESS, STD_OUTPUT_HANDLE,
 };
 use windows_sys::Win32::System::DataExchange::COPYDATASTRUCT;
 use windows_sys::Win32::System::LibraryLoader::GetModuleHandleW;
+use windows_sys::Win32::UI::Input::KeyboardAndMouse::keybd_event;
 use windows_sys::Win32::UI::WindowsAndMessaging::{
-    CreateWindowExW, DefWindowProcW, DestroyWindow, DispatchMessageW, EndMenu, FindWindowW, GetMessageW,
-    PostMessageW, PostQuitMessage, RegisterClassExW, SendMessageW, SetTimer, SetWindowPos,
-    SystemParametersInfoW, TranslateMessage, HWND_TOPMOST, MSG, SPI_GETWORKAREA, SWP_NOACTIVATE,
-    SWP_SHOWWINDOW, WM_CLOSE, WM_COPYDATA, WM_DESTROY, WNDCLASSEXW, WS_EX_NOACTIVATE, WS_EX_TOOLWINDOW,
-    WS_POPUP,
+    CheckMenuRadioItem, CreateWindowExW, DefWindowProcW, DestroyWindow, DispatchMessageW, EndMenu,
+    FindWindowW, GetMenuItemCount, GetMenuItemRect, GetMessageW, GetWindowRect, PostMessageW,
+    PostQuitMessage, RegisterClassExW, SendMessageW, SetCursorPos, SetForegroundWindow, SetTimer,
+    SetWindowPos, SystemParametersInfoW, TranslateMessage, HMENU, HWND_TOPMOST, MF_BYPOSITION, MSG,
+    SPI_GETWORKAREA, SWP_NOACTIVATE, SWP_SHOWWINDOW, WM_CLOSE, WM_COPYDATA, WM_DESTROY, WM_PAINT,
+    WNDCLASSEXW, WS_EX_NOACTIVATE, WS_EX_TOOLWINDOW, WS_POPUP,
 };
 
 // ---------------------------------------------------------------------------------------------
@@ -736,8 +740,77 @@ pub fn stop_running(ms: u64) {
 // Screenshot backdrop
 // ---------------------------------------------------------------------------------------------
 
+/// `WM_COPYDATA` marker of the demo's message to the stage: six `i32`: mock taskbar x, y, w, h (screen
+/// pixels), tray icon center x, hover (0 or 1).
+const STAGE_MAGIC: usize = 0x5350_4254;
+
+/// Mock taskbar the stage draws, in screen pixels.
+#[derive(Clone, Copy)]
+struct StageBar {
+    x: i32,
+    y: i32,
+    w: i32,
+    h: i32,
+    icon_cx: i32,
+    hover: bool,
+}
+
+thread_local! {
+    static STAGE_BAR: Cell<Option<StageBar>> = const { Cell::new(None) };
+    /// Stage window origin (screen) and background color (RGB).
+    static STAGE_GEO: Cell<(i32, i32, u32)> = const { Cell::new((0, 0, 0)) };
+}
+
+fn paint_stage(hwnd: HWND) {
+    use windows_sys::Win32::Graphics::Gdi::{BeginPaint, EndPaint, PAINTSTRUCT};
+    // SAFETY: standard paint cycle on this window.
+    unsafe {
+        let mut ps: PAINTSTRUCT = std::mem::zeroed();
+        let dc = BeginPaint(hwnd, &mut ps);
+        if let Some(b) = STAGE_BAR.with(|c| c.get()) {
+            let (ox, oy, bg) = STAGE_GEO.with(|g| g.get());
+            let th = ui::draw::theme();
+            if let Some(mut cv) = ui::draw::Canvas::new(b.w, b.h) {
+                cv.clear(bg);
+                ui::mockbar::paint(&mut cv, &th, ui::draw::system_dpi(), b.icon_cx - b.x, b.hover);
+                cv.present(dc, b.x - ox, b.y - oy);
+            }
+        }
+        EndPaint(hwnd, &ps);
+    }
+}
+
 unsafe extern "system" fn stage_proc(hwnd: HWND, msg: u32, wp: usize, lp: isize) -> isize {
     match msg {
+        WM_PAINT => {
+            paint_stage(hwnd);
+            0
+        }
+        WM_COPYDATA => {
+            let cds = &*(lp as *const COPYDATASTRUCT);
+            if cds.dwData == STAGE_MAGIC && cds.cbData as usize == 6 * 4 && !cds.lpData.is_null() {
+                let v = std::slice::from_raw_parts(cds.lpData as *const i32, 6);
+                let bar = StageBar {
+                    x: v[0],
+                    y: v[1],
+                    w: v[2],
+                    h: v[3],
+                    icon_cx: v[4],
+                    hover: v[5] != 0,
+                };
+                STAGE_BAR.with(|c| c.set(Some(bar)));
+                let (ox, oy, _) = STAGE_GEO.with(|g| g.get());
+                let r = RECT {
+                    left: bar.x - ox,
+                    top: bar.y - oy,
+                    right: bar.x - ox + bar.w,
+                    bottom: bar.y - oy + bar.h,
+                };
+                InvalidateRect(hwnd, &r, 0);
+                UpdateWindow(hwnd);
+            }
+            1
+        }
         WM_CLOSE => {
             DestroyWindow(hwnd);
             0
@@ -752,17 +825,16 @@ unsafe extern "system" fn stage_proc(hwnd: HWND, msg: u32, wp: usize, lp: isize)
 
 /// `--debug-stage light|dark`: a borderless solid-color window over the primary work area, so screenshots
 /// of Spectrum's windows never pick up the desktop or other windows around them. Runs until closed.
+/// The demo may ask it to draw a mock taskbar segment (see `ui::mockbar`).
 ///
 /// It is topmost (so no other window, such as the terminal that launched it, can come in front and end up in
 /// a capture) and does not take focus. While it exists, `app::raise` keeps the surfaces topmost too, and as
 /// they are raised after it, they sit above it.
 pub fn stage(theme: &str) -> i32 {
     // COLORREF is 0x00BBGGRR: these are 0xE9E6E1 and 0x202020 as RGB.
-    let color: u32 = if theme.eq_ignore_ascii_case("dark") {
-        0x0020_2020
-    } else {
-        0x00E1_E6E9
-    };
+    let dark = theme.eq_ignore_ascii_case("dark");
+    ui::draw::set_forced_theme(Some(dark));
+    let color: u32 = if dark { 0x0020_2020 } else { 0x00E1_E6E9 };
     let mut wa = windows_sys::Win32::Foundation::RECT {
         left: 0,
         top: 0,
@@ -773,6 +845,8 @@ pub fn stage(theme: &str) -> i32 {
     // SAFETY: class data and the brush outlive the window; the window belongs to this thread.
     unsafe {
         SystemParametersInfoW(SPI_GETWORKAREA, 0, &mut wa as *mut _ as *mut _, 0);
+        let rgb = if dark { 0x202020 } else { 0xE9E6E1 };
+        STAGE_GEO.with(|g| g.set((wa.left, wa.top, rgb)));
         let hinst = GetModuleHandleW(std::ptr::null());
         let mut wc: WNDCLASSEXW = std::mem::zeroed();
         wc.cbSize = std::mem::size_of::<WNDCLASSEXW>() as u32;
@@ -819,20 +893,73 @@ pub fn stage(theme: &str) -> i32 {
 // ---------------------------------------------------------------------------------------------
 // Scripted demo (README frames, about 8 s)
 // ---------------------------------------------------------------------------------------------
+//
+// The demo is the director. It puts the main window at a fixed spot, opens the tray menu once to measure it
+// (nothing is recorded yet), then tells the stage to draw a mock taskbar under the menu and writes
+// `--out <file>` with the capture region, the rectangles and a cursor path. `scripts/capture.ps1 -Demo`
+// records the region from the start time in that file and draws a cursor sprite on the frames; the real
+// cursor stays parked far away.
 
 const DEMO_TIMER: usize = app::TIMER_DEBUG_BASE;
-const TICK_MS: u32 = 50;
+const TICK_MS: u32 = 20;
 
-const T_CLOSE_MENU: u128 = 2200;
-const T_SWITCH: u128 = 2600;
-const T_OPEN_MAIN: u128 = 3300;
-const T_SLIDE_FROM: u128 = 4000;
-const T_SLIDE_TO: u128 = 6000;
-const T_END: u128 = 7600;
+// Times in ms from the start of the recording.
+const T_MOVE_TRAY: (i64, i64) = (800, 1300);
+const T_HOVER_ON: i64 = 1300;
+const T_OPEN_MENU: i64 = 1600;
+const T_LEAVE_TRAY: (i64, i64) = (1950, 2650);
+const T_FIRST_HIGHLIGHT: i64 = 2650;
+const T_HIGHLIGHT_STEP: i64 = 250;
+const T_TO_ITEM: (i64, i64) = (2650, 3150);
+const T_RADIO: i64 = 3500;
+const T_CLOSE_MENU: i64 = 3900;
+const T_TO_SLIDER: (i64, i64) = (3950, 4450);
+const T_SLIDE: (i64, i64) = (4600, 6600);
+const T_END: i64 = 7800;
+/// Margin of stage color around the window, the menu and the taskbar (at 100% scale).
+const STAGE_MARGIN: i32 = 32;
+const PEAK_FROM: f64 = 400.0;
+const PEAK_TO: f64 = 1000.0;
+
+type Pt = (f32, f32);
+
+struct Layout {
+    main: RECT,
+    menu: RECT,
+    bar: RECT,
+    icon_cx: i32,
+    /// Cursor waypoints (screen pixels).
+    start: Pt,
+    tray: Pt,
+    outside: Pt,
+    first_item: Pt,
+    target_item: Pt,
+    /// Menu position of "Display P3" and the number of profile items before the first separator.
+    target_idx: usize,
+    profiles: usize,
+    /// Where the pointer rests on each profile item.
+    item_pts: Vec<Pt>,
+}
+
+/// What the calibration pass learned about the tray menu.
+struct MenuProbe {
+    rect: RECT,
+    items: Vec<RECT>,
+}
 
 thread_local! {
+    /// Start of the demo, and (once calibrated) the start of the recording.
     static START: Cell<Option<Instant>> = const { Cell::new(None) };
+    static T0: Cell<Option<Instant>> = const { Cell::new(None) };
     static DONE: Cell<u32> = const { Cell::new(0) };
+    static CAL: RefCell<Option<MenuProbe>> = const { RefCell::new(None) };
+    static LAYOUT: RefCell<Option<Layout>> = const { RefCell::new(None) };
+    static OUT: RefCell<Option<std::path::PathBuf>> = const { RefCell::new(None) };
+}
+
+/// `--out` target of the next demo (the layout file the capture script reads).
+pub fn set_demo_out(p: Option<std::path::PathBuf>) {
+    OUT.with(|o| *o.borrow_mut() = p);
 }
 
 /// The current state with the first monitor shown as HDR-on with tuned values. Used for screenshots only:
@@ -861,21 +988,93 @@ pub fn showcase_state() -> UiState {
 pub fn open_gamut_showcase() {
     let st = showcase_state();
     let Some((label, file)) = st.monitors.first().and_then(|m| m.sdr_options.first().cloned()) else {
-        ui::gamut_window::open(None);
+        ui::gamut_window::open(None, 0);
         return;
     };
     let prims = app::current_monitors()
         .first()
         .and_then(|m| m.edid.as_ref().map(|e| e.primaries));
-    ui::gamut_window::open_showcase(file, label, prims);
+    ui::gamut_window::open_showcase(file, label, prims, 0);
 }
 
-/// Starts the demo: tray menu, profile switch, main window, peak slider animation, exit. The windows run
-/// against a mock copy of the current state, so nothing is applied to the system.
+fn frame_rect(h: HWND) -> RECT {
+    // SAFETY: valid RECT out-pointer of the size passed.
+    unsafe {
+        let mut r: RECT = std::mem::zeroed();
+        if DwmGetWindowAttribute(
+            h,
+            9,
+            &mut r as *mut RECT as *mut _,
+            std::mem::size_of::<RECT>() as u32,
+        ) != 0
+        {
+            GetWindowRect(h, &mut r);
+        }
+        r
+    }
+}
+
+fn menu_window() -> HWND {
+    // SAFETY: plain lookup.
+    unsafe { FindWindowW(wide("#32768").as_ptr(), std::ptr::null()) }
+}
+
+/// The HMENU behind a menu window (`MN_GETHMENU`).
+fn menu_handle(win: HWND) -> HMENU {
+    // SAFETY: plain message to a menu window of this thread.
+    unsafe { SendMessageW(win, 0x1E1, 0, 0) as HMENU }
+}
+
+fn tell_stage(bar: &RECT, icon_cx: i32, hover: bool) {
+    // SAFETY: the payload outlives the synchronous SendMessage.
+    unsafe {
+        let h = FindWindowW(wide("SpectrumStage").as_ptr(), std::ptr::null());
+        if h.is_null() {
+            return;
+        }
+        let v: [i32; 6] = [
+            bar.left,
+            bar.top,
+            bar.right - bar.left,
+            bar.bottom - bar.top,
+            icon_cx,
+            hover as i32,
+        ];
+        let cds = COPYDATASTRUCT {
+            dwData: STAGE_MAGIC,
+            cbData: std::mem::size_of_val(&v) as u32,
+            lpData: v.as_ptr() as *mut _,
+        };
+        SendMessageW(h, WM_COPYDATA, 0, &cds as *const COPYDATASTRUCT as isize);
+    }
+}
+
+/// Starts the demo: the main window at a fixed spot, then a calibration pass that opens and closes the
+/// tray menu once. The windows run against a mock copy of the current state, so nothing is applied.
 pub fn start_demo(hwnd: HWND) {
-    ui::set_mock(Some(showcase_state()));
+    let mut st = showcase_state();
+    if let Some(m) = st.monitors.first_mut() {
+        m.hdr.peak_nits = PEAK_FROM;
+    }
+    ui::set_mock(Some(st));
     START.with(|s| s.set(Some(Instant::now())));
+    T0.with(|t| t.set(None));
     DONE.with(|d| d.set(0));
+    app::park_cursor_for_menu();
+    let mut wa = RECT {
+        left: 0,
+        top: 0,
+        right: 1920,
+        bottom: 1080,
+    };
+    // SAFETY: valid RECT pointer.
+    unsafe { SystemParametersInfoW(SPI_GETWORKAREA, 0, &mut wa as *mut _ as *mut _, 0) };
+    let dpi = ui::draw::system_dpi();
+    ui::main_window::open_at(wa.left + ui::draw::sc(120, dpi), wa.top + ui::draw::sc(90, dpi));
+    app::raise(ui::main_window::hwnd());
+    let main = frame_rect(ui::main_window::hwnd());
+    // The menu rises from the taskbar tray to the right of the window, its bottom edge at the window's.
+    tray::set_menu_anchor(Some((main.right + ui::draw::sc(10, dpi), main.bottom)));
     // SAFETY: valid window handle; the timer runs on this thread.
     unsafe { SetTimer(hwnd, DEMO_TIMER, TICK_MS, None) };
     app::post_command("open traymenu");
@@ -898,18 +1097,240 @@ fn switch_profile() {
     let Some(m) = st.monitors.first() else {
         return;
     };
-    let current = m
-        .sdr_current
-        .and_then(|i| m.sdr_options.get(i))
-        .map(|o| o.0.as_str());
-    let first = m.sdr_options.first().map(|o| o.0.as_str());
-    let want = if current == Some("Display P3") {
-        first.unwrap_or("sRGB")
-    } else {
-        "Display P3"
-    };
-    if let Some(idx) = m.sdr_options.iter().position(|o| o.0 == want) {
+    if let Some(idx) = m.sdr_options.iter().position(|o| o.0 == "Display P3") {
         ui::dispatch(UiAction::SetSdr { mon: 0, idx });
+    }
+}
+
+/// Gives the main window the foreground (an active title bar). A synthetic key press first, because
+/// Windows only lets a process that just received input take the foreground.
+fn activate_main() {
+    // SAFETY: plain input and window calls; F24 is not on any keyboard.
+    unsafe {
+        keybd_event(0x87, 0, 0, 0);
+        keybd_event(0x87, 0, 2, 0);
+        SetForegroundWindow(ui::main_window::hwnd());
+    }
+}
+
+fn smooth(f: f64) -> f64 {
+    let f = f.clamp(0.0, 1.0);
+    f * f * (3.0 - 2.0 * f)
+}
+
+fn lerp(a: Pt, b: Pt, f: f64) -> Pt {
+    (a.0 + (b.0 - a.0) * f as f32, a.1 + (b.1 - a.1) * f as f32)
+}
+
+/// Position at fraction `f` of the arc length of a polyline.
+fn along(pts: &[Pt], f: f64) -> Pt {
+    let len = |a: Pt, b: Pt| ((b.0 - a.0).powi(2) + (b.1 - a.1).powi(2)).sqrt() as f64;
+    let total: f64 = pts.windows(2).map(|w| len(w[0], w[1])).sum();
+    let mut left = f.clamp(0.0, 1.0) * total;
+    for w in pts.windows(2) {
+        let l = len(w[0], w[1]);
+        if left <= l || l == 0.0 {
+            return lerp(w[0], w[1], if l == 0.0 { 1.0 } else { left / l });
+        }
+        left -= l;
+    }
+    pts[pts.len() - 1]
+}
+
+fn within(t: i64, span: (i64, i64)) -> f64 {
+    smooth((t - span.0) as f64 / (span.1 - span.0) as f64)
+}
+
+fn peak_at(t: i64) -> f64 {
+    PEAK_FROM + (PEAK_TO - PEAK_FROM) * within(t, T_SLIDE)
+}
+
+fn thumb(nits: f64) -> Pt {
+    ui::main_window::demo_peak_thumb(nits)
+        .map(|(x, y)| (x as f32, y as f32))
+        .unwrap_or((0.0, 0.0))
+}
+
+/// Scripted cursor position (screen pixels) at `t` ms into the recording.
+fn cursor_at(l: &Layout, t: i64) -> Pt {
+    if t >= T_SLIDE.0 {
+        return thumb(peak_at(t));
+    }
+    if t >= T_TO_SLIDER.0 {
+        return along(&[l.target_item, thumb(PEAK_FROM)], within(t, T_TO_SLIDER));
+    }
+    if t >= T_TO_ITEM.0 {
+        return along(&[l.first_item, l.target_item], within(t, T_TO_ITEM));
+    }
+    if t >= T_LEAVE_TRAY.0 {
+        let r = (l.outside.0, l.tray.1);
+        return along(&[l.tray, r, l.outside, l.first_item], within(t, T_LEAVE_TRAY));
+    }
+    along(&[l.start, l.tray], within(t, T_MOVE_TRAY))
+}
+
+/// Calibration pass: waits for the tray menu, measures it, closes it, then plans the recording.
+fn calibrate(hwnd: HWND, el: i64) {
+    if CAL.with(|c| c.borrow().is_none()) {
+        if el > 5000 {
+            // SAFETY: valid window; WM_CLOSE exits the app.
+            unsafe { PostMessageW(hwnd, WM_CLOSE, 0, 0) };
+            return;
+        }
+        let mw = menu_window();
+        if mw.is_null() || el < 400 {
+            return;
+        }
+        let hm = menu_handle(mw);
+        let mut items = Vec::new();
+        // SAFETY: the menu belongs to this thread and stays alive until EndMenu.
+        unsafe {
+            for i in 0..GetMenuItemCount(hm).max(0) as u32 {
+                let mut r: RECT = std::mem::zeroed();
+                GetMenuItemRect(std::ptr::null_mut(), hm, i, &mut r);
+                items.push(r);
+            }
+            CAL.with(|c| {
+                *c.borrow_mut() = Some(MenuProbe {
+                    rect: frame_rect(mw),
+                    items,
+                })
+            });
+            EndMenu();
+        }
+        // Count the settle time from the moment the menu was closed.
+        START.with(|s| s.set(Some(Instant::now())));
+        return;
+    }
+    if el < 500 || !menu_window().is_null() {
+        return;
+    }
+    plan();
+}
+
+fn plan() {
+    let Some(probe) = CAL.with(|c| c.borrow_mut().take()) else {
+        return;
+    };
+    let dpi = ui::draw::system_dpi();
+    let sc = |v: i32| ui::draw::sc(v, dpi);
+    let st = ui::snapshot();
+    let Some(m) = st.monitors.first() else {
+        return;
+    };
+    let target_idx = m
+        .sdr_options
+        .iter()
+        .position(|o| o.0 == "Display P3")
+        .unwrap_or(0);
+    let profiles = m.sdr_options.len();
+    let main = frame_rect(ui::main_window::hwnd());
+    let menu = probe.rect;
+    let top = main.bottom.max(menu.bottom) + sc(24);
+    let bar = RECT {
+        left: main.left,
+        top,
+        right: menu.right.max(main.right),
+        bottom: top + sc(ui::mockbar::BAR_H),
+    };
+    let icon_cx = (menu.left + menu.right) / 2;
+    let item = |i: usize| -> Pt {
+        let r = probe.items.get(i).copied().unwrap_or(menu);
+        ((r.right - sc(40)) as f32, ((r.top + r.bottom) / 2) as f32)
+    };
+    let bar_cy = ((bar.top + bar.bottom) / 2) as f32;
+    let layout = Layout {
+        main,
+        menu,
+        bar,
+        icon_cx,
+        start: (
+            (menu.left + (menu.right - menu.left) * 3 / 5) as f32,
+            (main.top + sc(130)) as f32,
+        ),
+        tray: (icon_cx as f32, bar_cy),
+        outside: ((menu.right + sc(18)) as f32, bar_cy),
+        first_item: item(0),
+        target_item: item(target_idx),
+        target_idx,
+        profiles,
+        item_pts: (0..profiles).map(item).collect(),
+    };
+    tell_stage(&bar, icon_cx, false);
+    // Active title bar again; the clock starts 300 ms from now.
+    activate_main();
+    let lead = 300;
+    let unix = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|d| d.as_millis() as i64)
+        .unwrap_or(0)
+        + lead;
+    write_layout(&layout, unix, dpi);
+    LAYOUT.with(|l| *l.borrow_mut() = Some(layout));
+    T0.with(|t| {
+        t.set(Some(
+            Instant::now() + std::time::Duration::from_millis(lead as u64),
+        ))
+    });
+}
+
+/// The layout file: scale, start time (Unix ms), length, the capture region, the rectangles and a cursor
+/// path every 20 ms. Written to a temporary file and renamed, so the reader never sees half of it.
+fn write_layout(l: &Layout, unix_ms: i64, dpi: u32) {
+    let Some(path) = OUT.with(|o| o.borrow().clone()) else {
+        return;
+    };
+    let wh = |r: &RECT| format!("{} {} {} {}", r.left, r.top, r.right - r.left, r.bottom - r.top);
+    let m = STAGE_MARGIN * dpi as i32 / 96;
+    let region = RECT {
+        left: l.main.left.min(l.menu.left).min(l.bar.left) - m,
+        top: l.main.top.min(l.menu.top).min(l.bar.top) - m,
+        right: l.main.right.max(l.menu.right).max(l.bar.right) + m,
+        bottom: l.main.bottom.max(l.menu.bottom).max(l.bar.bottom) + m,
+    };
+    let mut o = String::new();
+    let _ = writeln!(o, "scale {:.4}", dpi as f64 / 96.0);
+    let _ = writeln!(o, "t0 {unix_ms}");
+    let _ = writeln!(o, "end {T_END}");
+    let _ = writeln!(o, "region {}", wh(&region));
+    let _ = writeln!(o, "main {}", wh(&l.main));
+    let _ = writeln!(o, "menu {}", wh(&l.menu));
+    let _ = writeln!(o, "bar {}", wh(&l.bar));
+    let mut t = 0;
+    while t <= T_END {
+        let p = cursor_at(l, t);
+        let _ = writeln!(o, "key {t} {:.1} {:.1}", p.0, p.1);
+        t += 20;
+    }
+    let tmp = path.with_extension("tmp");
+    if std::fs::write(&tmp, o).is_ok() {
+        let _ = std::fs::rename(&tmp, &path);
+    }
+}
+
+/// Highlights the next menu item the way the cursor would (the real cursor is parked far away).
+fn menu_down(p: Pt) {
+    // SAFETY: plain call.
+    unsafe { SetCursorPos(p.0 as i32, p.1 as i32) };
+}
+
+/// Moves the radio dot of the open tray menu to `idx` (mock only: nothing is applied).
+fn menu_radio(idx: usize, count: usize) {
+    let mw = menu_window();
+    if mw.is_null() {
+        return;
+    }
+    // SAFETY: the menu belongs to this thread and is alive while its window is.
+    unsafe {
+        CheckMenuRadioItem(
+            menu_handle(mw),
+            0,
+            count.saturating_sub(1) as u32,
+            idx as u32,
+            MF_BYPOSITION,
+        );
+        InvalidateRect(mw, std::ptr::null(), 1);
+        UpdateWindow(mw);
     }
 }
 
@@ -921,25 +1342,46 @@ pub fn on_timer(hwnd: HWND, id: usize) {
     let Some(start) = START.with(|s| s.get()) else {
         return;
     };
-    let t = start.elapsed().as_millis();
-    if t >= T_CLOSE_MENU && once(1) {
-        // SAFETY: ends the modal menu loop if one is running on this thread.
-        unsafe { EndMenu() };
+    let Some(t0) = T0.with(|t| t.get()) else {
+        calibrate(hwnd, start.elapsed().as_millis() as i64);
+        return;
+    };
+    let now = Instant::now();
+    if now < t0 {
+        return;
     }
-    if t >= T_SWITCH && once(2) {
-        switch_profile();
+    let t = (now - t0).as_millis() as i64;
+    LAYOUT.with(|l| {
+        let l = l.borrow();
+        let Some(l) = l.as_ref() else {
+            return;
+        };
+        if t >= T_HOVER_ON && once(1) {
+            tell_stage(&l.bar, l.icon_cx, true);
+        }
+        if t >= T_OPEN_MENU && once(2) {
+            app::post_command("open traymenu");
+        }
+        for i in 0..=l.target_idx {
+            if t >= T_FIRST_HIGHLIGHT + T_HIGHLIGHT_STEP * i as i64 && once(0x10 << i) {
+                menu_down(l.item_pts[i]);
+            }
+        }
+        if t >= T_RADIO && once(4) {
+            menu_radio(l.target_idx, l.profiles);
+        }
+        if t >= T_CLOSE_MENU && once(8) {
+            // SAFETY: ends the modal menu loop if one is running on this thread.
+            unsafe { EndMenu() };
+            tell_stage(&l.bar, l.icon_cx, false);
+            switch_profile();
+            activate_main();
+        }
+    });
+    if t >= T_SLIDE.0 && t <= T_SLIDE.1 + TICK_MS as i64 && ui::main_window::is_open() {
+        ui::main_window::demo_set_peak(peak_at(t));
     }
-    if t >= T_OPEN_MAIN && once(4) {
-        ui::main_window::open();
-        app::raise(ui::main_window::hwnd());
-        ui::main_window::demo_set_peak(400.0);
-    }
-    if t >= T_SLIDE_FROM && t <= T_SLIDE_TO + TICK_MS as u128 && ui::main_window::is_open() {
-        let f = ((t - T_SLIDE_FROM) as f64 / (T_SLIDE_TO - T_SLIDE_FROM) as f64).clamp(0.0, 1.0);
-        let ease = f * f * (3.0 - 2.0 * f);
-        ui::main_window::demo_set_peak(400.0 + 600.0 * ease);
-    }
-    if t >= T_END && once(8) {
+    if t >= T_END + 300 && once(0x8000_0000) {
         // SAFETY: valid window; WM_CLOSE exits the app.
         unsafe { PostMessageW(hwnd, WM_CLOSE, 0, 0) };
     }
