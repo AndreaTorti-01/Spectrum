@@ -61,6 +61,7 @@ npm run shots -- --reduced | --nojs | --widths 320,360 | --longtasks
 - `site/scripts/shots.mjs` has no dependencies: it starts `vite preview` if needed, launches headless Edge with `--remote-debugging-port` and talks CDP over Node's WebSocket. It emulates the viewport (the plain `msedge --headless --screenshot --window-size=390,844` call is laid out at about 500 px and captures before the page is ready, so it's a poor fit), loads `?shot=<id>&theme=<t>`, waits for fonts and `window.__shotReady`, and writes `<id>-<width>-<theme>.png`. The default folder is `screenshots-raw/site` (gitignored).
 - `<id>` is a `<section id>` from `site/index.html` (hero, edid, window, hdr, gamut, tray, drivers, download) or `all`.
 - Prefer the scratchpad or a temp folder over the repo for these, unless the task is the social preview image.
+- `npm run shots` leaves the `vite preview` server it started running on port 4173. Stopping it afterwards (`Stop-Process` on the `node` that runs `vite.js preview`) avoids an orphan that outlives the session.
 - After changing `site/src/shots/`, run `npm run images` (or `npm run build`) to regenerate AVIF and WebP.
 - The tray menu is drawn by Windows: `--debug-scale` does not change it, so `traymenu-<theme>.png` stays a 1x capture (220x200). The site shows it at 220 CSS px and never larger.
 
