@@ -1,0 +1,47 @@
+name: CI
+
+on:
+  push:
+  pull_request:
+
+permissions:
+  contents: read
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  check:
+    name: Check and build
+    runs-on: windows-latest
+    steps:
+      - name: Check out the repository
+        uses: actions/checkout@v4
+
+      - name: Install the GNU Rust toolchain
+        run: |
+          rustup toolchain install stable-x86_64-pc-windows-gnu --profile minimal --component rustfmt --component clippy
+          rustup default stable-x86_64-pc-windows-gnu
+          rustc -vV
+
+      - name: Restore the cargo cache
+        uses: Swatinem/rust-cache@v2
+
+      - name: Check formatting
+        run: cargo fmt --check
+
+      - name: Run clippy
+        run: cargo clippy --all-targets --locked -- -D warnings
+
+      - name: Run tests
+        run: cargo test --locked
+
+      - name: Build the release exe
+        run: cargo build --release --locked
+
+      - name: Upload Spectrum.exe
+        uses: actions/upload-artifact@v4
+        with:
+          name: Spectrum-exe
+          path: target/release/Spectrum.exe
+          if-no-files-found: error
