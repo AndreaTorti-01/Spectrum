@@ -15,21 +15,24 @@ use windows_sys::Win32::Graphics::Gdi::{BeginPaint, EndPaint, InvalidateRect, Sc
 use windows_sys::Win32::System::LibraryLoader::GetModuleHandleW;
 use windows_sys::Win32::UI::HiDpi::AdjustWindowRectExForDpi;
 use windows_sys::Win32::UI::Input::KeyboardAndMouse::{
-    SetFocus, TrackMouseEvent, TME_LEAVE, TRACKMOUSEEVENT, VK_DOWN, VK_ESCAPE, VK_RETURN, VK_SPACE, VK_UP,
+    ReleaseCapture, SetCapture, SetFocus, TrackMouseEvent, TME_LEAVE, TRACKMOUSEEVENT, VK_DOWN, VK_ESCAPE,
+    VK_RETURN, VK_SPACE, VK_UP,
 };
 use windows_sys::Win32::UI::WindowsAndMessaging::{
     CreateWindowExW, DefWindowProcW, DestroyIcon, DestroyWindow, GetClientRect, IsIconic, LoadCursorW,
     RegisterClassExW, SendMessageW, SetForegroundWindow, SetWindowPos, ShowWindow, SystemParametersInfoW,
     CS_HREDRAW, CS_VREDRAW, HICON, ICON_BIG, ICON_SMALL, IDC_ARROW, SM_CXICON, SM_CXSMICON, SPI_GETWORKAREA,
-    SWP_NOACTIVATE, SWP_NOZORDER, SW_RESTORE, SW_SHOW, WM_CLOSE, WM_CREATE, WM_DESTROY, WM_DPICHANGED,
-    WM_ERASEBKGND, WM_KEYDOWN, WM_LBUTTONDOWN, WM_MOUSEMOVE, WM_MOUSEWHEEL, WM_PAINT, WM_SETICON,
-    WM_SETTINGCHANGE, WNDCLASSEXW, WS_CAPTION, WS_MINIMIZEBOX, WS_OVERLAPPED, WS_SYSMENU,
+    SWP_NOACTIVATE, SWP_NOZORDER, SW_RESTORE, SW_SHOW, WM_CAPTURECHANGED, WM_CLOSE, WM_CREATE, WM_DESTROY,
+    WM_DPICHANGED, WM_ERASEBKGND, WM_KEYDOWN, WM_LBUTTONDOWN, WM_LBUTTONUP, WM_MOUSEMOVE, WM_MOUSEWHEEL,
+    WM_PAINT, WM_SETICON, WM_SETTINGCHANGE, WNDCLASSEXW, WS_CAPTION, WS_MINIMIZEBOX, WS_OVERLAPPED,
+    WS_SYSMENU,
 };
 
 const CLASS: &str = "SpectrumGamutWindow";
-const CLIENT_W: i32 = 860;
+const CLIENT_W: i32 = 890;
 const CLIENT_H: i32 = 610;
 /// Plot domain.
+const X_MIN: f64 = -0.05;
 const X_MAX: f64 = 0.8;
 const Y_MAX: f64 = 0.9;
 const PROFILE_COLORS: [u32; 8] = [
@@ -69,6 +72,10 @@ struct Gamut {
     /// Profile (by entry index) the stats line talks about when nothing else is ticked.
     monitor_entry: Option<usize>,
     stats: (String, String),
+    /// Physical height of the info block (measured while painting).
+    info_h: i32,
+    /// Scrollbar thumb drag: offset of the mouse from the thumb top.
+    drag: Option<i32>,
     icons: [HICON; 2],
 }
 
@@ -98,30 +105,45 @@ struct Geo {
     head_r: R,
 }
 
-/// Rows visible in the list viewport.
-const LIST_ROWS: i32 = 13;
-const PANEL_L: i32 = 568;
+/// The list never shrinks below this many rows.
+const MIN_LIST_ROWS: i32 = 3;
+const PANEL_L: i32 = 598;
+/// Clear space between the list container and the info block.
+const INFO_GAP: i32 = 12;
 /// Inner padding of the list container.
 const LIST_PAD: i32 = 4;
 /// Width reserved at the right edge of the container for the scrollbar.
 const SCROLLBAR_W: i32 = 12;
 
-fn geo(dpi: u32) -> Geo {
+/// `info_h` is the physical height of the info block; the list container fills the rest of the right
+/// column. Whole rows are visible; the sub-row remainder is bottom padding inside the container.
+fn geo(dpi: u32, info_h: i32) -> Geo {
     let s = |v: i32| sc(v, dpi);
     let pad = s(LIST_PAD);
+    let row = s(ROW_H);
+    let info_b = s(CLIENT_H - 16);
+    let info_t = info_b - info_h;
+    let top = s(40);
+    let bottom = info_t - s(INFO_GAP);
+    let rows = ((bottom - top - 2 * pad) / row).max(MIN_LIST_ROWS);
     let panel = R::new(
         s(PANEL_L),
-        s(40),
+        top,
         s(CLIENT_W - 20),
-        s(40) + LIST_ROWS * s(ROW_H) + 2 * pad,
+        (top + 2 * pad + rows * row).max(bottom),
     );
     Geo {
-        plot: R::new(s(56), s(40), s(536), s(580)),
-        head_l: R::new(s(56), s(10), s(536), s(34)),
+        plot: R::new(s(56), s(40), s(566), s(580)),
+        head_l: R::new(s(56), s(10), s(566), s(34)),
         head_r: R::new(s(PANEL_L), s(10), s(CLIENT_W - 20), s(34)),
         panel,
-        list: panel.inset(pad),
-        info: R::new(s(PANEL_L), panel.b + s(14), s(CLIENT_W - 20), s(CLIENT_H - 16)),
+        list: R::new(
+            panel.l + pad,
+            panel.t + pad,
+            panel.r - pad,
+            panel.t + pad + rows * row,
+        ),
+        info: R::new(s(PANEL_L), info_t, s(CLIENT_W - 20), info_b),
     }
 }
 
@@ -207,14 +229,17 @@ fn build_entries(selected_file: Option<&str>) -> (Vec<Entry>, Option<usize>) {
     } else {
         installed_profiles()
     };
-    // Spectrum's EDID profile first, then other SDR profiles, then HDR (MHC2) profiles.
+    // Spectrum's EDID profile, then SDR-associated, then other plottable, then HDR, then not plottable.
     profiles.sort_by_key(|p| {
-        if p.3 == "HDR" {
-            2
-        } else if p.0.starts_with("Spectrum") && p.0.ends_with("EDID.icm") {
-            0
+        if p.2.is_none() {
+            4
         } else {
-            1
+            match p.3.as_str() {
+                "Spectrum" => 0,
+                "SDR" => 1,
+                "HDR" => 3,
+                _ => 2,
+            }
         }
     });
     if let Some((file, label, prims)) = &showcase {
@@ -270,6 +295,13 @@ fn build_entries(selected_file: Option<&str>) -> (Vec<Entry>, Option<usize>) {
 /// (file, name, primaries when matrix/TRC, tag)
 fn installed_profiles() -> Vec<(String, String, Option<Primaries>, String)> {
     let mut out = Vec::new();
+    let mon = crate::app::current_monitors().into_iter().next();
+    let assoc = |hdr: bool| {
+        mon.as_ref()
+            .and_then(|m| crate::wcs::associated(m, hdr).ok())
+            .unwrap_or_default()
+    };
+    let (sdr_assoc, hdr_assoc) = (assoc(false), assoc(true));
     for file in crate::wcs::list_installed() {
         let Some(bytes) = crate::wcs::read_profile(&file) else {
             continue;
@@ -283,13 +315,18 @@ fn installed_profiles() -> Vec<(String, String, Option<Primaries>, String)> {
             info.desc.clone()
         };
         let prims = if info.is_matrix_trc { info.primaries } else { None };
-        let tag = if info.mhc2.is_some() {
-            "HDR".to_string()
-        } else if file.starts_with("Spectrum") {
-            "Spectrum".to_string()
+        // Tag by association with the current monitor, not by what is inside the file.
+        let listed = |l: &[String]| l.iter().any(|f| f.eq_ignore_ascii_case(&file));
+        let tag = if file.starts_with("Spectrum") && file.ends_with("EDID.icm") {
+            "Spectrum"
+        } else if listed(&hdr_assoc) {
+            "HDR"
+        } else if listed(&sdr_assoc) {
+            "SDR"
         } else {
-            String::new()
-        };
+            ""
+        }
+        .to_string();
         out.push((file, name, prims, tag));
     }
     out
@@ -360,12 +397,97 @@ impl Gamut {
         }
     }
 
+    fn geo(&self) -> Geo {
+        geo(self.dpi, self.info_h)
+    }
+
+    /// Scrollbar geometry: (track, thumb top, thumb length, max scroll). None when the list fits.
+    fn scrollbar(&self) -> Option<(R, i32, i32, i32)> {
+        let g = self.geo();
+        let content = self.content_h();
+        if content <= g.list.h() {
+            return None;
+        }
+        let max_scroll = content - g.list.h();
+        let dpi = self.dpi;
+        let tx = g.list.r - sc(7, dpi);
+        let track = R::new(tx, g.list.t + sc(2, dpi), tx + sc(4, dpi), g.list.b - sc(2, dpi));
+        let len = ((track.h() as f32 * g.list.h() as f32 / content as f32).max(scf(24.0, dpi))) as i32;
+        let t = track.t + ((track.h() - len) as f32 * self.scroll as f32 / max_scroll as f32) as i32;
+        Some((track, t, len, max_scroll))
+    }
+
+    /// Height of the info block for the current selection (mirrors the layout in `draw`).
+    fn info_height(&self, c: &mut Canvas, width: i32) -> i32 {
+        let dpi = self.dpi;
+        let dim = self.fonts.dim;
+        let mut h = 0;
+        let sel_is_pick = self
+            .selected
+            .map(|i| self.entries[i].name == self.stats.0)
+            .unwrap_or(false);
+        if !self.stats.1.is_empty() {
+            h += c.measure_wrapped(width, &self.stats.1, dim);
+            if !sel_is_pick {
+                h += sc(18, dpi);
+            }
+        } else if !self.stats.0.is_empty() {
+            h += c.measure_wrapped(width, &self.stats.0, dim);
+        }
+        h += sc(16, dpi);
+        match self.selected {
+            Some(i) => {
+                let e = &self.entries[i];
+                if !e.reference && e.prims.is_some() {
+                    h += sc(17, dpi);
+                }
+                h += c.measure_wrapped(width, &e.detail, dim) + sc(22, dpi);
+            }
+            None => h += c.measure_wrapped(width, "Select a row to see details", dim),
+        }
+        h
+    }
+
+    /// Mouse press at (x, y): thumb starts a drag, track pages by the visible row count. True if handled.
+    fn scrollbar_press(&mut self, hwnd: HWND, x: i32, y: i32) -> bool {
+        let Some((track, t, len, _)) = self.scrollbar() else {
+            return false;
+        };
+        let g = self.geo();
+        let zone = R::new(g.list.r - sc(SCROLLBAR_W, self.dpi), g.list.t, g.list.r, g.list.b);
+        if !zone.contains(x, y) {
+            return false;
+        }
+        let _ = track;
+        if y >= t && y < t + len {
+            self.drag = Some(y - t);
+            // SAFETY: valid window handle; released on button up or capture loss.
+            unsafe { SetCapture(hwnd) };
+        } else {
+            let page = g.list.h() / sc(ROW_H, self.dpi) * sc(ROW_H, self.dpi);
+            self.scroll += if y < t { -page } else { page };
+            self.clamp_scroll();
+        }
+        true
+    }
+
+    /// Moves the list so the thumb top is at `thumb_top` (snapped to whole rows by `clamp_scroll`).
+    fn scrollbar_drag_to(&mut self, thumb_top: i32) {
+        let Some((track, _, len, max_scroll)) = self.scrollbar() else {
+            return;
+        };
+        let span = (track.h() - len).max(1);
+        let f = ((thumb_top - track.t) as f32 / span as f32).clamp(0.0, 1.0);
+        self.scroll = (f * max_scroll as f32).round() as i32;
+        self.clamp_scroll();
+    }
+
     fn content_h(&self) -> i32 {
         self.rows.iter().map(|r| row_h(r, self.dpi)).sum()
     }
 
     fn clamp_scroll(&mut self) {
-        let g = geo(self.dpi);
+        let g = self.geo();
         let row = sc(ROW_H, self.dpi);
         let max = (self.content_h() - g.list.h()).max(0);
         let snapped = (self.scroll + row / 2) / row * row;
@@ -374,7 +496,7 @@ impl Gamut {
 
     /// Entry index and its on-screen rect at a client point.
     fn row_at(&self, x: i32, y: i32) -> Option<usize> {
-        let g = geo(self.dpi);
+        let g = self.geo();
         let sb = if self.content_h() > g.list.h() {
             sc(SCROLLBAR_W, self.dpi)
         } else {
@@ -432,7 +554,7 @@ impl Gamut {
     }
 
     fn ensure_visible(&mut self, entry: usize) {
-        let g = geo(self.dpi);
+        let g = self.geo();
         let mut top = 0;
         for r in &self.rows {
             let h = row_h(r, self.dpi);
@@ -497,7 +619,7 @@ impl Gamut {
     }
 
     fn ensure_horseshoe(&mut self) {
-        let g = geo(self.dpi);
+        let g = self.geo();
         let (w, h) = (g.plot.w(), g.plot.h());
         if self.horseshoe.as_ref().map(|d| (d.w, d.h)) != Some((w, h)) {
             self.horseshoe = build_horseshoe(w, h);
@@ -535,9 +657,9 @@ impl Gamut {
     }
 
     fn plot_xy(&self, x: f64, y: f64) -> (f32, f32) {
-        let g = geo(self.dpi);
+        let g = self.geo();
         (
-            g.plot.l as f32 + (x / X_MAX) as f32 * g.plot.w() as f32,
+            g.plot.l as f32 + ((x - X_MIN) / (X_MAX - X_MIN)) as f32 * g.plot.w() as f32,
             g.plot.t as f32 + ((Y_MAX - y) / Y_MAX) as f32 * g.plot.h() as f32,
         )
     }
@@ -545,7 +667,16 @@ impl Gamut {
     fn draw(&mut self, c: &mut Canvas) {
         let th = theme();
         let dpi = self.dpi;
-        let g = geo(dpi);
+        let width = self.geo().info.w();
+        let need = self.info_height(c, width);
+        if need != self.info_h {
+            self.info_h = need;
+            self.clamp_scroll();
+            if let Some(i) = self.selected {
+                self.ensure_visible(i);
+            }
+        }
+        let g = self.geo();
         c.clear(th.bg);
 
         // --- left: plot ---
@@ -637,18 +768,29 @@ impl Gamut {
             // On the outward normal, then clamped inside the plot so it never reaches the axis labels.
             let lx = (p.0 + nx * lr).clamp((g.plot.l + margin + hw) as f32, (g.plot.r - margin - hw) as f32);
             let ly = (p.1 + ny * lr).clamp((g.plot.t + margin + hh) as f32, (g.plot.b - margin - hh) as f32);
-            c.text(
+            let at = |dx: i32, dy: i32| {
                 R::new(
-                    lx as i32 - hw - sc(2, dpi),
-                    ly as i32 - hh - sc(2, dpi),
-                    lx as i32 + hw + sc(2, dpi),
-                    ly as i32 + hh + sc(2, dpi),
-                ),
-                &label,
-                self.fonts.dim,
-                th.text_dim,
-                TA_CENTER,
-            );
+                    lx as i32 - hw - sc(2, dpi) + dx,
+                    ly as i32 - hh - sc(2, dpi) + dy,
+                    lx as i32 + hw + sc(2, dpi) + dx,
+                    ly as i32 + hh + sc(2, dpi) + dy,
+                )
+            };
+            // 2 px halo in the plot background color, so the label reads over the locus fill
+            let d = sc(2, dpi).max(2);
+            for (dx, dy) in [
+                (-d, 0),
+                (d, 0),
+                (0, -d),
+                (0, d),
+                (-d, -d),
+                (d, -d),
+                (-d, d),
+                (d, d),
+            ] {
+                c.text(at(dx, dy), &label, self.fonts.dim, th.surface, TA_CENTER);
+            }
+            c.text(at(0, 0), &label, self.fonts.dim, th.text_dim, TA_CENTER);
         }
         c.text(
             R::new(
@@ -759,20 +901,16 @@ impl Gamut {
                 }
             }
             // scrollbar: the track stays visible while the list overflows
-            let tx = g.list.r - sc(7, dpi);
-            let track = R::new(tx, g.list.t + sc(2, dpi), tx + sc(4, dpi), g.list.b - sc(2, dpi));
-            c.fill_rrect(track, scf(2.0, dpi), mix(th.surface, th.text_dim, 0.22), 1.0);
-            let th_len = ((track.h() as f32) * g.list.h() as f32 / content as f32).max(scf(24.0, dpi));
-            let y0 = track.t as f32 + (track.h() as f32 - th_len) * self.scroll as f32 / max_scroll as f32;
-            c.fill_rrect_f(
-                track.l as f32,
-                y0,
-                track.r as f32,
-                y0 + th_len,
-                scf(2.0, dpi),
-                th.text_dim,
-                0.85,
-            );
+            if let Some((track, t, len, _)) = self.scrollbar() {
+                c.fill_rrect(track, scf(2.0, dpi), mix(th.surface, th.text_dim, 0.22), 1.0);
+                let alpha = if self.drag.is_some() { 1.0 } else { 0.85 };
+                c.fill_rrect(
+                    R::new(track.l, t, track.r, t + len),
+                    scf(2.0, dpi),
+                    th.text_dim,
+                    alpha,
+                );
+            }
         }
         c.stroke_rrect(g.panel, radius, scf(1.0, dpi).floor().max(1.0), th.line, 1.0);
         c.text(g.head_r, "Compare gamuts", self.fonts.heading, th.text, TA_LEFT);
@@ -978,10 +1116,14 @@ fn build_horseshoe(w: i32, h: i32) -> Option<Dib> {
             if pair.len() < 2 {
                 break;
             }
-            let c0 = ((pair[0] / X_MAX) * w as f64 - 0.5).ceil().max(0.0) as i32;
-            let c1 = ((pair[1] / X_MAX) * w as f64 - 0.5).floor().min(w as f64 - 1.0) as i32;
+            let c0 = (((pair[0] - X_MIN) / (X_MAX - X_MIN)) * w as f64 - 0.5)
+                .ceil()
+                .max(0.0) as i32;
+            let c1 = (((pair[1] - X_MIN) / (X_MAX - X_MIN)) * w as f64 - 0.5)
+                .floor()
+                .min(w as f64 - 1.0) as i32;
             for col in c0..=c1 {
-                let x = (col as f64 + 0.5) / w as f64 * X_MAX;
+                let x = X_MIN + (col as f64 + 0.5) / w as f64 * (X_MAX - X_MIN);
                 let rgb = xy_rgb8(x, y);
                 let d = |v: u8| (v as f32 * 0.55).round() as u32;
                 px[(row * w + col) as usize] = 0xFF00_0000 | (d(rgb[0]) << 16) | (d(rgb[1]) << 8) | d(rgb[2]);
@@ -1036,6 +1178,8 @@ pub fn open(selected_monitor_profile: Option<String>) {
         tracking: false,
         monitor_entry,
         stats: (String::new(), String::new()),
+        info_h: sc(110, dpi),
+        drag: None,
         icons: [std::ptr::null_mut(); 2],
     };
     g.rebuild_rows();
@@ -1249,6 +1393,11 @@ unsafe extern "system" fn wnd_proc(hwnd: HWND, msg: u32, wp: WPARAM, lp: LPARAM)
         WM_MOUSEMOVE => {
             let (x, y) = (lo(lp), hi(lp));
             with(|g| {
+                if let Some(off) = g.drag {
+                    g.scrollbar_drag_to(y - off);
+                    g.invalidate();
+                    return;
+                }
                 if !g.tracking {
                     let mut t = TRACKMOUSEEVENT {
                         cbSize: std::mem::size_of::<TRACKMOUSEEVENT>() as u32,
@@ -1280,11 +1429,24 @@ unsafe extern "system" fn wnd_proc(hwnd: HWND, msg: u32, wp: WPARAM, lp: LPARAM)
             let (x, y) = (lo(lp), hi(lp));
             SetFocus(hwnd);
             with(|g| {
-                if let Some(i) = g.row_at(x, y) {
+                if g.scrollbar_press(hwnd, x, y) {
+                    g.invalidate();
+                } else if let Some(i) = g.row_at(x, y) {
                     g.toggle(i);
                     g.invalidate();
                 }
             });
+            0
+        }
+        WM_LBUTTONUP | WM_CAPTURECHANGED => {
+            with(|g| {
+                if g.drag.take().is_some() {
+                    g.invalidate();
+                }
+            });
+            if msg == WM_LBUTTONUP {
+                ReleaseCapture();
+            }
             0
         }
         WM_MOUSEWHEEL => {
