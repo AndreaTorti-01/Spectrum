@@ -137,6 +137,31 @@ fn reference_file_id(file: &str) -> Option<usize> {
     }
 }
 
+/// Screenshot request: what to tick, and an in-memory entry for the monitor's EDID primaries when the
+/// profile file is not installed (nothing is written anywhere).
+struct Showcase {
+    file: String,
+    label: String,
+    prims: Option<Primaries>,
+}
+
+thread_local! {
+    static SHOWCASE: RefCell<Option<Showcase>> = const { RefCell::new(None) };
+}
+
+/// Opens the window with the monitor's EDID-derived profile, sRGB and Display P3 ticked (screenshots).
+pub fn open_showcase(file: String, label: String, prims: Option<Primaries>) {
+    SHOWCASE.with(|s| {
+        *s.borrow_mut() = Some(Showcase {
+            file: file.clone(),
+            label,
+            prims,
+        })
+    });
+    open(Some(file));
+    SHOWCASE.with(|s| *s.borrow_mut() = None);
+}
+
 fn build_entries(selected_file: Option<&str>) -> (Vec<Entry>, Option<usize>) {
     let mut entries: Vec<Entry> = STANDARD_SPACES
         .iter()
@@ -153,11 +178,27 @@ fn build_entries(selected_file: Option<&str>) -> (Vec<Entry>, Option<usize>) {
     // sRGB is always ticked by default.
     entries[0].checked = true;
     let mut monitor_entry = None;
-    let profiles = if super::is_mock() {
+    let showcase = SHOWCASE.with(|s| {
+        s.borrow()
+            .as_ref()
+            .map(|s| (s.file.clone(), s.label.clone(), s.prims))
+    });
+    let mut profiles = if super::is_mock() && showcase.is_none() {
         mock_profiles()
     } else {
         installed_profiles()
     };
+    if let Some((file, label, prims)) = &showcase {
+        // The monitor's own profile goes first; build it from the EDID when it is not installed.
+        match profiles.iter().position(|p| p.0.eq_ignore_ascii_case(file)) {
+            Some(i) => {
+                let p = profiles.remove(i);
+                profiles.insert(0, p);
+            }
+            None => profiles.insert(0, (file.clone(), label.clone(), *prims, "Spectrum".to_string())),
+        }
+        entries[1].checked = true; // Display P3
+    }
     let mut n = 0usize;
     for (file, name, prims, tag) in profiles {
         if let Some(i) = reference_file_id(&file) {
@@ -876,7 +917,7 @@ pub fn open(selected_monitor_profile: Option<String>) {
     };
     // SAFETY: plain Win32 calls with valid pointers; GAMUT is not borrowed during window creation.
     unsafe {
-        AdjustWindowRectExForDpi(&mut r, style, 0, 0, dpi);
+        AdjustWindowRectExForDpi(&mut r, style, 0, 0, super::draw::frame_dpi(dpi));
         SystemParametersInfoW(SPI_GETWORKAREA, 0, &mut wa as *mut RECT as *mut _, 0);
         let (w, h) = (r.right - r.left, r.bottom - r.top);
         let x = (wa.left + ((wa.right - wa.left) - w) / 2).max(wa.left);
@@ -960,7 +1001,7 @@ fn on_dpi_changed(hwnd: HWND, dpi: u32, suggested: Option<RECT>) {
                     right: sc(CLIENT_W, dpi),
                     bottom: sc(CLIENT_H, dpi),
                 };
-                AdjustWindowRectExForDpi(&mut r, style, 0, 0, dpi);
+                AdjustWindowRectExForDpi(&mut r, style, 0, 0, super::draw::frame_dpi(dpi));
                 let mut cur: RECT = std::mem::zeroed();
                 windows_sys::Win32::UI::WindowsAndMessaging::GetWindowRect(hwnd, &mut cur);
                 RECT {

@@ -919,6 +919,20 @@ pub fn remove_all_profiles() -> Vec<String> {
 // ---------------------------------------------------------------------------------------------
 
 fn menu_monitors() -> Vec<MenuMonitor> {
+    if ui::is_mock() {
+        // Screenshots: the menu shows the mock state, like the windows do.
+        return ui::snapshot()
+            .monitors
+            .iter()
+            .map(|u| MenuMonitor {
+                label: format!("{} \u{b7} {}", u.num, u.name),
+                profiles: u.sdr_options.clone(),
+                current: u.sdr_current,
+                hdr_supported: u.hdr_supported,
+                hdr_on: u.hdr_on,
+            })
+            .collect();
+    }
     let cfg = Config::load();
     enumerate_cached()
         .iter()
@@ -981,6 +995,8 @@ pub fn show_tray_menu() {
     let cmd = tray::show_menu(h, &items);
     LAST_MENU.with(|l| l.set(Some(Instant::now())));
     IN_MENU.with(|c| c.set(false));
+    // A menu built from a mock state must never run anything.
+    let cmd = cmd.filter(|_| !ui::is_mock());
     match cmd {
         Some(c) => run_tray_cmd(c),
         None => draw::trim_working_set(),
@@ -1036,7 +1052,15 @@ pub fn raise(h: HWND) {
     unsafe {
         let flags = SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE;
         SetWindowPos(h, HWND_TOPMOST, 0, 0, 0, 0, flags);
-        SetWindowPos(h, HWND_NOTOPMOST, 0, 0, 0, 0, flags);
+        // With a screenshot stage up (itself topmost), stay topmost so nothing can slip in between.
+        if windows_sys::Win32::UI::WindowsAndMessaging::FindWindowW(
+            wide("SpectrumStage").as_ptr(),
+            std::ptr::null(),
+        )
+        .is_null()
+        {
+            SetWindowPos(h, HWND_NOTOPMOST, 0, 0, 0, 0, flags);
+        }
     }
 }
 
@@ -1060,6 +1084,15 @@ pub fn run_command(cmd: &str) {
             ui::set_mock(Some(crate::debug::showcase_state()));
             ui::main_window::open();
             raise(ui::main_window::hwnd());
+        }
+        (Some("open"), Some("traymenu-showcase")) => {
+            ui::set_mock(Some(crate::debug::showcase_state()));
+            park_cursor_for_menu();
+            show_tray_menu();
+        }
+        (Some("open"), Some("gamut-showcase")) => {
+            crate::debug::open_gamut_showcase();
+            raise(ui::gamut_window::hwnd());
         }
         (Some("open"), Some("gamut")) => {
             open_gamut();

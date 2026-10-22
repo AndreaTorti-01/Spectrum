@@ -694,7 +694,7 @@ pub fn open() {
     };
     // SAFETY: plain Win32 calls with valid pointers; MAIN is not borrowed during window creation.
     unsafe {
-        AdjustWindowRectExForDpi(&mut r, style, 0, 0, dpi);
+        AdjustWindowRectExForDpi(&mut r, style, 0, 0, super::draw::frame_dpi(dpi));
         SystemParametersInfoW(SPI_GETWORKAREA, 0, &mut wa as *mut RECT as *mut _, 0);
         let (w, h) = (r.right - r.left, r.bottom - r.top);
         let x = wa.left + ((wa.right - wa.left) - w) / 2;
@@ -898,7 +898,7 @@ fn on_dpi_changed(hwnd: HWND, dpi: u32, suggested: Option<RECT>) {
                     right: sc(CLIENT_W, dpi),
                     bottom: sc(CLIENT_H, dpi),
                 };
-                AdjustWindowRectExForDpi(&mut r, style, 0, 0, dpi);
+                AdjustWindowRectExForDpi(&mut r, style, 0, 0, super::draw::frame_dpi(dpi));
                 let mut cur: RECT = std::mem::zeroed();
                 windows_sys::Win32::UI::WindowsAndMessaging::GetWindowRect(hwnd, &mut cur);
                 RECT {

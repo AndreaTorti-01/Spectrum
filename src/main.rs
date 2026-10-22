@@ -50,6 +50,8 @@ struct Args {
     command: Command,
     /// `--theme dark|light`: forces the theme (screenshots only).
     dark: Option<bool>,
+    /// `--debug-scale <f>`: UI scale = f x the real DPI scale (screenshots only).
+    scale: Option<f64>,
     /// `--out <file>`: debug output target (console otherwise).
     out: Option<PathBuf>,
 }
@@ -58,6 +60,7 @@ fn parse_args<I: Iterator<Item = String>>(mut it: I) -> Args {
     let mut args = Args {
         command: Command::Default,
         dark: None,
+        scale: None,
         out: None,
     };
     let mut json = false;
@@ -69,6 +72,7 @@ fn parse_args<I: Iterator<Item = String>>(mut it: I) -> Args {
             "--quit" => args.command = Command::Quit,
             "--theme" => args.dark = it.next().map(|v| v.eq_ignore_ascii_case("dark")),
             "--out" => args.out = it.next().map(PathBuf::from),
+            "--debug-scale" => args.scale = it.next().and_then(|v| v.parse().ok()),
             "--json" => json = true,
             "--debug-dump" => dump = true,
             "--debug-edid" => args.command = Command::DebugEdid(num(it.next())),
@@ -191,6 +195,9 @@ fn main() {
     }
     let args = parse_args(std::env::args().skip(1));
     draw::set_forced_theme(args.dark);
+    if let Some(f) = args.scale {
+        draw::set_ui_scale(f);
+    }
     let out = args.out.as_deref();
     let code = match args.command {
         Command::Default => run_default(),
