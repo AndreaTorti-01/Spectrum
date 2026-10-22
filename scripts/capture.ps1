@@ -259,12 +259,12 @@ foreach ($t in $themes) {
             Write-Host ("  {0}: {1}x{2} at {3},{4}" -f $s, $shot.Rect[2], $shot.Rect[3], $shot.Rect[0], $shot.Rect[1])
 
             if ($s -eq 'main') {
-                # HDR section: client rows 340..638 of the 440 x 702 logical layout, full client width.
+                # HDR section: client rows 340..628 of the 440 x 692 logical layout (Advanced expanded), full client width.
                 $k = $shot.Client[2] / 440.0
                 $cx = $shot.Client[0] - $shot.Rect[0]
                 $cy = $shot.Client[1] - $shot.Rect[1]
                 $y0 = $cy + [int][Math]::Round(340 * $k)
-                $y1 = $cy + [int][Math]::Round(638 * $k)
+                $y1 = $cy + [int][Math]::Round(628 * $k)
                 $rect = New-Object System.Drawing.Rectangle $cx, $y0, $shot.Client[2], ($y1 - $y0)
                 $crop = $shot.Bitmap.Clone($rect, $shot.Bitmap.PixelFormat)
                 Save-Png $crop (Join-Path $Out "hdr-$t$suffix.png")
