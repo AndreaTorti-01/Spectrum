@@ -15,7 +15,7 @@ Visuals carry the message and text captions them. The giveaway of machine-writte
 
 ## App UI strings
 
-- Prefer sentence case and no period on labels or buttons. Buttons are usually verbs ("Read profile from monitor", "Reset HDR"). Avoid "please", exclamation marks and "Oops": they add tone but no information.
+- Prefer sentence case and no period on labels or buttons. Buttons are usually verbs ("Read profile from monitor", "Restore default values"). Avoid "please", exclamation marks and "Oops": they add tone but no information.
 - Status messages work best as a past-tense fact in about 6 words or fewer that names the thing: "Applied Display P3 to monitor 1". "Successfully" adds nothing.
 - Errors usually say what failed and what to do, in 2 short sentences or fewer: "Couldn't read EDID from monitor 2. Reconnect the cable and try again."
 - Hints fit best on a disabled or non-obvious control, about 8 words or fewer: "Turn on HDR to tune it".

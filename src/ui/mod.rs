@@ -89,10 +89,12 @@ fn mock_apply(a: &UiAction) {
             }
             UiAction::ResetHdr { mon } => {
                 if let Some(u) = s.monitors.get_mut(*mon) {
-                    u.hdr_custom_active = false;
+                    u.hdr = crate::app::hdr_defaults_from(u.edid_hdr.as_ref());
+                    u.hdr_custom_active = true;
                 }
             }
             UiAction::SetAutostart(on) => s.autostart = *on,
+            UiAction::SetAdvanced(on) => s.advanced = *on,
             _ => {}
         }
     });

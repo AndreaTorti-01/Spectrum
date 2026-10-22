@@ -221,11 +221,60 @@ pub fn peak_scale() -> Scale {
         max: PEAK_MAX_NITS,
     }
 }
-pub fn full_scale(peak: f64) -> Scale {
-    Scale::Log {
-        min: PEAK_MIN_NITS,
-        max: peak.max(PEAK_MIN_NITS),
+/// Full-frame uses the same fixed 100 to 4000 range as Peak, so moving Peak never rescales it.
+pub fn full_scale() -> Scale {
+    peak_scale()
+}
+
+/// New (peak, full-frame) when Peak moves to `peak`: a lower peak pushes Full-frame down with it.
+pub fn move_peak(peak: f64, full: f64) -> (f64, f64) {
+    (peak, full.min(peak))
+}
+
+/// New full-frame when it is dragged to `full`: it stops at the current peak.
+pub fn move_full(full: f64, peak: f64) -> f64 {
+    full.min(peak)
+}
+
+/// Magnet zone around the SDR content peak, in logical px.
+pub const SNAP_MAGNET_PX: f32 = 8.0;
+/// Distance past the peak, in logical px, a drag needs to break out of the detent.
+pub const SNAP_ESCAPE_PX: f32 = 14.0;
+
+/// Drag detent: returns the thumb x and whether it is stuck on `peak`. A drag entering the magnet zone, or
+/// jumping across the peak, sticks; a stuck thumb leaves only once the pointer is `escape` px away.
+pub fn detent(x: f32, prev: f32, peak: f32, stuck: bool, magnet: f32, escape: f32) -> (f32, bool) {
+    let d = (x - peak).abs();
+    let crossed = (prev - peak) * (x - peak) < 0.0;
+    let stick = if stuck {
+        d <= escape
+    } else {
+        d <= magnet || crossed
+    };
+    if stick {
+        (peak, true)
+    } else {
+        (x, false)
     }
+}
+
+/// A wheel or key step from `cur` to `next` that crosses `target` lands on it first.
+pub fn step_through(cur: f64, next: f64, target: f64) -> f64 {
+    if (cur < target && next > target) || (cur > target && next < target) {
+        target
+    } else {
+        next
+    }
+}
+
+/// The SDR content value the peak detent lands on: the highest 4-nit step not above the peak. `None` when
+/// the peak is outside the slider's range.
+pub fn sdr_peak_target(peak: f64) -> Option<f64> {
+    use crate::monitors::{SDR_WHITE_MAX_NITS as MAX, SDR_WHITE_MIN_NITS as MIN};
+    if !(MIN..MAX).contains(&peak.round()) {
+        return None;
+    }
+    Some(MIN + ((peak.round() - MIN) / 4.0).floor() * 4.0)
 }
 /// Windows "SDR content brightness": 80 to 480 nits.
 pub fn white_scale() -> Scale {
@@ -469,6 +518,29 @@ pub fn draw_checkbox(c: &mut Canvas, ctx: &Ctx, r: R, label: &str, checked: bool
     if st.focus {
         focus_ring(c, ctx, bx, rad);
     }
+}
+
+/// A small mark across the track at `t` (the monitor's peak on the SDR content slider). Drawn before the
+/// slider so the thumb covers it.
+pub fn draw_slider_tick(c: &mut Canvas, ctx: &Ctx, r: R, t: f64, enabled: bool) {
+    let (a, b) = slider_span(r, ctx.dpi);
+    let x = (a + (b - a) * t as f32).round();
+    let h = scf(6.0, ctx.dpi);
+    let w = scf(2.0, ctx.dpi).max(1.0);
+    let col = if enabled {
+        ctx.th.text_dim
+    } else {
+        mix(ctx.th.text_dim, ctx.th.bg, 0.5)
+    };
+    c.fill_rrect_f(
+        x - w / 2.0,
+        r.cy() - h,
+        x + w / 2.0,
+        r.cy() + h,
+        w / 2.0,
+        col,
+        1.0,
+    );
 }
 
 /// `r` is the full hit area of the slider (thumb travel is inset by the thumb radius).
@@ -917,16 +989,48 @@ mod tests {
     }
 
     #[test]
-    fn full_frame_follows_peak() {
-        let s = full_scale(1000.0);
-        assert!((s.to_value(1.0) - 1000.0).abs() < 1e-6);
-        assert!(close(s.to_value(0.0), 100.0));
-        // degenerate range does not blow up
-        let d = full_scale(100.0);
-        assert!(close(d.to_value(0.7), 100.0));
-        assert!(close(d.to_t(100.0), 0.0));
-        // values above the peak clamp to the end
-        assert!(close(s.to_t(5000.0), 1.0));
+    fn full_frame_keeps_its_range_and_stops_at_peak() {
+        assert_eq!(full_scale(), peak_scale());
+        // dragging full-frame past the peak stops at the peak's position
+        assert!(close(move_full(800.0, 600.0), 600.0));
+        assert!(close(move_full(300.0, 600.0), 300.0));
+        assert!(close(
+            full_scale().to_t(move_full(800.0, 600.0)),
+            peak_scale().to_t(600.0)
+        ));
+        // lowering the peak below full-frame pushes it down; raising it leaves full-frame alone
+        assert_eq!(move_peak(250.0, 400.0), (250.0, 250.0));
+        assert_eq!(move_peak(1000.0, 400.0), (1000.0, 400.0));
+    }
+
+    #[test]
+    fn sdr_detent_snaps_and_releases() {
+        let (m, e) = (SNAP_MAGNET_PX, SNAP_ESCAPE_PX);
+        // far away: free
+        assert_eq!(detent(50.0, 49.0, 100.0, false, m, e), (50.0, false));
+        // inside the magnet: sticks
+        assert_eq!(detent(93.0, 90.0, 100.0, false, m, e), (100.0, true));
+        // stuck: stays until 14 px past
+        assert_eq!(detent(112.0, 108.0, 100.0, true, m, e), (100.0, true));
+        assert_eq!(detent(115.0, 112.0, 100.0, true, m, e), (115.0, false));
+        // free again just outside the magnet
+        assert_eq!(detent(116.0, 115.0, 100.0, false, m, e), (116.0, false));
+        // a fast jump across the peak sticks
+        assert_eq!(detent(130.0, 70.0, 100.0, false, m, e), (100.0, true));
+        // escape works in both directions
+        assert_eq!(detent(85.0, 90.0, 100.0, true, m, e), (85.0, false));
+    }
+
+    #[test]
+    fn sdr_steps_land_on_the_peak() {
+        assert!(close(step_through(440.0, 460.0, 452.0), 452.0));
+        assert!(close(step_through(460.0, 440.0, 452.0), 452.0));
+        assert!(close(step_through(452.0, 460.0, 452.0), 460.0));
+        assert!(close(step_through(400.0, 420.0, 452.0), 420.0));
+        assert_eq!(sdr_peak_target(455.0), Some(452.0));
+        assert_eq!(sdr_peak_target(452.0), Some(452.0));
+        assert_eq!(sdr_peak_target(1000.0), None);
+        assert_eq!(sdr_peak_target(60.0), None);
     }
 
     #[test]
@@ -938,7 +1042,7 @@ mod tests {
 
     #[test]
     fn roundtrip_all_scales() {
-        let scales = [black_scale(), peak_scale(), full_scale(750.0), sat_scale()];
+        let scales = [black_scale(), peak_scale(), full_scale(), sat_scale()];
         for s in scales {
             for i in 0..=20 {
                 let t = i as f64 / 20.0;
