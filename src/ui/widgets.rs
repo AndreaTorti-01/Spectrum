@@ -776,7 +776,9 @@ unsafe extern "system" fn pop_proc(hwnd: HWND, msg: u32, wp: WPARAM, lp: LPARAM)
         WM_MOUSEMOVE => {
             let y = ((lp >> 16) & 0xFFFF) as i16 as i32;
             let changed = POP.with(|p| {
-                let mut b = p.borrow_mut();
+                let Ok(mut b) = p.try_borrow_mut() else {
+                    return false;
+                };
                 if let Some(s) = b.as_mut() {
                     let h = pop_item_at(s, y);
                     if h != s.hover {
@@ -793,7 +795,11 @@ unsafe extern "system" fn pop_proc(hwnd: HWND, msg: u32, wp: WPARAM, lp: LPARAM)
         }
         WM_LBUTTONUP => {
             let y = ((lp >> 16) & 0xFFFF) as i16 as i32;
-            let pick = POP.with(|p| p.borrow().as_ref().and_then(|s| pop_item_at(s, y)));
+            let pick = POP.with(|p| {
+                p.try_borrow()
+                    .ok()
+                    .and_then(|b| b.as_ref().and_then(|s| pop_item_at(s, y)))
+            });
             if pick.is_some() {
                 pop_finish(hwnd, pick);
             }
@@ -803,7 +809,9 @@ unsafe extern "system" fn pop_proc(hwnd: HWND, msg: u32, wp: WPARAM, lp: LPARAM)
             let vk = wp as u16;
             let mut finish: Option<Option<usize>> = None;
             let changed = POP.with(|p| {
-                let mut b = p.borrow_mut();
+                let Ok(mut b) = p.try_borrow_mut() else {
+                    return false;
+                };
                 let Some(s) = b.as_mut() else { return false };
                 let n = s.items.len();
                 match vk {

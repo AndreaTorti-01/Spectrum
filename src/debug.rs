@@ -117,8 +117,8 @@ fn prims_json(p: &Primaries) -> String {
 struct Info {
     sdr_default: Option<String>,
     hdr_default: Option<String>,
-    sdr_assoc: Vec<String>,
-    hdr_assoc: Vec<String>,
+    sdr_assoc: Result<Vec<String>, String>,
+    hdr_assoc: Result<Vec<String>, String>,
     user_scope: Option<bool>,
 }
 
@@ -242,8 +242,8 @@ fn dump_json(mons: &[Monitor], cfg: &Config) -> String {
             "\"sdr_default\":{},\"hdr_default\":{},\"sdr_associated\":{},\"hdr_associated\":{},",
             json_opt(&i.sdr_default),
             json_opt(&i.hdr_default),
-            json_list(&i.sdr_assoc),
-            json_list(&i.hdr_assoc)
+            json_list(i.sdr_assoc.as_deref().unwrap_or_default()),
+            json_list(i.hdr_assoc.as_deref().unwrap_or_default())
         );
         match &m.edid {
             Some(e) => {

@@ -361,7 +361,7 @@ unsafe extern "system" fn wnd_proc(hwnd: HWND, msg: u32, wp: WPARAM, lp: LPARAM)
             0
         }
         WM_SETTINGCHANGE => {
-            if lp != 0 {
+            if wp == 0 && lp != 0 {
                 let p = lp as *const u16;
                 let mut n = 0;
                 while n < 64 && *p.add(n) != 0 {
@@ -458,7 +458,7 @@ unsafe extern "system" fn wnd_proc(hwnd: HWND, msg: u32, wp: WPARAM, lp: LPARAM)
             0
         }
         windows_sys::Win32::UI::WindowsAndMessaging::WM_DESTROY => {
-            let st = STATE.with(|s| s.borrow_mut().take());
+            let st = STATE.with(|s| s.try_borrow_mut().ok().and_then(|mut b| b.take()));
             if let Some(st) = &st {
                 for i in st.icons {
                     if !i.is_null() {

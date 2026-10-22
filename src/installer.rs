@@ -382,13 +382,18 @@ pub fn install(autostart: bool) -> Result<PathBuf, String> {
     Ok(exe)
 }
 
-/// Removes Run key, shortcut and Uninstall key, then self-deletes via a delayed `cmd /c`.
-pub fn uninstall() -> Result<(), String> {
+/// Removes the Run key value, the Start menu shortcut and the Uninstall key.
+pub fn remove_entries() {
     let _ = set_autostart(false);
     let _ = std::fs::remove_file(shortcut_path());
     unsafe {
         RegDeleteTreeW(HKEY_CURRENT_USER, wide(UNINSTALL_KEY).as_ptr());
     }
+}
+
+/// Starts the detached `cmd /c` that deletes the install folder once this process has exited. Call it
+/// as the very last step before exiting: its delay starts immediately.
+pub fn schedule_dir_removal() -> Result<(), String> {
     let dir = install_dir();
     if dir.file_name().map(|n| n == "Spectrum").unwrap_or(false) && dir.exists() {
         spawn_self_delete(&dir)?;

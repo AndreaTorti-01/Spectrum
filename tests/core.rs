@@ -402,6 +402,14 @@ fn parses_mag271qpx_edid() {
 }
 
 #[test]
+fn real_edid_primaries_are_plausible() {
+    for name in ["edid_mag271qpx_active.bin", "edid_mag271qpx_base_only.bin"] {
+        let e = edid::parse(&fixture(name)).unwrap();
+        assert!(color::primaries_plausible(&e.primaries), "{name}");
+    }
+}
+
+#[test]
 fn edid_primaries_match_windows_hdr_fixture() {
     // Windows builds its HDR profile straight from the EDID chromaticities.
     let e = edid::parse(&fixture("edid_mag271qpx_active.bin")).unwrap();

@@ -8,6 +8,7 @@ use spectrum::ui::install_window::{self, InstallChoice};
 use spectrum::util::{log, wide};
 use spectrum::{debug, installer};
 use std::path::{Path, PathBuf};
+use std::time::SystemTime;
 use windows_sys::Win32::Foundation::{CloseHandle, GetLastError, ERROR_ALREADY_EXISTS, HANDLE};
 use windows_sys::Win32::System::Threading::{
     CreateMutexW, CreateProcessW, PROCESS_INFORMATION, STARTUPINFOW,
@@ -155,21 +156,19 @@ fn spawn(exe: &Path, args: &str) -> bool {
     true
 }
 
-/// True when the running exe differs from the installed one (size or newer modification time).
-fn differs_from_installed() -> bool {
-    let (Ok(cur), Ok(inst)) = (
-        std::env::current_exe().and_then(std::fs::metadata),
-        std::fs::metadata(installer::installed_exe()),
-    ) else {
-        return false;
-    };
-    if cur.len() != inst.len() {
-        return true;
-    }
-    match (cur.modified(), inst.modified()) {
-        (Ok(a), Ok(b)) => a > b,
-        _ => false,
-    }
+/// True only when the running exe was modified after the installed one. `fs::copy` keeps the source's
+/// modification time, so an installed copy is never "older" than the exe it came from, and running an
+/// older download never replaces a newer install.
+fn is_newer(cur: Option<SystemTime>, installed: Option<SystemTime>) -> bool {
+    matches!((cur, installed), (Some(a), Some(b)) if a > b)
+}
+
+fn newer_than_installed() -> bool {
+    let modified = |p: PathBuf| std::fs::metadata(p).and_then(|m| m.modified()).ok();
+    is_newer(
+        std::env::current_exe().ok().and_then(modified),
+        modified(installer::installed_exe()),
+    )
 }
 
 fn run_interactive() -> i32 {
@@ -191,9 +190,9 @@ fn run_default() -> i32 {
     }
     let installed = installer::installed_exe().exists();
     if installed {
-        // Another copy (Downloads, a build folder) was started: update the installed one if this one differs,
-        // then hand over to it.
-        if differs_from_installed() {
+        // Another copy (Downloads, a build folder) was started: update the installed one if this one is
+        // newer, then hand over to it.
+        if newer_than_installed() {
             if let Err(e) = installer::install(installer::autostart_enabled()) {
                 log(&format!("update of the installed copy failed: {e}"));
             }
@@ -239,11 +238,14 @@ fn run_tray() -> i32 {
     app::run_tray()
 }
 
+/// Order matters: profiles and associations first, then the registry and shortcut, then the message.
+/// The folder removal starts last, so its delay begins after the box is dismissed.
 fn uninstall() -> i32 {
     debug::stop_running(3000);
     app::remove_all_profiles();
+    installer::remove_entries();
     message_box("Uninstalled Spectrum.", false);
-    if let Err(e) = installer::uninstall() {
+    if let Err(e) = installer::schedule_dir_removal() {
         message_box(&e, true);
         return 1;
     }
@@ -298,4 +300,21 @@ fn main() {
         }),
     };
     std::process::exit(code);
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::time::Duration;
+
+    #[test]
+    fn only_a_newer_exe_updates_the_install() {
+        let old = SystemTime::UNIX_EPOCH + Duration::from_secs(1000);
+        let new = old + Duration::from_secs(60);
+        assert!(is_newer(Some(new), Some(old)));
+        assert!(!is_newer(Some(old), Some(new)));
+        assert!(!is_newer(Some(old), Some(old)));
+        assert!(!is_newer(None, Some(old)));
+        assert!(!is_newer(Some(new), None));
+    }
 }
