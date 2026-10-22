@@ -20,7 +20,7 @@
 </p>
 
 <p align="center">
-  Windows 11 · 768 KB exe · 1.6 MB idle RAM · MIT
+  Windows 11 · MIT
 </p>
 
 <p align="center">
