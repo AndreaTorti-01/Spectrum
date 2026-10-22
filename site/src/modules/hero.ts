@@ -1,6 +1,5 @@
 // Hero diagram: the gamut triangle morphs sRGB -> Display P3 -> Adobe RGB (1998) -> the author's monitor.
-// Desktop: scrubbed by a pinned scroll. 701-899 px: scrubbed by scroll without a pin. 700 px and below: a gentle
-// auto-cycle through the four gamuts (3 s each) while the diagram is on screen. Static (reduced motion, ?shot):
+// Autoplays on its own while the diagram is on screen (no scroll pin or scrub). Static (reduced motion, ?shot):
 // the monitor's triangle. Vertices come from the real EDID in monitor.json.
 import { gsap } from "gsap";
 import { areaPercent, lerpPrims, tri } from "../data/color.ts";
@@ -38,42 +37,28 @@ export function initHero() {
     });
     diagram.requestDraw();
   };
-  // scrub progress p 0..1: hold the first and last state for a moment, morph in between
-  const st = { p: isStatic ? 1 : 0 };
-  const scrub = () => render(Math.min(1, Math.max(0, (st.p - 0.06) / 0.88)) * (n - 1));
-  scrub();
-  if (isStatic) return;
+  // Static (reduced motion, ?shot=): the monitor's triangle.
+  if (isStatic) {
+    render(n - 1);
+    return;
+  }
+  render(0);
 
-  const mm = gsap.matchMedia();
-  mm.add("(min-width: 900px)", () => {
-    gsap.to(st, {
-      p: 1,
-      ease: "none",
-      onUpdate: scrub,
-      scrollTrigger: { trigger: ".hero-stage", start: "top top+=64", end: "+=120%", pin: true, scrub: 0.6, anticipatePin: 1 },
-    });
-  });
-  mm.add("(min-width: 701px) and (max-width: 899px)", () => {
-    gsap.to(st, {
-      p: 1,
-      ease: "none",
-      onUpdate: scrub,
-      scrollTrigger: { trigger: canvas, start: "top 80%", end: "bottom 40%", scrub: 0.6 },
-    });
-  });
-  mm.add("(max-width: 700px)", () => {
-    // 3 s per gamut: hold 2.2 s, morph 0.8 s; the last morph returns to the first gamut. Runs only in view.
-    const c = { t: 0 };
-    const tl = gsap.timeline({ repeat: -1, paused: true, onUpdate: () => render(c.t) });
-    states.forEach((_s, i) => tl.to(c, { t: i + 1, duration: 0.8, ease: "none" }, i * 3 + 2.2));
-    tl.to({}, { duration: 0 }, n * 3);
-    const io = new IntersectionObserver((es) => es.forEach((e) => (e.isIntersecting ? tl.play() : tl.pause())));
-    io.observe(canvas);
-    return () => {
-      io.disconnect();
-      tl.kill();
-    };
-  });
+  // Autoplay, same on every screen size: hold each gamut 2.4 s, morph 0.9 s; the last morph returns to the first
+  // gamut. Plays only while the diagram is in view and the tab is visible. No scroll pin, no scrub.
+  const HOLD = 2.4;
+  const MORPH = 0.9;
+  const c = { t: 0 };
+  const tl = gsap.timeline({ repeat: -1, paused: true, onUpdate: () => render(c.t) });
+  states.forEach((_s, i) => tl.to(c, { t: i + 1, duration: MORPH, ease: "none" }, i * (HOLD + MORPH) + HOLD));
+  tl.to({}, { duration: 0 }, n * (HOLD + MORPH));
+  let inView = false;
+  const sync = () => (inView && !document.hidden ? tl.play() : tl.pause());
+  new IntersectionObserver((es) => {
+    inView = es[es.length - 1]!.isIntersecting;
+    sync();
+  }).observe(canvas);
+  document.addEventListener("visibilitychange", sync);
 
   if (finePointer) {
     const hero = document.querySelector<HTMLElement>("#hero")!;
