@@ -574,7 +574,7 @@ impl Main {
             c,
             &ctx,
             g.manage,
-            "Manage profiles{2026}",
+            "Manage profiles\u{2026}",
             ui.state(Id::Manage),
             BtnStyle::Normal,
         );

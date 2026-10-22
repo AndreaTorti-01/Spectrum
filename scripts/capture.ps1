@@ -220,14 +220,14 @@ function Get-WindowShot([IntPtr]$Hwnd, [switch]$ClientOnly) {
 function Open-Surface([string]$Name) {
     # The showcase variants run on a mock state (EDID profile selected, HDR on) or an in-memory gamut entry;
     # nothing is applied and no file is written.
-    $arg = @{ main = 'main-hdr'; gamut = 'gamut-showcase'; traymenu = 'traymenu-showcase' }[$Name]
+    $arg = @{ main = 'main-hdr'; gamut = 'gamut-showcase'; profiles = 'profiles-showcase'; traymenu = 'traymenu-showcase' }[$Name]
     & $Exe --debug-open $arg | Out-Null
 }
 
 $themes = if ($Theme -eq 'both') { @('light', 'dark') } else { @($Theme) }
 New-Item -ItemType Directory -Force -Path $Out, $SiteOut | Out-Null
 
-$classes = @{ main = 'SpectrumMainWindow'; gamut = 'SpectrumGamutWindow'; traymenu = '#32768' }
+$classes = @{ main = 'SpectrumMainWindow'; gamut = 'SpectrumGamutWindow'; profiles = 'SpectrumProfilesWindow'; traymenu = '#32768' }
 
 foreach ($t in $themes) {
     foreach ($sf in $Scale) {
@@ -243,7 +243,7 @@ foreach ($t in $themes) {
         $tray = Start-Process -FilePath $Exe -ArgumentList $trayArgs -PassThru
         Start-Sleep -Milliseconds 1500
 
-        $surfaces = if ($one) { @('gamut', 'traymenu', 'main') } else { @('gamut', 'main') }
+        $surfaces = if ($one) { @('gamut', 'profiles', 'traymenu', 'main') } else { @('gamut', 'profiles', 'main') }
         foreach ($s in $surfaces) {
             Open-Surface $s
             $h = Wait-Window $classes[$s]
@@ -259,12 +259,12 @@ foreach ($t in $themes) {
             Write-Host ("  {0}: {1}x{2} at {3},{4}" -f $s, $shot.Rect[2], $shot.Rect[3], $shot.Rect[0], $shot.Rect[1])
 
             if ($s -eq 'main') {
-                # HDR section: client rows 308..550 of the 440 x 620 logical layout, full client width.
+                # HDR section: client rows 350..630 of the 440 x 700 logical layout, full client width.
                 $k = $shot.Client[2] / 440.0
                 $cx = $shot.Client[0] - $shot.Rect[0]
                 $cy = $shot.Client[1] - $shot.Rect[1]
-                $y0 = $cy + [int][Math]::Round(308 * $k)
-                $y1 = $cy + [int][Math]::Round(550 * $k)
+                $y0 = $cy + [int][Math]::Round(350 * $k)
+                $y1 = $cy + [int][Math]::Round(630 * $k)
                 $rect = New-Object System.Drawing.Rectangle $cx, $y0, $shot.Client[2], ($y1 - $y0)
                 $crop = $shot.Bitmap.Clone($rect, $shot.Bitmap.PixelFormat)
                 Save-Png $crop (Join-Path $Out "hdr-$t$suffix.png")

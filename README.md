@@ -58,7 +58,7 @@
     <td width="50%" align="center" valign="middle">
       <picture>
         <source media="(prefers-color-scheme: dark)" srcset="docs/screenshots/hdr-dark-1x.png">
-        <img src="docs/screenshots/hdr-light-1x.png" alt="Spectrum HDR section with Black level, Peak brightness, Full-frame and Saturation sliders" width="420">
+        <img src="docs/screenshots/hdr-light-1x.png" alt="Spectrum HDR section with Black level, Peak brightness, Full-frame, Saturation and SDR content sliders" width="420">
       </picture>
       <br>Four sliders write an MHC2 profile on release.
     </td>

@@ -1135,14 +1135,14 @@ pub fn showcase_profiles() -> Vec<app::ProfileRow> {
             "Studio Display Calibrated.icc",
             "Studio Display Calibrated",
             ProfileKind::Lut,
-            "Used by monitor 2",
+            "Not in use",
             Ok(()),
         ),
         row(
             wcs::SRGB_INBOX,
             "sRGB IEC61966-2.1",
             ProfileKind::Sdr,
-            "Used by monitor 2 (default)",
+            "Used by monitor 1",
             Err(Undeletable::Inbox),
         ),
         row(
