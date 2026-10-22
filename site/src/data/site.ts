@@ -7,5 +7,5 @@ export const RELEASES = REPO + "/releases/latest";
 export const LICENSE_URL = REPO + "/blob/main/LICENSE";
 
 /** Measured values, see the measurement report. */
-export const EXE_KB = 683;
+export const EXE_KB = 723;
 export const IDLE_MB = 1.6;
