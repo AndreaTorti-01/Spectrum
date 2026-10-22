@@ -76,9 +76,9 @@
 .slab-spec {
   inset: 0;
   border-radius: var(--r-win);
-  background: radial-gradient(600px circle at var(--mx, 50%) var(--my, 20%), rgba(255, 255, 255, 0.22), transparent 45%);
-  mix-blend-mode: overlay;
-  opacity: 0.6;
+  background: radial-gradient(520px circle at var(--mx, 50%) var(--my, 20%), rgba(255, 255, 255, var(--spec-a)), transparent 60%);
+  mix-blend-mode: var(--spec-blend);
+  opacity: var(--spec-o);
 }
 .slab-edge {
   inset: -1px;
@@ -172,6 +172,20 @@
 .hero-diagram noscript {
   display: block;
 }
+.hero-diagram .shot {
+  max-width: 100%;
+}
+/* No JavaScript: the screenshot replaces the canvas, so keep it inside the column instead of bleeding out. */
+html:not(.js) .hero-diagram {
+  margin-right: 0;
+  height: auto;
+  min-height: 0;
+  align-self: center;
+}
+.hero-diagram img {
+  max-width: 100%;
+  height: auto;
+}
 
 /* ---------- EDID ---------- */
 .edid-grid {
@@ -195,14 +209,14 @@
   padding-block: 7px;
 }
 .edid-row:nth-child(2) {
-  margin-top: 18px;
+  margin-top: 34px; /* room for one connector lane per byte above the 0x10 row */
 }
 .edid-row:nth-child(3) {
   margin-top: 18px;
   margin-bottom: 18px;
 }
 .edid-off {
-  opacity: 0.55;
+  color: var(--ink-dim);
 }
 .byte {
   text-align: center;
@@ -281,9 +295,9 @@ li[data-k="b"] .ro-name { color: var(--c-b); }
   font-size: 1rem;
 }
 .edid-plot {
-  grid-column: 10 / 13;
+  grid-column: 1 / 5;
   grid-row: 2;
-  margin-top: 8px;
+  margin-top: 16px;
 }
 .edid-plot canvas {
   width: 100%;
@@ -404,6 +418,7 @@ li[data-k="b"] .ro-name { color: var(--c-b); }
 }
 input[type="range"] {
   --p: 0%;
+  --track: color-mix(in srgb, var(--ink-dim) 55%, var(--bg));
   -webkit-appearance: none;
   appearance: none;
   width: 100%;
@@ -414,27 +429,32 @@ input[type="range"] {
 }
 input[type="range"]::-webkit-slider-runnable-track {
   height: 2px;
-  background: linear-gradient(90deg, var(--ink) var(--p), var(--rule) var(--p));
+  background: linear-gradient(90deg, var(--ink) var(--p), var(--track) var(--p));
 }
 input[type="range"]::-moz-range-track {
   height: 2px;
-  background: linear-gradient(90deg, var(--ink) var(--p), var(--rule) var(--p));
+  background: linear-gradient(90deg, var(--ink) var(--p), var(--track) var(--p));
 }
+/* 14 px square drawn inside a 24 px hit area (transparent border). */
 input[type="range"]::-webkit-slider-thumb {
   -webkit-appearance: none;
-  width: 14px;
-  height: 14px;
-  margin-top: -6px;
-  border: 0;
+  box-sizing: border-box;
+  width: 24px;
+  height: 24px;
+  margin-top: -11px;
+  border: 5px solid transparent;
   border-radius: 0;
   background: var(--ink);
+  background-clip: padding-box;
 }
 input[type="range"]::-moz-range-thumb {
-  width: 14px;
-  height: 14px;
-  border: 0;
+  box-sizing: border-box;
+  width: 24px;
+  height: 24px;
+  border: 5px solid transparent;
   border-radius: 0;
   background: var(--ink);
+  background-clip: padding-box;
 }
 input[type="range"]:focus-visible {
   outline: 2px solid var(--ink);
@@ -596,7 +616,7 @@ input[type="range"]:focus-visible {
 
 /* ---------- tray ---------- */
 .tray {
-  --menu-w: clamp(260px, 26vw, 340px);
+  --menu-w: 220px; /* the capture is 220 px wide and the Windows menu cannot be captured at 2x: never scale it up */
   padding-bottom: 0;
 }
 .tray .caption {
@@ -705,17 +725,26 @@ input[type="range"]:focus-visible {
   stroke-width: 2;
   fill: none;
 }
-.drv-diagram .drv-seg-2a,
-.drv-diagram .drv-seg-2b {
+/* step 2: the broken line is dimmer than the applied one, and its node turns red */
+.drv-diagram .drv-l2a,
+.drv-diagram .drv-l2b {
   stroke: var(--ink-dim);
 }
-.drv-diagram .drv-seg-sweep {
+/* step 3: solid line in the spectral gradient (the stroke comes from the inline style) */
+.drv-diagram .drv-l3 {
   stroke-width: 3;
 }
 .drv-node {
   fill: var(--bg);
   stroke: var(--ink);
   stroke-width: 2;
+}
+.drv-diagram .drv-node-2 {
+  stroke: var(--c-r);
+}
+/* while the animation runs the node is red only after the break */
+.drv-diagram.is-anim:not(.is-broken) .drv-node-2 {
+  stroke: var(--ink);
 }
 .drv-labels text {
   font: 500 12px var(--font-mono);
@@ -817,6 +846,10 @@ input[type="range"]:focus-visible {
   .callout {
     width: 0;
   }
+  /* keep dot 3 clear of the "450 nits" readout (between the slider track end and the readout) */
+  .callout:nth-child(3) {
+    --x: 74% !important;
+  }
   .callout-line,
   .callout-label {
     display: none;
@@ -885,5 +918,44 @@ input[type="range"]:focus-visible {
 @media (min-width: 900px) {
   .callout-n {
     display: none;
+  }
+}
+
+/* Phones: kicker, H1, the horseshoe, then paragraph, buttons and facts, so the first screen shows the diagram. */
+@media (max-width: 700px) {
+  .hero-stage {
+    padding-block: 20px 40px;
+  }
+  .hero-grid {
+    gap: 0;
+  }
+  .hero-copy {
+    display: contents;
+  }
+  .hero .kicker {
+    order: 1;
+    margin-bottom: 14px;
+  }
+  .hero .display {
+    order: 2;
+    font-size: clamp(2.5rem, 11vw, 3rem);
+    margin-bottom: 20px;
+  }
+  .hero-diagram {
+    order: 3;
+    max-height: 42vh;
+    margin-bottom: 28px;
+  }
+  .hero .lead {
+    order: 4;
+    margin-bottom: 24px;
+    font-size: 1.0625rem;
+  }
+  .hero .actions {
+    order: 5;
+  }
+  .hero .facts {
+    order: 6;
+    margin-top: 32px;
   }
 }

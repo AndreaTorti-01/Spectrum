@@ -8,19 +8,20 @@
   <meta name="color-scheme" content="dark light" />
   <meta name="theme-color" content="#121110" media="(prefers-color-scheme: dark)" />
   <meta name="theme-color" content="#F2EEE7" media="(prefers-color-scheme: light)" />
-  <link rel="canonical" href="https://andreatorti-01.github.io/Spectrum/" />
+  <!-- The URL placeholders below are filled from src/data/site.ts at build time. -->
+  <link rel="canonical" href="%SITE_URL%" />
   <meta property="og:type" content="website" />
   <meta property="og:site_name" content="Spectrum" />
   <meta property="og:title" content="Spectrum: your monitor already knows its colors" />
   <meta property="og:description" content="Windows tray utility that builds an ICC profile from your monitor's EDID, writes MHC2 profiles for HDR and re-applies them after driver updates." />
-  <meta property="og:url" content="https://andreatorti-01.github.io/Spectrum/" />
-  <meta property="og:image" content="https://andreatorti-01.github.io/Spectrum/og.png" />
+  <meta property="og:url" content="%SITE_URL%" />
+  <meta property="og:image" content="%SITE_URL%og.png" />
   <meta property="og:image:width" content="1200" />
   <meta property="og:image:height" content="630" />
   <meta name="twitter:card" content="summary_large_image" />
   <meta name="twitter:title" content="Spectrum: your monitor already knows its colors" />
   <meta name="twitter:description" content="Windows tray utility that builds an ICC profile from your monitor's EDID, writes MHC2 profiles for HDR and re-applies them after driver updates." />
-  <meta name="twitter:image" content="https://andreatorti-01.github.io/Spectrum/og.png" />
+  <meta name="twitter:image" content="%SITE_URL%og.png" />
   <link rel="icon" type="image/svg+xml" href="./favicon.svg" />
   <script>
     (function () {
@@ -238,52 +239,50 @@
       <spectral></spectral>
       <div class="wrap">
         <h2 id="h-drivers" data-reveal>Survives driver updates.</h2>
-        <svg class="drv-diagram drv-h" viewBox="0 0 1000 150" role="img" aria-label="Three steps: the profile is applied, a driver update removes it, Spectrum restores it.">
+        <svg class="drv-diagram drv-h" viewBox="0 0 1000 120" role="img" aria-label="Three steps: the profile is applied (solid line), a driver update removes it (broken line), Spectrum restores it (solid spectral line).">
           <defs>
-            <linearGradient id="drv-sweep" gradientUnits="userSpaceOnUse" x1="0" y1="0" x2="1000" y2="0">
+            <linearGradient id="drv-sweep" gradientUnits="userSpaceOnUse" x1="709" y1="0" x2="970" y2="0">
               <stop offset="0" stop-color="#7a3cff" /><stop offset=".2" stop-color="#2f6bff" /><stop offset=".4" stop-color="#16c8c8" /><stop offset=".6" stop-color="#7ddc3f" /><stop offset=".8" stop-color="#ffc93c" /><stop offset="1" stop-color="#ff5a3c" />
             </linearGradient>
           </defs>
-          <g class="drv-lines" fill="none" stroke-width="2">
-            <line class="drv-seg drv-seg-1" x1="109" y1="46" x2="491" y2="46" />
-            <line class="drv-seg drv-seg-2a" x1="509" y1="46" x2="640" y2="46" />
-            <line class="drv-seg drv-seg-2b" x1="640" y1="46" x2="891" y2="46" />
-            <line class="drv-seg drv-seg-final" x1="509" y1="46" x2="891" y2="46" />
-            <line class="drv-seg drv-seg-sweep" x1="509" y1="46" x2="891" y2="46" stroke="url(#drv-sweep)" />
+          <g class="drv-lines" fill="none">
+            <line class="drv-l drv-l1" x1="39" y1="40" x2="300" y2="40" />
+            <line class="drv-l drv-l2a" x1="374" y1="40" x2="485" y2="40" />
+            <line class="drv-l drv-l2b" x1="545" y1="48" x2="635" y2="48" />
+            <line class="drv-l drv-l3" x1="709" y1="40" x2="970" y2="40" style="stroke: url(#drv-sweep)" />
           </g>
           <g class="drv-nodes">
-            <circle class="drv-node" cx="100" cy="46" r="9" />
-            <circle class="drv-node drv-node-2" cx="500" cy="46" r="9" />
-            <circle class="drv-node" cx="900" cy="46" r="9" />
+            <circle class="drv-node" cx="30" cy="40" r="9" />
+            <circle class="drv-node drv-node-2" cx="365" cy="40" r="9" />
+            <circle class="drv-node" cx="700" cy="40" r="9" />
           </g>
           <g class="drv-labels">
-            <text x="100" y="100" text-anchor="middle">Profile applied</text>
-            <text x="500" y="100" text-anchor="middle">Driver update wipes it</text>
-            <text x="900" y="100" text-anchor="middle">Spectrum puts it back</text>
+            <text x="21" y="96">Profile applied</text>
+            <text x="356" y="96">Driver update wipes it</text>
+            <text x="691" y="96">Spectrum puts it back</text>
           </g>
         </svg>
-        <svg class="drv-diagram drv-v" viewBox="0 0 320 420" role="img" aria-label="Three steps: the profile is applied, a driver update removes it, Spectrum restores it.">
+        <svg class="drv-diagram drv-v" viewBox="0 0 320 276" role="img" aria-label="Three steps: the profile is applied (solid line), a driver update removes it (broken line), Spectrum restores it (solid spectral line).">
           <defs>
-            <linearGradient id="drv-sweep-v" gradientUnits="userSpaceOnUse" x1="0" y1="0" x2="0" y2="420">
+            <linearGradient id="drv-sweep-v" gradientUnits="userSpaceOnUse" x1="33" y1="0" x2="300" y2="0">
               <stop offset="0" stop-color="#7a3cff" /><stop offset=".2" stop-color="#2f6bff" /><stop offset=".4" stop-color="#16c8c8" /><stop offset=".6" stop-color="#7ddc3f" /><stop offset=".8" stop-color="#ffc93c" /><stop offset="1" stop-color="#ff5a3c" />
             </linearGradient>
           </defs>
-          <g class="drv-lines" fill="none" stroke-width="2">
-            <line class="drv-seg drv-seg-1" x1="24" y1="39" x2="24" y2="201" />
-            <line class="drv-seg drv-seg-2a" x1="24" y1="219" x2="24" y2="320" />
-            <line class="drv-seg drv-seg-2b" x1="24" y1="320" x2="24" y2="381" />
-            <line class="drv-seg drv-seg-final" x1="24" y1="219" x2="24" y2="381" />
-            <line class="drv-seg drv-seg-sweep" x1="24" y1="219" x2="24" y2="381" stroke="url(#drv-sweep-v)" />
+          <g class="drv-lines" fill="none">
+            <line class="drv-l drv-l1" x1="33" y1="46" x2="300" y2="46" />
+            <line class="drv-l drv-l2a" x1="33" y1="146" x2="130" y2="146" />
+            <line class="drv-l drv-l2b" x1="190" y1="154" x2="300" y2="154" />
+            <line class="drv-l drv-l3" x1="33" y1="246" x2="300" y2="246" style="stroke: url(#drv-sweep-v)" />
           </g>
           <g class="drv-nodes">
-            <circle class="drv-node" cx="24" cy="30" r="9" />
-            <circle class="drv-node drv-node-2" cx="24" cy="210" r="9" />
-            <circle class="drv-node" cx="24" cy="390" r="9" />
+            <circle class="drv-node" cx="24" cy="46" r="9" />
+            <circle class="drv-node drv-node-2" cx="24" cy="146" r="9" />
+            <circle class="drv-node" cx="24" cy="246" r="9" />
           </g>
           <g class="drv-labels">
-            <text x="52" y="34" font-size="13">Profile applied</text>
-            <text x="52" y="214" font-size="13">Driver update wipes it</text>
-            <text x="52" y="394" font-size="13">Spectrum puts it back</text>
+            <text x="15" y="20">Profile applied</text>
+            <text x="15" y="120">Driver update wipes it</text>
+            <text x="15" y="220">Spectrum puts it back</text>
           </g>
         </svg>
         <p class="body">Monitors are keyed by EDID (manufacturer, product code, serial), and Spectrum keeps its own copy of every profile.</p>

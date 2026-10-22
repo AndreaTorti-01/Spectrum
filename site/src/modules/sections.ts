@@ -91,80 +91,67 @@ export function initTray() {
   ScrollTrigger.create({ trigger: bar, start: "top 92%", once: true, onEnter: () => set(true) });
 }
 
-/** 8. Driver updates: the line breaks with a short glitch, then re-forms with a spectral sweep. */
+/**
+ * 8. Driver updates: three lines. Applied is a solid ink line, the driver update leaves a broken line (gap and
+ * offset pieces), Spectrum's restore is a solid line in the spectral gradient. The markup and CSS are that end
+ * state; the animation plays on every entry (scroll in, scroll back up into it) and its last frame is the same
+ * picture, so static, reduced-motion and finished states match.
+ */
 export function initDrivers() {
   const section = document.querySelector<HTMLElement>("#drivers");
-  if (!section) return;
-  const diagrams = Array.from(section.querySelectorAll<SVGSVGElement>(".drv-diagram"));
-  const q = (svg: SVGElement, c: string) => svg.querySelector<SVGLineElement>(c)!;
+  if (!section || isStatic) return;
+  const num = (el: Element, a: string) => Number(el.getAttribute(a));
 
-  // Static / reduced motion end state: restored line, no break.
-  const restored = (svg: SVGSVGElement) => {
-    gsap.set([q(svg, ".drv-seg-2a"), q(svg, ".drv-seg-2b"), q(svg, ".drv-seg-sweep")], { opacity: 0 });
-  };
-  diagrams.forEach((svg) => {
-    q(svg, ".drv-seg-final").setAttribute("pathLength", "1");
-    q(svg, ".drv-seg-sweep").setAttribute("pathLength", "1");
-    q(svg, ".drv-seg-1").setAttribute("pathLength", "1");
-    restored(svg);
-  });
-  if (isStatic) return;
-
-  const play = (svg: SVGSVGElement) => {
-    const vertical = svg.classList.contains("drv-v");
-    const ax = vertical ? "y" : "x";
-    const seg1 = q(svg, ".drv-seg-1");
-    const a = q(svg, ".drv-seg-2a");
-    const b = q(svg, ".drv-seg-2b");
-    const fin = q(svg, ".drv-seg-final");
-    const sweep = q(svg, ".drv-seg-sweep");
-    const node2 = q(svg, ".drv-node-2");
-    const labels = svg.querySelectorAll(".drv-labels text");
+  section.querySelectorAll<SVGSVGElement>(".drv-diagram").forEach((svg) => {
+    const q = (c: string) => svg.querySelector<SVGLineElement>(c)!;
+    const l1 = q(".drv-l1");
+    const a = q(".drv-l2a");
+    const b = q(".drv-l2b");
+    const l3 = q(".drv-l3");
     const nodes = svg.querySelectorAll(".drv-node");
-    const mid = Number(a.getAttribute(`${ax}2`));
-    const jitter = (el: Element, d: number) => gsap.set(el, { [ax]: d });
+    const labels = svg.querySelectorAll(".drv-labels text");
+    [l1, a, b, l3].forEach((l) => l.setAttribute("pathLength", "1"));
 
-    gsap.set([seg1, fin], { opacity: 1, strokeDasharray: 1, strokeDashoffset: 1 });
-    gsap.set([a, b], { opacity: 1, strokeDasharray: 1, strokeDashoffset: 1 });
-    gsap.set(nodes, { opacity: 0 });
-    gsap.set(labels, { opacity: 0 });
-    gsap.set(sweep, { opacity: 0, strokeDasharray: "0.22 1.5", strokeDashoffset: 0.22 });
+    // Broken end state (from the markup) and the intact line it starts from.
+    const aEnd = num(a, "x2");
+    const bStart = num(b, "x1");
+    const mid = Math.round((aEnd + bStart) / 2);
+    const y = num(a, "y1");
+    const bY = num(b, "y1");
+    const draw = { strokeDasharray: 1, strokeDashoffset: 1 };
 
-    const tl = gsap.timeline();
-    tl.to(nodes[0]!, { opacity: 1, duration: 0.3 }, 0)
-      .to(labels[0]!, { opacity: 1, duration: 0.3 }, 0.1)
-      .to(seg1, { strokeDashoffset: 0, duration: 0.8, ease: "power2.inOut" }, 0.3)
-      .to(nodes[1]!, { opacity: 1, duration: 0.3 }, 1.0)
-      .to([a, b], { strokeDashoffset: 0, duration: 0.7, ease: "power2.out", stagger: 0.25 }, 1.0)
-      .to(labels[1]!, { opacity: 1, duration: 0.3 }, 1.4)
-      // the glitch: three frames of jitter, then the gap opens
-      .call(() => void jitter(a, 7), [], 2.3)
-      .call(() => void jitter(a, -5), [], 2.38)
-      .call(() => void jitter(a, 4), [], 2.46)
-      .call(() => void jitter(a, 0), [], 2.54)
-      .to(node2, { stroke: "var(--c-r)", duration: 0.1 }, 2.3)
-      .to(a, { attr: { [`${ax}2`]: mid - (vertical ? 36 : 44) }, duration: 0.12 }, 2.54)
-      .to(b, { attr: { [`${ax}1`]: mid + (vertical ? 14 : 12) }, strokeDasharray: "0.04 0.03", duration: 0.12 }, 2.54)
-      // restore: a spectral sweep re-forms the line
-      .to(nodes[2]!, { opacity: 1, duration: 0.3 }, 3.5)
-      .to(labels[2]!, { opacity: 1, duration: 0.3 }, 3.6)
-      .set(sweep, { opacity: 1 }, 3.7)
-      .to(fin, { strokeDashoffset: 0, duration: 1.1, ease: "power2.inOut" }, 3.7)
-      .to(sweep, { strokeDashoffset: -1.3, duration: 1.3, ease: "power2.inOut" }, 3.7)
-      .to([a, b], { opacity: 0, duration: 0.4 }, 4.2)
-      .to(node2, { stroke: "var(--ink)", duration: 0.3 }, 4.4)
-      .to(sweep, { opacity: 0, duration: 0.3 }, 4.9);
-  };
+    // Every tween ends on the values of the static markup (dash offset 0 on a pathLength 1 line is a solid line,
+    // opacity 1, x 0), so nothing needs clearing: clearing props would stop a later restart from re-applying them.
+    const finish = () => svg.classList.remove("is-anim", "is-broken");
+    const tl = gsap.timeline({
+      paused: true,
+      onStart: () => {
+        svg.classList.add("is-anim");
+        svg.classList.remove("is-broken");
+      },
+      onComplete: finish,
+    });
+    svg.classList.add("is-anim");
+    tl.fromTo(nodes[0]!, { opacity: 0 }, { opacity: 1, duration: 0.3 }, 0)
+      .fromTo(labels[0]!, { opacity: 0 }, { opacity: 1, duration: 0.3 }, 0.1)
+      .fromTo(l1, draw, { strokeDashoffset: 0, duration: 0.8, ease: "power2.inOut" }, 0.3)
+      // step 2: the line is there, then the driver update glitches and breaks it
+      .fromTo(nodes[1]!, { opacity: 0 }, { opacity: 1, duration: 0.3 }, 1.2)
+      .fromTo(labels[1]!, { opacity: 0 }, { opacity: 1, duration: 0.3 }, 1.4)
+      .fromTo(a, { ...draw, attr: { x2: mid } }, { strokeDashoffset: 0, duration: 0.6, ease: "power2.out" }, 1.2)
+      .fromTo(b, { ...draw, attr: { x1: mid, y1: y, y2: y } }, { strokeDashoffset: 0, duration: 0.6, ease: "power2.out" }, 1.5)
+      .to(b, { x: 7, duration: 0.07 }, 2.6)
+      .to(b, { x: -5, duration: 0.07 })
+      .to(b, { x: 4, duration: 0.07 })
+      .to(b, { x: 0, duration: 0.07 })
+      .call(() => void svg.classList.add("is-broken"), [], 2.9)
+      .to(a, { attr: { x2: aEnd }, duration: 0.18, ease: "power2.out" }, 2.9)
+      .to(b, { attr: { x1: bStart, y1: bY, y2: bY }, duration: 0.18, ease: "power2.out" }, 2.9)
+      // step 3: a spectral line is drawn in
+      .fromTo(nodes[2]!, { opacity: 0 }, { opacity: 1, duration: 0.3 }, 3.7)
+      .fromTo(labels[2]!, { opacity: 0 }, { opacity: 1, duration: 0.3 }, 3.8)
+      .fromTo(l3, draw, { strokeDashoffset: 0, duration: 1.2, ease: "power2.inOut" }, 3.9);
 
-  ScrollTrigger.create({
-    trigger: section,
-    start: "top 55%",
-    once: true,
-    onEnter: () => diagrams.forEach(play),
-  });
-  // hide the end state until the section is entered
-  diagrams.forEach((svg) => {
-    gsap.set(svg.querySelectorAll(".drv-node, .drv-labels text"), { opacity: 0 });
-    gsap.set([q(svg, ".drv-seg-1"), q(svg, ".drv-seg-final"), q(svg, ".drv-seg-2a"), q(svg, ".drv-seg-2b")], { opacity: 0 });
+    ScrollTrigger.create({ trigger: section, start: "top 55%", end: "bottom top", animation: tl, toggleActions: "restart none restart none" });
   });
 }

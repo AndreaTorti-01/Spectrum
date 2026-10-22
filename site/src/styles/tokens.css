@@ -35,6 +35,10 @@
   --show-dark: block;
   --shadow-a: 0, 0, 0;
   --horseshoe-alpha: 0.36;
+  /* specular highlight on the glass slabs: screen on the dark UI, overlay on the light one */
+  --spec-blend: screen;
+  --spec-a: 0.14;
+  --spec-o: 1;
   color-scheme: dark;
 
   --acc-1: #ff5a3c;
@@ -69,7 +73,10 @@
   --show-light: block;
   --show-dark: none;
   --shadow-a: 40, 30, 15;
-  --horseshoe-alpha: 0.62;
+  --horseshoe-alpha: 0.4;
+  --spec-blend: overlay;
+  --spec-a: 0.22;
+  --spec-o: 0.6;
   --c-r: #c2361b;
   --c-g: #46780b;
   --c-b: #1b66ad;
@@ -86,7 +93,10 @@
     --show-light: block;
     --show-dark: none;
     --shadow-a: 40, 30, 15;
-    --horseshoe-alpha: 0.62;
+    --horseshoe-alpha: 0.4;
+    --spec-blend: overlay;
+    --spec-a: 0.22;
+    --spec-o: 0.6;
     --c-r: #c2361b;
     --c-g: #46780b;
     --c-b: #1b66ad;

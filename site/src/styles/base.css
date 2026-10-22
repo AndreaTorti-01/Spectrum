@@ -97,6 +97,8 @@ button {
   color: var(--ink-dim);
 }
 .noscript-note {
+  max-width: var(--max);
+  margin-inline: auto;
   padding: 16px var(--pad);
 }
 .kicker {
@@ -170,7 +172,8 @@ h2 {
 html:not(.js) .needs-js {
   display: none;
 }
-html.js:not(.ready) [data-reveal] {
+html.js:not(.ready) [data-reveal],
+[data-reveal].reveal-wait {
   visibility: hidden;
 }
 

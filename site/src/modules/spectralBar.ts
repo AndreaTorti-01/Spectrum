@@ -1,6 +1,5 @@
 // The spectral bar: every pixel is the colour of one wavelength (380 to 700 nm) via the CIE 1931 CMF table.
 import { gsap } from "gsap";
-import { ScrollTrigger } from "gsap/ScrollTrigger";
 import { wavelengthToSrgb8 } from "../data/color.ts";
 import { isStatic } from "./env.ts";
 
@@ -66,13 +65,14 @@ export function initSpectralBars() {
     const scan = el.querySelector<HTMLElement>(".spectral-scan");
     const canvas = el.querySelector<HTMLCanvasElement>(".spectral-canvas");
     if (!scan || !canvas) return;
-    ScrollTrigger.create({
-      trigger: el,
-      start: "top 88%",
-      once: true,
-      onEnter: () => {
+    const io = new IntersectionObserver(
+      (es) => {
+        if (!es.some((e) => e.isIntersecting)) return;
+        io.disconnect();
         gsap.fromTo(scan, { x: 0, opacity: 1 }, { x: canvas.clientWidth, duration: 1.1, ease: "power2.inOut", onComplete: () => void gsap.set(scan, { opacity: 0 }) });
       },
-    });
+      { rootMargin: "0px 0px -12% 0px" },
+    );
+    io.observe(el);
   });
 }

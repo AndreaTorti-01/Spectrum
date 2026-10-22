@@ -154,9 +154,15 @@ export interface View {
  */
 export function fillHorseshoe(w: number, h: number, v: View): Uint8ClampedArray {
   const out = new Uint8ClampedArray(w * h * 4);
+  fillHorseshoeRows(out, w, v, 0, h);
+  return out;
+}
+
+/** Fills rows [from, to) of a w-wide RGBA buffer, so a caller can split the work into short tasks. */
+export function fillHorseshoeRows(out: Uint8ClampedArray, w: number, v: View, from: number, to: number): void {
   const n = LOCUS_POLY.length;
   const xs: number[] = [];
-  for (let py = 0; py < h; py++) {
+  for (let py = from; py < to; py++) {
     const y = v.y0 - (py + 0.5) / v.scale;
     xs.length = 0;
     for (let i = 0; i < n; i++) {
@@ -176,7 +182,6 @@ export function fillHorseshoe(w: number, h: number, v: View): Uint8ClampedArray 
       }
     }
   }
-  return out;
 }
 
 /** Outward unit normal of the locus at index i (finite difference), for tick labels. */

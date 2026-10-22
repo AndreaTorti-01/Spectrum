@@ -1,7 +1,6 @@
 // Glass slabs: screenshots that tilt toward the cursor, catch a moving specular highlight and split a faint
 // spectrum along their edge. CSS 3D transforms keep the screenshot text pixel-sharp (no WebGL resampling).
 import { gsap } from "gsap";
-import { ScrollTrigger } from "gsap/ScrollTrigger";
 import { finePointer, isStatic } from "./env.ts";
 
 export function initSlabs() {
@@ -27,7 +26,7 @@ function setup(slab: HTMLElement) {
 
   // Idle: slow sway, only while on screen.
   const idle = gsap.fromTo(sway, { rotationY: -4 }, { rotationY: 4, duration: 6, ease: "sine.inOut", yoyo: true, repeat: -1, paused: true });
-  ScrollTrigger.create({ trigger: slab, start: "top bottom", end: "bottom top", onToggle: (s) => (s.isActive ? idle.play() : idle.pause()) });
+  new IntersectionObserver((es) => es.forEach((e) => (e.isIntersecting ? idle.play() : idle.pause()))).observe(slab);
 
   if (!finePointer) return;
 

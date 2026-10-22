@@ -6,7 +6,8 @@
  *   <section-id> is one of hero, edid, window, hdr, gamut, tray, drivers, download, footer, or "all"
  *   (no scroll jump, whole page). The page jumps to that section, forces the theme (not persisted), turns
  *   off Lenis, pins and every animation, and renders each animation in its final state.
- *   The same static path is used for prefers-reduced-motion.
+ *   The same static path is used for prefers-reduced-motion. window.__shotReady becomes true once the final
+ *   state has rendered (fonts, images, canvas fills); scripts/shots.mjs waits for it.
  */
 import { gsap } from "gsap";
 import { ScrollTrigger } from "gsap/ScrollTrigger";
@@ -18,7 +19,7 @@ import "./styles/base.css";
 import "./styles/layout.css";
 import "./styles/sections.css";
 
-import { isStatic, shot } from "./modules/env.ts";
+import { isStatic, pending, shot } from "./modules/env.ts";
 import { initNav } from "./modules/nav.ts";
 import { initSpectralBars } from "./modules/spectralBar.ts";
 import { initReveal } from "./modules/reveal.ts";
@@ -27,6 +28,12 @@ import { initEdid } from "./modules/edidDecoder.ts";
 import { initSlabs } from "./modules/glassSlab.ts";
 import { initHdrLab } from "./modules/hdrLab.ts";
 import { initCallouts, initDrivers, initGamut, initTray } from "./modules/sections.ts";
+
+declare global {
+  interface Window {
+    __shotReady?: boolean;
+  }
+}
 
 gsap.registerPlugin(ScrollTrigger, SplitText);
 
@@ -57,16 +64,12 @@ document.querySelectorAll<HTMLAnchorElement>('a[href^="#"]').forEach((a) => {
   });
 });
 
-initSpectralBars();
-initReveal();
-initHero();
-initEdid();
-initHdrLab();
-initSlabs();
-initCallouts();
-initGamut();
-initTray();
-initDrivers();
+/** Lets the browser paint and handle input between two init steps, so no single task runs long. */
+const nextTask = () => new Promise<void>((r) => setTimeout(r, 0));
+for (const step of [initSpectralBars, initReveal, initHero, initEdid, initHdrLab, initSlabs, initCallouts, initGamut, initTray, initDrivers]) {
+  step();
+  if (!isStatic) await nextTask();
+}
 
 function jumpToShot() {
   if (shot === null || shot === "all") return;
@@ -82,5 +85,7 @@ Promise.all([document.fonts.ready, new Promise<void>((r) => (document.readyState
   requestAnimationFrame(() => {
     jumpToShot();
     root.classList.add("shot-ready");
+    // ?shot= path: tell the capture script (scripts/shots.mjs) once the canvases have their final fill.
+    if (shot !== null) void Promise.all(pending).then(() => requestAnimationFrame(() => (window.__shotReady = true)));
   });
 });
