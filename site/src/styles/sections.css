@@ -461,7 +461,7 @@ input[type="range"]:focus-visible {
 
 /* ---------- tray ---------- */
 .tray {
-  --menu-w: 220px; /* the capture is 220 px wide and the Windows menu cannot be captured at 2x: never scale it up */
+  --menu-w: 200px; /* the capture is 200 px wide and the Windows menu cannot be captured at 2x: never scale it up */
   padding-bottom: 0;
 }
 .tray .caption {

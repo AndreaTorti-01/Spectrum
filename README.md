@@ -16,11 +16,7 @@
 </p>
 
 <p align="center">
-  <b><a href="https://github.com/AndreaTorti-01/Spectrum/releases/latest/download/SpectrumSetup.exe">Download SpectrumSetup.exe</a></b>. It installs per user with no admin prompt. A portable <code>Spectrum.exe</code> is on the <a href="https://github.com/AndreaTorti-01/Spectrum/releases/latest">release page</a>.
-</p>
-
-<p align="center">
-  Windows 11 · MIT
+  <b><a href="https://github.com/AndreaTorti-01/Spectrum/releases/latest/download/SpectrumSetup.exe">Download SpectrumSetup.exe</a></b>
 </p>
 
 <p align="center">
@@ -37,14 +33,12 @@
         <source media="(prefers-color-scheme: dark)" srcset="docs/screenshots/main-dark-1x.png">
         <img src="docs/screenshots/main-light-1x.png" alt="Spectrum main window with a monitor map, SDR profile dropdown and HDR sliders" width="300">
       </picture>
-      <br>Identify numbers each real screen for 2.5 seconds.
     </td>
     <td width="50%" align="center" valign="middle">
       <picture>
         <source media="(prefers-color-scheme: dark)" srcset="docs/screenshots/gamut-dark-1x.png">
         <img src="docs/screenshots/gamut-light-1x.png" alt="Spectrum gamut window with gamut triangles on a CIE 1931 xy diagram and a coverage checklist" width="420">
       </picture>
-      <br>Reference gamuts plus every matrix profile you have installed.
     </td>
   </tr>
   <tr>
@@ -53,14 +47,12 @@
         <source media="(prefers-color-scheme: dark)" srcset="docs/screenshots/traymenu-dark-1x.png">
         <img src="docs/screenshots/traymenu-light-1x.png" alt="Spectrum tray menu listing SDR profiles per monitor and an HDR on/off item" width="220">
       </picture>
-      <br>Left-click the tray icon to toggle the main window.
     </td>
     <td width="50%" align="center" valign="middle">
       <picture>
         <source media="(prefers-color-scheme: dark)" srcset="docs/screenshots/hdr-dark-1x.png">
         <img src="docs/screenshots/hdr-light-1x.png" alt="Spectrum HDR section with Black level, Peak brightness, Full-frame, Saturation and SDR content sliders" width="420">
       </picture>
-      <br>Four sliders write an MHC2 profile on release.
     </td>
   </tr>
 </table>
@@ -69,11 +61,11 @@
 
 ### EDID to ICC
 
-Every monitor sends an [EDID](https://en.wikipedia.org/wiki/Extended_Display_Identification_Data) over the cable. Bytes 0x19–0x22 hold the red, green, blue and white chromaticities as 10-bit values, and byte 0x17 holds the gamma. Read profile from monitor decodes them and writes an ICC v4 profile. ArgyllCMS and DisplayCAL aren't needed.
+Monitors can send [EDID](https://en.wikipedia.org/wiki/Extended_Display_Identification_Data) data over the display cable, containing information about their capabilities, following a request from the computer. This software can trigger such request.
 
 ### HDR profiles
 
-The profile copies the layout of the Windows HDR Calibration app: minimum and peak luminance, a saturation matrix that pushes BT.709 toward BT.2020, and identity LUTs. Spectrum alternates two file names so Windows reloads it.
+The included profile copies the layout of the Windows HDR Calibration app: minimum and peak luminance, a saturation matrix that pushes BT.709 toward BT.2020, and identity LUTs.
 
 ### Driver updates
 
@@ -86,16 +78,9 @@ Standard users can create files in the Windows color folder, and the profile ass
 ## FAQ
 
 <details>
-<summary>Does it change anything without asking?</summary>
-
-No. It writes only what you pick. If you change the default profile in Windows Settings, Spectrum follows your change.
-
-</details>
-
-<details>
 <summary>Does it use the network?</summary>
 
-No. It makes no network connections and sends no telemetry.
+No, Spectrum sends no telemetry.
 
 </details>
 

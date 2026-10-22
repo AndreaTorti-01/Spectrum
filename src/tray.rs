@@ -43,7 +43,7 @@ pub fn set_menu_anchor(p: Option<(i32, i32)>) {
 static ICON: AtomicIsize = AtomicIsize::new(0);
 
 pub struct MenuMonitor {
-    /// Submenu title for multi-monitor setups, e.g. "1 \u{b7} MAG 271QPX E2". If it does not start with a
+    /// Submenu title for multi-monitor setups, e.g. "1 \u{b7} QD-OLED 27". If it does not start with a
     /// digit, "<n> \u{b7} " is prepended.
     pub label: String,
     /// (label, file)

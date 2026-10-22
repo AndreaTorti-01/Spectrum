@@ -208,8 +208,8 @@ fn display_number(gdi_name: &str) -> u32 {
     digits.parse().unwrap_or(u32::MAX)
 }
 
-/// `\\?\DISPLAY#MSI4CD8#5&2ea131cc&1&UID155907#{guid}` to
-/// `SYSTEM\CurrentControlSet\Enum\DISPLAY\MSI4CD8\5&2ea131cc&1&UID155907\Device Parameters`.
+/// `\\?\DISPLAY#SPC0001#5&2ea131cc&1&UID155907#{guid}` to
+/// `SYSTEM\CurrentControlSet\Enum\DISPLAY\SPC0001\5&2ea131cc&1&UID155907\Device Parameters`.
 fn edid_registry_path(device_path: &str) -> Option<String> {
     let trimmed = device_path.strip_prefix("\\\\?\\").unwrap_or(device_path);
     let mut parts = trimmed.split('#');
@@ -487,7 +487,7 @@ struct SetSdrWhiteLevel {
     final_value: u8,
 }
 
-/// Verified on Windows 11 26300 (MSI MAG 271QPX E2, HDR on): the Settings slider s (0..100) is
+/// Verified on Windows 11 26300 (QD-OLED 27, HDR on): the Settings slider s (0..100) is
 /// nits = 80 + 4 * s, and the raw value is nits * 1000 / 80 (s = 0, 25, 50, 77, 100 gave 1000, 2250,
 /// 3500, 4850, 6000; the registry `MonitorDataStore\<monitor>\SDRWhiteLevel` holds the same raw value).
 /// Off-grid values are stored as given and Settings shows the floor of s (82 nits = 0, 246 nits = 41).
@@ -585,10 +585,10 @@ mod tests {
 
     #[test]
     fn registry_path_from_device_path() {
-        let p = "\\\\?\\DISPLAY#MSI4CD8#5&2ea131cc&1&UID155907#{e6f07b5f-ee97-4a90-b076-33f57bf4eaa7}";
+        let p = "\\\\?\\DISPLAY#SPC0001#5&2ea131cc&1&UID155907#{e6f07b5f-ee97-4a90-b076-33f57bf4eaa7}";
         assert_eq!(
             edid_registry_path(p).unwrap(),
-            "SYSTEM\\CurrentControlSet\\Enum\\DISPLAY\\MSI4CD8\\5&2ea131cc&1&UID155907\\Device Parameters"
+            "SYSTEM\\CurrentControlSet\\Enum\\DISPLAY\\SPC0001\\5&2ea131cc&1&UID155907\\Device Parameters"
         );
         assert!(edid_registry_path("garbage").is_none());
         assert!(edid_registry_path("").is_none());

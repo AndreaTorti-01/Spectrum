@@ -46,6 +46,7 @@ Switches (each takes `--out <file>`; monitor numbers are the 1-based numbers in 
 - `--debug-wipe <n>` removes Spectrum's associations (simulates a driver update); `--debug-reconcile` runs reconcile once.
 - `--debug-tray-cmd <id>`: runs a tray menu command in the running instance.
 - `--debug-open main|main-hdr|gamut|profiles|traymenu|gamut-showcase|profiles-showcase|traymenu-showcase`, `--debug-demo`, `--debug-stage`, `--debug-scale`: screenshots only. See the `screenshots` skill.
+- Showcase captures (`main-hdr`, `*-showcase`, `--debug-demo`) use `src/showcase.rs`: fixed data from the QD-OLED EDID fixture, so they look the same on any machine. Extend that module when the UI gains state.
 
 Before changing the owner's real color settings (default profile, associations, HDR state), take a `--debug-dump` and plan to restore it afterwards; ask first if the change isn't part of the task. HDR toggles flash the screen. `examples/sysprobe.rs` is a read-only probe.
 

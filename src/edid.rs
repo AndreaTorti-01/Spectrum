@@ -183,7 +183,7 @@ fn parse_cta_hdr(block: &[u8]) -> Option<HdrStatic> {
 }
 
 impl Edid {
-    /// e.g. "MSI-3CB0-0000012A" (+ "-" + sanitized serial_text if present); filename-safe.
+    /// e.g. "SPC-0001-0000012A" (+ "-" + sanitized serial_text if present); filename-safe.
     pub fn key(&self) -> String {
         let mut k = format!(
             "{}-{:04X}-{:08X}",

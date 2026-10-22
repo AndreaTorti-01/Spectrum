@@ -58,7 +58,7 @@ text{font:400 10px "IBM Plex Mono";fill:${t.dim}}
 <div class="kick">Windows 11 · MIT</div>
 <div class="brand">${prismSvg(112, { id: "b" })}<div class="word">SPECTRUM</div></div>
 <div class="tag">Your monitor already knows its colors.</div>
-<div class="spec"><div><b>${areaPercent(tri(mon)).toFixed(1)}%</b>of CIE 1931 xy</div><div><b>${monitor.name.replace("MSI ", "")}</b>EDID primaries</div></div>
+<div class="spec"><div><b>${areaPercent(tri(mon)).toFixed(1)}%</b>of CIE 1931 xy</div><div><b>${monitor.name}</b>EDID primaries</div></div>
 <svg width="${W}" height="${H}"><g stroke="${t.grid}" stroke-width="1">${grid.join("")}</g></svg>
 <img src="${horseshoe}">
 <svg width="${W}" height="${H}" fill="none">

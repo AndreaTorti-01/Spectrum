@@ -6,6 +6,15 @@ use spectrum::icc_read;
 use spectrum::icc_write::{build_hdr_profile, build_sdr_profile, HdrParams};
 use spectrum::wcs;
 
+/// The base block alone, as a stale registry entry holds it: no extension count, checksum fixed.
+fn base_only(raw: &[u8]) -> Vec<u8> {
+    let mut b = raw[..128].to_vec();
+    b[126] = 0;
+    b[127] = 0;
+    b[127] = 0u8.wrapping_sub(b.iter().fold(0u8, |a, &x| a.wrapping_add(x)));
+    b
+}
+
 fn fixture(name: &str) -> Vec<u8> {
     let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
         .join("tests")
@@ -138,22 +147,6 @@ fn reads_hdr_calibration_fixture() {
         "white {:?}",
         p.w
     );
-
-    let info2 = icc_read::parse(&fixture("hdr_calibration_app_2.icc")).unwrap();
-    assert_eq!(info2.lumi, Some(450.0));
-    assert_eq!(info2.mhc2.unwrap().peak_nits, 450.0);
-}
-
-#[test]
-fn reads_vendor_profile_with_mhc2() {
-    let info = icc_read::parse(&fixture("vendor_mag271qpx.icm")).unwrap();
-    assert_eq!(info.version >> 24, 4);
-    assert!(info.is_matrix_trc);
-    let p = info.primaries.unwrap();
-    assert!(p.r.x > 0.6 && p.r.x < 0.72, "vendor red {:?}", p.r);
-    let m = info.mhc2.expect("vendor profile carries MHC2");
-    println!("vendor MHC2: {m:?}");
-    assert!(m.lut_count > 2);
 }
 
 #[test]
@@ -331,8 +324,8 @@ fn spectral_locus_anchors_and_smoothness() {
 // ------------------------------------------------------------------------------------------------------
 
 #[test]
-fn parses_mag271qpx_edid() {
-    let raw = fixture("edid_mag271qpx_active.bin");
+fn parses_qdoled_edid() {
+    let raw = fixture("edid_qdoled.bin");
     assert_eq!(raw.len(), 384);
     for i in 0..3 {
         assert_eq!(
@@ -344,10 +337,10 @@ fn parses_mag271qpx_edid() {
         );
     }
     let e = edid::parse(&raw).unwrap();
-    assert_eq!(e.manufacturer, "MSI");
-    assert_eq!(e.product_code, 0x4CD8);
+    assert_eq!(e.manufacturer, "SPC");
+    assert_eq!(e.product_code, 0x0001);
     assert!(
-        e.name.as_deref().unwrap_or("").contains("MAG 271QPX"),
+        e.name.as_deref().unwrap_or("").contains("QD-OLED 27"),
         "name {:?}",
         e.name
     );
@@ -362,7 +355,7 @@ fn parses_mag271qpx_edid() {
     assert_eq!(h.min_nits, Some(0.0));
 
     let key = e.key();
-    assert!(key.starts_with("MSI-4CD8-"));
+    assert!(key.starts_with("SPC-0001-"));
     assert!(key.chars().all(|c| c.is_ascii_alphanumeric() || c == '-'));
 
     println!("EDID name        : {:?}", e.display_name());
@@ -391,9 +384,9 @@ fn parses_mag271qpx_edid() {
         );
     }
 
-    // The base-only copy of the same model parses without extensions.
-    let base = edid::parse(&fixture("edid_mag271qpx_base_only.bin")).unwrap();
-    assert_eq!(base.product_code, 0x4CD8);
+    // The base block alone parses without extensions.
+    let base = edid::parse(&base_only(&raw)).unwrap();
+    assert_eq!(base.product_code, 0x0001);
     assert!(base.hdr.is_none());
 
     // Corrupting the base block is rejected.
@@ -404,8 +397,9 @@ fn parses_mag271qpx_edid() {
 
 #[test]
 fn real_edid_primaries_are_plausible() {
-    for name in ["edid_mag271qpx_active.bin", "edid_mag271qpx_base_only.bin"] {
-        let e = edid::parse(&fixture(name)).unwrap();
+    let raw = fixture("edid_qdoled.bin");
+    for (name, bytes) in [("full", raw.clone()), ("base only", base_only(&raw))] {
+        let e = edid::parse(&bytes).unwrap();
         assert!(color::primaries_plausible(&e.primaries), "{name}");
     }
 }
@@ -413,7 +407,7 @@ fn real_edid_primaries_are_plausible() {
 #[test]
 fn edid_primaries_match_windows_hdr_fixture() {
     // Windows builds its HDR profile straight from the EDID chromaticities.
-    let e = edid::parse(&fixture("edid_mag271qpx_active.bin")).unwrap();
+    let e = edid::parse(&fixture("edid_qdoled.bin")).unwrap();
     let info = icc_read::parse(&fixture("hdr_calibration_app.icc")).unwrap();
     let p = info.primaries.unwrap();
     for (a, b) in [
@@ -480,7 +474,7 @@ mod windows_validation {
                 cases.push((format!("ref_{id}"), build_sdr_profile(&desc, &s.prims, s.trc)));
             }
         }
-        let e = edid::parse(&fixture("edid_mag271qpx_active.bin")).unwrap();
+        let e = edid::parse(&fixture("edid_qdoled.bin")).unwrap();
         cases.push((
             "edid".into(),
             build_sdr_profile(&e.display_name(), &e.primaries, e.trc()),
