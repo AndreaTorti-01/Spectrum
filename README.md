@@ -16,7 +16,7 @@
 </p>
 
 <p align="center">
-  <b><a href="https://github.com/AndreaTorti-01/Spectrum/releases/latest">Download SpectrumSetup.exe</a></b> from the latest release. It installs per user with no admin prompt. A portable <code>Spectrum.exe</code> is there too.
+  <b><a href="https://github.com/AndreaTorti-01/Spectrum/releases/latest/download/SpectrumSetup.exe">Download SpectrumSetup.exe</a></b>. It installs per user with no admin prompt. A portable <code>Spectrum.exe</code> is on the <a href="https://github.com/AndreaTorti-01/Spectrum/releases/latest">release page</a>.
 </p>
 
 <p align="center">

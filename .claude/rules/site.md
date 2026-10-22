@@ -18,7 +18,7 @@ Pictures pull the visitor in and text captions them. Copy follows `.claude/rules
 - Fonts: `@fontsource-variable/archivo` (has the `wdth` axis) and `@fontsource/ibm-plex-mono`, self-hosted. Inter is avoided; it's the default every template reaches for.
 - `scripts/images.mjs` (sharp) turns `src/shots/*.png` into AVIF, WebP and PNG under `public/shots/`. `npm run build` runs it first.
 - Budgets: JS at most 110 KB gzipped, CSS at most 20 KB gzipped, LCP image at most 180 KB.
-- Every URL (repo, releases, license, canonical, og:url, og:image, twitter:image) comes from `src/data/site.ts`; `build/html.ts` fills `%REPO%`, `%RELEASES%`, `%LICENSE%` and `%SITE_URL%` in `index.html`. Change URLs in `site.ts` so they stay in sync.
+- Every URL (repo, releases, license, canonical, og:url, og:image, twitter:image) comes from `src/data/site.ts`; `build/html.ts` fills `%REPO%`, `%RELEASES%`, `%DOWNLOAD%` (direct link to the newest SpectrumSetup.exe), `%LICENSE%` and `%SITE_URL%` in `index.html`. Change URLs in `site.ts` so they stay in sync.
 - Pages deploy through `.github/workflows/pages.yml`, which is `workflow_dispatch` only. Other triggers would publish on every push, which the owner doesn't want.
 
 ## Tokens (`src/styles/tokens.css`)
