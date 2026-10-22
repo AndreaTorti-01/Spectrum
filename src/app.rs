@@ -1011,7 +1011,18 @@ pub fn park_cursor_for_menu() {
     // SAFETY: valid RECT pointer.
     unsafe {
         SystemParametersInfoW(SPI_GETWORKAREA, 0, &mut wa as *mut _ as *mut _, 0);
-        SetCursorPos(wa.right - 260, wa.bottom - 12);
+        // A bottom taskbar may be auto-hidden (work area = full screen, bar sliding in and out), so keep a
+        // fixed distance from the bottom edge: the menu stays clear of the bar and of its hover zone.
+        let bar = windows_sys::Win32::UI::WindowsAndMessaging::FindWindowW(
+            wide("Shell_TrayWnd").as_ptr(),
+            std::ptr::null(),
+        );
+        let mut br = wa;
+        let bar_at_bottom = !bar.is_null()
+            && windows_sys::Win32::UI::WindowsAndMessaging::GetWindowRect(bar, &mut br) != 0
+            && br.top > (wa.top + wa.bottom) / 2;
+        let bottom = if bar_at_bottom { wa.bottom - 60 } else { wa.bottom };
+        SetCursorPos(wa.right - 260, bottom - 12);
     }
 }
 
@@ -1036,11 +1047,17 @@ pub fn post_command(cmd: &str) {
     unsafe { PostMessageW(hwnd(), WM_RUN_CMD, 0, 0) };
 }
 
-/// Debug and IPC commands: `open main`, `open gamut`, `open traymenu`, `tray-cmd <id>`, `demo`.
+/// Debug and IPC commands: `open main`, `open main-hdr`, `open gamut`, `open traymenu`, `tray-cmd <id>`, `demo`.
 pub fn run_command(cmd: &str) {
     let mut parts = cmd.split_whitespace();
     match (parts.next(), parts.next()) {
         (Some("open"), Some("main")) => {
+            ui::main_window::open();
+            raise(ui::main_window::hwnd());
+        }
+        (Some("open"), Some("main-hdr")) => {
+            // Screenshots: the main window on a mock state with HDR on (nothing is applied).
+            ui::set_mock(Some(crate::debug::showcase_state()));
             ui::main_window::open();
             raise(ui::main_window::hwnd());
         }

@@ -18,12 +18,17 @@ use std::io::Write as _;
 use std::path::Path;
 use std::time::Instant;
 use windows_sys::Win32::Foundation::{HWND, INVALID_HANDLE_VALUE};
+use windows_sys::Win32::Graphics::Gdi::CreateSolidBrush;
 use windows_sys::Win32::System::Console::{
     AttachConsole, GetStdHandle, ATTACH_PARENT_PROCESS, STD_OUTPUT_HANDLE,
 };
 use windows_sys::Win32::System::DataExchange::COPYDATASTRUCT;
+use windows_sys::Win32::System::LibraryLoader::GetModuleHandleW;
 use windows_sys::Win32::UI::WindowsAndMessaging::{
-    EndMenu, FindWindowW, PostMessageW, SendMessageW, SetTimer, WM_CLOSE, WM_COPYDATA,
+    CreateWindowExW, DefWindowProcW, DestroyWindow, DispatchMessageW, EndMenu, FindWindowW, GetMessageW,
+    PostMessageW, PostQuitMessage, RegisterClassExW, SendMessageW, SetTimer, SetWindowPos,
+    SystemParametersInfoW, TranslateMessage, HWND_TOP, MSG, SPI_GETWORKAREA, SWP_NOACTIVATE, SWP_SHOWWINDOW,
+    WM_CLOSE, WM_COPYDATA, WM_DESTROY, WNDCLASSEXW, WS_EX_NOACTIVATE, WS_EX_TOOLWINDOW, WS_POPUP,
 };
 
 // ---------------------------------------------------------------------------------------------
@@ -727,6 +732,89 @@ pub fn stop_running(ms: u64) {
 }
 
 // ---------------------------------------------------------------------------------------------
+// Screenshot backdrop
+// ---------------------------------------------------------------------------------------------
+
+unsafe extern "system" fn stage_proc(hwnd: HWND, msg: u32, wp: usize, lp: isize) -> isize {
+    match msg {
+        WM_CLOSE => {
+            DestroyWindow(hwnd);
+            0
+        }
+        WM_DESTROY => {
+            PostQuitMessage(0);
+            0
+        }
+        _ => DefWindowProcW(hwnd, msg, wp, lp),
+    }
+}
+
+/// `--debug-stage light|dark`: a borderless solid-color window over the primary work area, so screenshots
+/// of Spectrum's windows never pick up the desktop or other windows around them. Runs until closed.
+///
+/// It sits at the top of the normal (non-topmost) z-order and does not take focus. Surfaces opened after it
+/// are raised above it by `app::raise`, so it ends up directly behind them.
+pub fn stage(theme: &str) -> i32 {
+    // COLORREF is 0x00BBGGRR: these are 0xE9E6E1 and 0x202020 as RGB.
+    let color: u32 = if theme.eq_ignore_ascii_case("dark") {
+        0x0020_2020
+    } else {
+        0x00E1_E6E9
+    };
+    let mut wa = windows_sys::Win32::Foundation::RECT {
+        left: 0,
+        top: 0,
+        right: 1920,
+        bottom: 1080,
+    };
+    let cls = wide("SpectrumStage");
+    // SAFETY: class data and the brush outlive the window; the window belongs to this thread.
+    unsafe {
+        SystemParametersInfoW(SPI_GETWORKAREA, 0, &mut wa as *mut _ as *mut _, 0);
+        let hinst = GetModuleHandleW(std::ptr::null());
+        let mut wc: WNDCLASSEXW = std::mem::zeroed();
+        wc.cbSize = std::mem::size_of::<WNDCLASSEXW>() as u32;
+        wc.lpfnWndProc = Some(stage_proc);
+        wc.hInstance = hinst;
+        wc.hbrBackground = CreateSolidBrush(color);
+        wc.lpszClassName = cls.as_ptr();
+        RegisterClassExW(&wc);
+        let h = CreateWindowExW(
+            WS_EX_TOOLWINDOW | WS_EX_NOACTIVATE,
+            cls.as_ptr(),
+            wide("Spectrum stage").as_ptr(),
+            WS_POPUP,
+            wa.left,
+            wa.top,
+            wa.right - wa.left,
+            wa.bottom - wa.top,
+            std::ptr::null_mut(),
+            std::ptr::null_mut(),
+            hinst,
+            std::ptr::null(),
+        );
+        if h.is_null() {
+            return 1;
+        }
+        SetWindowPos(
+            h,
+            HWND_TOP,
+            wa.left,
+            wa.top,
+            wa.right - wa.left,
+            wa.bottom - wa.top,
+            SWP_NOACTIVATE | SWP_SHOWWINDOW,
+        );
+        let mut msg: MSG = std::mem::zeroed();
+        while GetMessageW(&mut msg, std::ptr::null_mut(), 0, 0) > 0 {
+            TranslateMessage(&msg);
+            DispatchMessageW(&msg);
+        }
+    }
+    0
+}
+
+// ---------------------------------------------------------------------------------------------
 // Scripted demo (README frames, about 8 s)
 // ---------------------------------------------------------------------------------------------
 
@@ -745,8 +833,28 @@ thread_local! {
     static DONE: Cell<u32> = const { Cell::new(0) };
 }
 
-/// Starts the demo: tray menu, profile switch, main window, peak slider animation, exit.
+/// The current state with the first monitor shown as HDR-on with tuned values. Used for screenshots only:
+/// the windows read it through `ui::set_mock`, so nothing is applied and no setting changes.
+pub fn showcase_state() -> UiState {
+    let mut st = app::snapshot();
+    if let Some(m) = st.monitors.first_mut() {
+        m.hdr_supported = true;
+        m.hdr_on = true;
+        m.hdr_custom_active = true;
+        m.hdr = HdrParams {
+            min_nits: 0.0,
+            peak_nits: 450.0,
+            full_frame_nits: 250.0,
+            saturation: 0.0,
+        };
+    }
+    st
+}
+
+/// Starts the demo: tray menu, profile switch, main window, peak slider animation, exit. The windows run
+/// against a mock copy of the current state, so nothing is applied to the system.
 pub fn start_demo(hwnd: HWND) {
+    ui::set_mock(Some(showcase_state()));
     START.with(|s| s.set(Some(Instant::now())));
     DONE.with(|d| d.set(0));
     // SAFETY: valid window handle; the timer runs on this thread.
@@ -781,7 +889,7 @@ fn switch_profile() {
         "sRGB"
     };
     if let Some(idx) = m.sdr_options.iter().position(|o| o.0 == want) {
-        app::dispatch(UiAction::SetSdr { mon: 0, idx });
+        ui::dispatch(UiAction::SetSdr { mon: 0, idx });
     }
 }
 
