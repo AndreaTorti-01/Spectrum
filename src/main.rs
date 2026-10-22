@@ -37,6 +37,7 @@ enum Command {
     DebugOpen(String),
     DebugTrayCmd(u32),
     DebugDemo,
+    DebugStage(String),
     DebugSdr(String, String),
     DebugHdr(String, String),
     DebugHdrReset(String),
@@ -76,6 +77,7 @@ fn parse_args<I: Iterator<Item = String>>(mut it: I) -> Args {
             "--debug-open" => args.command = Command::DebugOpen(it.next().unwrap_or_default()),
             "--debug-tray-cmd" => args.command = Command::DebugTrayCmd(num(it.next())),
             "--debug-demo" => args.command = Command::DebugDemo,
+            "--debug-stage" => args.command = Command::DebugStage(it.next().unwrap_or_default()),
             "--debug-sdr" => {
                 args.command = Command::DebugSdr(it.next().unwrap_or_default(), it.next().unwrap_or_default())
             }
@@ -218,6 +220,7 @@ fn main() {
         Command::DebugAutostart(v) => debug::autostart(&v, out),
         Command::DebugOpen(what) => debug_open(format!("open {what}")),
         Command::DebugTrayCmd(id) => debug_open(format!("tray-cmd {id}")),
+        Command::DebugStage(t) => debug::stage(&t),
         Command::DebugDemo => app::run(RunOpts {
             tray: false,
             show_main: false,
