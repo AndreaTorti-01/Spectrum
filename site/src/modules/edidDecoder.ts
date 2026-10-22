@@ -19,7 +19,7 @@ export function initEdid() {
 
   const bytes = Array.from(section.querySelectorAll<HTMLElement>(".byte.hot")).sort((a, b) => Number(a.dataset.i) - Number(b.dataset.i));
   const readouts = Array.from(section.querySelectorAll<HTMLElement>(".edid-readout li"));
-  const diagram = new CieDiagram(plot, {});
+  const diagram = new CieDiagram(plot, { lazy: true });
   const prims = monitor.primaries as Prims;
   const state = { drawn: isStatic, progress: isStatic ? 1 : 0 };
   const setProgress = () => {
@@ -36,31 +36,41 @@ export function initEdid() {
     if (!isDesktop()) return;
     const g = grid.getBoundingClientRect();
     const dump = section.querySelector<HTMLElement>(".edid-dump")!.getBoundingClientRect();
+    // One horizontal lane per connector. Bytes above a row route over it, bytes of the 0x20 row under it; within
+    // a side the leftmost byte takes the outermost lane, so a lane never runs through a neighbour's stub.
+    // Each readout gets its own vertical bus, the topmost readout the farthest one out.
+    type Link = { byte: HTMLElement; key: string; i: number; below: boolean };
+    const links: Link[] = [];
     for (const byte of bytes) {
       const i = Number(byte.dataset.i);
-      const r = byte.getBoundingClientRect();
-      const below = i >= 0x20;
-      for (const key of (byte.dataset.k ?? "").split(" ")) {
-        const li = section.querySelector<HTMLElement>(`.edid-readout li[data-k="${key}"]`);
-        if (!li) continue;
-        const gi = GROUP_ORDER.indexOf(key);
-        const lr = li.getBoundingClientRect();
-        const x0 = r.left + r.width / 2 - g.left;
-        const y0 = (below ? r.bottom : r.top) - g.top;
-        const rail = y0 + (below ? 1 : -1) * (8 + gi * 3);
-        const bus = dump.right - g.left + 14 + gi * 9;
-        const yEnd = lr.top - g.top + 8;
-        const xEnd = lr.left - g.left - 8;
-        const path = document.createElementNS("http://www.w3.org/2000/svg", "path");
-        path.setAttribute("d", `M${x0} ${y0} V${rail} H${bus} V${yEnd} H${xEnd}`);
-        path.setAttribute("pathLength", "1");
-        path.style.stroke = GROUP_COLOR[key]!;
-        path.style.strokeDasharray = "1";
-        path.style.strokeDashoffset = state.drawn ? "0" : "1";
-        path.style.opacity = i === 0x19 || i === 0x1a ? "0.45" : "0.9";
-        svg.appendChild(path);
-        paths.push({ el: path, byte, key });
-      }
+      for (const key of (byte.dataset.k ?? "").split(" ")) if (key) links.push({ byte, key, i, below: i >= 0x20 });
+    }
+    const lane = new Map<Link, number>();
+    for (const side of [false, true]) {
+      const group = links.filter((l) => l.below === side).sort((p, q) => p.i - q.i);
+      group.forEach((l, k) => lane.set(l, group.length - 1 - k));
+    }
+    for (const l of links) {
+      const li = section.querySelector<HTMLElement>(`.edid-readout li[data-k="${l.key}"]`);
+      if (!li) continue;
+      const gi = GROUP_ORDER.indexOf(l.key);
+      const r = l.byte.getBoundingClientRect();
+      const lr = li.getBoundingClientRect();
+      const x0 = r.left + r.width / 2 - g.left;
+      const y0 = (l.below ? r.bottom : r.top) - g.top;
+      const rail = y0 + (l.below ? 1 : -1) * (8 + lane.get(l)! * 3.5);
+      const bus = dump.right - g.left + 14 + (GROUP_ORDER.length - 1 - gi) * 9;
+      const yEnd = lr.top - g.top + 8;
+      const xEnd = lr.left - g.left - 8;
+      const path = document.createElementNS("http://www.w3.org/2000/svg", "path");
+      path.setAttribute("d", `M${x0} ${y0} V${rail} H${bus} V${yEnd} H${xEnd}`);
+      path.setAttribute("pathLength", "1");
+      path.style.stroke = GROUP_COLOR[l.key]!;
+      path.style.strokeDasharray = "1";
+      path.style.strokeDashoffset = state.drawn ? "0" : "1";
+      path.style.opacity = l.i === 0x19 || l.i === 0x1a ? "0.45" : "0.9";
+      svg.appendChild(path);
+      paths.push({ el: path, byte: l.byte, key: l.key });
     }
   };
 

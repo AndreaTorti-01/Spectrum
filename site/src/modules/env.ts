@@ -9,6 +9,15 @@ export const isStatic = reduceMotion || shot !== null;
 export const finePointer = matchMedia("(hover: hover) and (pointer: fine)").matches;
 export const isDesktop = () => matchMedia("(min-width: 900px)").matches;
 
+/** Work that must finish before the page counts as rendered (read by the ?shot code path). */
+export const pending: Promise<unknown>[] = [];
+
+/** Runs fn when the main thread is idle (setTimeout where requestIdleCallback is missing). */
+export function whenIdle(fn: () => void) {
+  if ("requestIdleCallback" in window) window.requestIdleCallback(fn, { timeout: 300 });
+  else setTimeout(fn, 16);
+}
+
 export const THEME_EVENT = "spectrum:theme";
 export const onTheme = (fn: () => void) => window.addEventListener(THEME_EVENT, fn);
 

@@ -26,7 +26,7 @@ export function initHdrLab() {
 
   let size = { w: 0, h: 0, dpr: 1 };
   const m = { l: 50, r: 12, t: 10, b: 32 };
-  const diagram = new CieDiagram(gamut, { fontSize: 10 });
+  const diagram = new CieDiagram(gamut, { fontSize: 10, lazy: true });
   const live = { black: 0, peak: 450, full: 450, sat: 0 };
   const target = { ...live };
   const tweens = {

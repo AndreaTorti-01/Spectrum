@@ -15,12 +15,12 @@
   top: 0;
   z-index: 50;
   height: var(--nav-h);
-  background: color-mix(in srgb, var(--bg) 85%, transparent);
+  background: color-mix(in srgb, var(--bg) 94%, transparent);
   backdrop-filter: saturate(1.2);
   -webkit-backdrop-filter: saturate(1.2);
 }
 .nav-inner {
-  max-width: 1480px;
+  max-width: var(--max);
   height: 100%;
   margin-inline: auto;
   padding-inline: var(--pad);
@@ -133,5 +133,28 @@
   }
   .spectral-ticks li:nth-child(even) {
     display: none;
+  }
+}
+
+/* 320 px: keep the Download button inside the viewport. */
+@media (max-width: 359px) {
+  .nav-inner {
+    gap: 8px;
+  }
+  .nav-links {
+    gap: 8px;
+  }
+  .brand {
+    gap: 8px;
+  }
+  .brand-word {
+    font-size: 1rem;
+  }
+  .theme-toggle {
+    min-width: 0;
+    padding: 8px;
+  }
+  .btn-sm {
+    padding: 10px;
   }
 }

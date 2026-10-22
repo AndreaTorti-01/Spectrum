@@ -1,10 +1,11 @@
-// CIE 1931 xy diagram on Canvas 2D. The horseshoe is filled once per size into an offscreen canvas
-// (every pixel: xy -> XYZ with Y = 1 -> sRGB, normalised to its brightest channel) and drawn dimmed so it
-// reads as lit from behind. Triangles, ticks and labels are drawn live on top.
+// CIE 1931 xy diagram on Canvas 2D. The horseshoe is filled once per size into an offscreen canvas at half the
+// device resolution (every pixel: xy -> XYZ with Y = 1 -> sRGB, normalised to its brightest channel), a few
+// rows per idle callback so no main-thread task runs long, and drawn scaled up and dimmed so it reads as lit
+// from behind. Triangles, ticks and labels are drawn live on top at full resolution.
 import { SPECTRAL_LOCUS } from "../data/cie1931.ts";
-import { fillHorseshoe, locusNormal, LOCUS_POLY, tri } from "../data/color.ts";
+import { fillHorseshoeRows, locusNormal, LOCUS_POLY, tri } from "../data/color.ts";
 import type { Prims } from "../data/spaces.ts";
-import { fitCanvas, palette, MONO, onTheme, debounce } from "./env.ts";
+import { fitCanvas, palette, pending, whenIdle, isStatic, MONO, onTheme, debounce } from "./env.ts";
 
 export interface TriSpec {
   prims: Prims;
@@ -32,7 +33,12 @@ export interface CieOptions {
   /** limit the drawn width to what is on screen when the canvas bleeds past the viewport */
   clipToViewport?: boolean;
   fontSize?: number;
+  /** wait until the canvas is near the viewport before filling the horseshoe (not in static mode) */
+  lazy?: boolean;
 }
+
+/** Longest stretch of fill work in one idle callback, in ms. Idle callbacks last at most 50 ms. */
+const CHUNK_MS = 8;
 
 const XMAX = 0.8;
 const YMAX = 0.9;
@@ -46,6 +52,10 @@ export class CieDiagram {
   private ctx: CanvasRenderingContext2D;
   private off: HTMLCanvasElement | null = null;
   private offKey = "";
+  private job = 0;
+  private near = false;
+  /** Resolves when the horseshoe of the current size is filled and drawn. */
+  ready: Promise<void> = Promise.resolve();
   private w = 0;
   private h = 0;
   private dpr = 1;
@@ -60,9 +70,22 @@ export class CieDiagram {
     private opts: CieOptions = {},
   ) {
     this.ctx = canvas.getContext("2d")!;
+    this.near = !(opts.lazy && !isStatic);
     this.resize();
     const rs = debounce(() => this.resize(), 120);
     new ResizeObserver(rs).observe(canvas);
+    if (opts.lazy && !isStatic) {
+      const io = new IntersectionObserver(
+        (es) => {
+          if (!es.some((e) => e.isIntersecting)) return;
+          io.disconnect();
+          this.near = true;
+          this.makeOffscreen();
+        },
+        { rootMargin: "600px 0px" },
+      );
+      io.observe(canvas);
+    }
     onTheme(() => this.requestDraw());
   }
 
@@ -90,20 +113,49 @@ export class CieDiagram {
   }
 
   private makeOffscreen() {
+    if (!this.near) return;
     const key = `${this.w}x${this.h}x${this.dpr}`;
     if (key === this.offKey && this.off) return;
     this.offKey = key;
-    // Cap the fill resolution; the outline and labels stay crisp because they are drawn live.
-    const k = Math.min(this.dpr, Math.sqrt(1.4e6 / (this.w * this.h)));
-    const ow = Math.max(1, Math.round(this.w * k));
-    const oh = Math.max(1, Math.round(this.h * k));
-    const view = { x0: -this.ox / this.scale, y0: this.oy / this.scale, scale: this.scale * k };
-    const data = fillHorseshoe(ow, oh, view);
+    const job = ++this.job;
+    // Half the device resolution (the fill is a smooth gradient), drawn back up with smoothing.
+    const ow = Math.max(1, Math.round((this.w * this.dpr) / 2));
+    const oh = Math.max(1, Math.round((this.h * this.dpr) / 2));
+    const view = { x0: -this.ox / this.scale, y0: this.oy / this.scale, scale: (this.scale * ow) / this.w };
     const c = document.createElement("canvas");
     c.width = ow;
     c.height = oh;
-    c.getContext("2d")!.putImageData(new ImageData(data as unknown as Uint8ClampedArray<ArrayBuffer>, ow, oh), 0, 0);
-    this.off = c;
+    const octx = c.getContext("2d")!;
+    const data = new Uint8ClampedArray(ow * oh * 4);
+    const image = new ImageData(data as unknown as Uint8ClampedArray<ArrayBuffer>, ow, oh);
+    let row = 0;
+    let lastDraw = 0;
+    this.ready = new Promise<void>((done) => {
+      const step = () => {
+        if (job !== this.job) return done();
+        const t0 = performance.now();
+        const from = row;
+        while (row < oh && performance.now() - t0 < CHUNK_MS) {
+          const to = Math.min(oh, row + 8);
+          fillHorseshoeRows(data, ow, view, row, to);
+          row = to;
+        }
+        octx.putImageData(image, 0, 0, 0, from, ow, row - from);
+        this.off = c;
+        // show progress now and then, not after every chunk (a full redraw costs more than a chunk)
+        if (row >= oh || performance.now() - lastDraw > 150) {
+          lastDraw = performance.now();
+          this.requestDraw();
+        }
+        if (row < oh) whenIdle(step);
+        else {
+          // resolve after the frame that shows the finished fill
+          requestAnimationFrame(() => requestAnimationFrame(() => done()));
+        }
+      };
+      whenIdle(step);
+    });
+    pending.push(this.ready);
   }
 
   X(x: number) {
@@ -185,7 +237,10 @@ export class CieDiagram {
     ctx.textAlign = "left";
     ctx.textBaseline = "alphabetic";
     ctx.fillText("x", this.X(XMAX) - 8, this.Y(0) - 8);
-    ctx.fillText("y", this.X(0) + 8, this.Y(YMAX) + 12);
+    // beside the axis, where the spectral tick labels (520 nm sits near the top) cannot reach it
+    ctx.textAlign = "right";
+    ctx.textBaseline = "middle";
+    ctx.fillText("y", this.X(0) - 7, this.Y(YMAX));
     ctx.restore();
   }
 
@@ -279,11 +334,11 @@ export class CieDiagram {
       if (l.alpha <= 0.01) continue;
       ctx.globalAlpha = l.alpha;
       ctx.fillStyle = p.ink;
-      ctx.font = '500 15px "IBM Plex Mono", ui-monospace, Consolas, monospace';
+      ctx.font = `500 ${narrow ? 13 : 15}px "IBM Plex Mono", ui-monospace, Consolas, monospace`;
       ctx.fillText(l.title, x, y);
       ctx.fillStyle = p.dim;
-      ctx.font = '400 12px "IBM Plex Mono", ui-monospace, Consolas, monospace';
-      ctx.fillText(l.sub, x, y + 20);
+      ctx.font = `400 ${narrow ? 11 : 12}px "IBM Plex Mono", ui-monospace, Consolas, monospace`;
+      ctx.fillText(l.sub, x, y + (narrow ? 17 : 20));
     }
     ctx.restore();
   }

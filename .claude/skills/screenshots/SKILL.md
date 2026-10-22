@@ -49,15 +49,20 @@ cargo build --release
 
 ## 5. Site pages
 
-After `cd site; npm run images; npm run build; npm run preview`:
+After `cd site; npm run build`:
 
 ```
-& "C:\Program Files (x86)\Microsoft\Edge\Application\msedge.exe" --headless --disable-gpu --hide-scrollbars --virtual-time-budget=6000 --window-size=1440,900 --screenshot=<out.png> "http://127.0.0.1:4173/?shot=<section>&theme=<light|dark>"
+cd site; npm run shots -- --out <scratchpad folder>      # all sections, 1440x900 and 390x844 at DPR 2, light and dark
+npm run shots -- --ids hero,tray --sizes m --themes dark
+npm run shots -- --hover window --themes dark            # slab specular, animated page
+npm run shots -- --reduced | --nojs | --widths 320,360 | --longtasks
 ```
 
-- `<section>` is a `<section id>` from `site/index.html` (hero, edid, window, hdr, gamut, tray, drivers, download) or `all`. Use `--window-size=390,844` for mobile.
+- `site/scripts/shots.mjs` has no dependencies: it starts `vite preview` if needed, launches headless Edge with `--remote-debugging-port` and talks CDP over Node's WebSocket. It emulates the viewport (the plain `msedge --headless --screenshot --window-size=390,844` call is laid out at about 500 px and captures before the page is ready, so it is not used), loads `?shot=<id>&theme=<t>`, waits for fonts and `window.__shotReady`, and writes `<id>-<width>-<theme>.png`. The default folder is `screenshots-raw/site` (gitignored).
+- `<id>` is a `<section id>` from `site/index.html` (hero, edid, window, hdr, gamut, tray, drivers, download) or `all`.
 - Write these to the scratchpad or a temp folder, not into the repo, unless the task is the social preview image.
 - After changing `site/src/shots/`, run `npm run images` (or `npm run build`) to regenerate AVIF and WebP.
+- The tray menu is drawn by Windows: `--debug-scale` does not change it, so `traymenu-<theme>.png` stays a 1x capture (220x200). The site shows it at 220 CSS px and never larger.
 
 ## 6. Inspect before committing
 
