@@ -163,7 +163,7 @@ impl State {
         );
         c.text_wrapped(
             R::new(s(24), s(86), s(CLIENT_W - 24), s(126)),
-            "Installs for your user only \u{2014} no admin needed. Starts quietly in the tray.",
+            "Installs for your user account only. No admin needed.",
             self.fonts.body,
             th.text_dim,
         );

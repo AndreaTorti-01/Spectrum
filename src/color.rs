@@ -74,23 +74,35 @@ pub static STANDARD_SPACES: [StandardSpace; 6] = [
         name: "sRGB",
         prims: BT709,
         trc: Trc::Srgb,
-        description: "The web and Windows default. If a monitor is 'sRGB mode', this is what it emulates.",
+        description: "The default for the web and Windows. A monitor's sRGB mode emulates it.",
         color: 0x8FA3B8,
     },
     StandardSpace {
         id: "display-p3",
         name: "Display P3",
-        prims: Primaries { r: xy(0.680, 0.320), g: xy(0.265, 0.690), b: xy(0.150, 0.060), w: D65 },
+        prims: Primaries {
+            r: xy(0.680, 0.320),
+            g: xy(0.265, 0.690),
+            b: xy(0.150, 0.060),
+            w: D65,
+        },
         trc: Trc::Srgb,
-        description: "Apple's wide gamut: DCI-P3 primaries with a D65 white and the sRGB curve. Most modern wide-gamut and OLED monitors target it.",
+        description:
+            "DCI-P3 primaries with a D65 white and sRGB curve, used by Apple displays and many OLED monitors.",
         color: 0x2EC4B6,
     },
     StandardSpace {
         id: "adobe-rgb",
         name: "Adobe RGB (1998)",
-        prims: Primaries { r: xy(0.64, 0.33), g: xy(0.21, 0.71), b: xy(0.15, 0.06), w: D65 },
+        prims: Primaries {
+            r: xy(0.64, 0.33),
+            g: xy(0.21, 0.71),
+            b: xy(0.15, 0.06),
+            w: D65,
+        },
         trc: Trc::Gamma(563.0 / 256.0),
-        description: "Wider greens and cyans for print and photography workflows. Shares sRGB's red and blue.",
+        description:
+            "Print and photography space with wider greens and cyans than sRGB and the same red and blue.",
         color: 0xFFC93C,
     },
     StandardSpace {
@@ -103,7 +115,8 @@ pub static STANDARD_SPACES: [StandardSpace; 6] = [
             w: xy(0.3457, 0.3585),
         },
         trc: Trc::Gamma(1.8),
-        description: "A huge editing space that even includes imaginary colors. For RAW photo editing, not for displays.",
+        description:
+            "Editing space for RAW photos whose green and blue primaries fall outside visible color.",
         color: 0xF28AB2,
     },
     StandardSpace {
@@ -111,15 +124,21 @@ pub static STANDARD_SPACES: [StandardSpace; 6] = [
         name: "Rec. 2020",
         prims: BT2020,
         trc: Trc::Gamma(2.4),
-        description: "The UHD/HDR video container. No consumer display covers it fully yet.",
+        description: "Gamut of UHD and HDR video, with primaries at 630, 532 and 467 nm.",
         color: 0x9BD94A,
     },
     StandardSpace {
         id: "dci-p3",
         name: "DCI-P3",
-        prims: Primaries { r: xy(0.680, 0.320), g: xy(0.265, 0.690), b: xy(0.150, 0.060), w: xy(0.314, 0.351) },
+        prims: Primaries {
+            r: xy(0.680, 0.320),
+            g: xy(0.265, 0.690),
+            b: xy(0.150, 0.060),
+            w: xy(0.314, 0.351),
+        },
         trc: Trc::Gamma(2.6),
-        description: "The digital cinema standard: same primaries as Display P3, greenish projector white and gamma 2.6.",
+        description:
+            "Digital cinema standard with Display P3 primaries, a greenish projector white and gamma 2.6.",
         color: 0xFF5A3C,
     },
 ];

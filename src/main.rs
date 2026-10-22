@@ -223,7 +223,7 @@ fn run_default() -> i32 {
             }
             Err(e) => {
                 log(&format!("install failed: {e}"));
-                message_box(&format!("Couldn't install Spectrum. {e}"), true);
+                message_box(&e, true);
                 1
             }
         },
@@ -242,9 +242,9 @@ fn run_tray() -> i32 {
 fn uninstall() -> i32 {
     debug::stop_running(3000);
     app::remove_all_profiles();
-    message_box("Spectrum is uninstalled.", false);
+    message_box("Uninstalled Spectrum.", false);
     if let Err(e) = installer::uninstall() {
-        message_box(&format!("Couldn't remove all of Spectrum. {e}"), true);
+        message_box(&e, true);
         return 1;
     }
     0
