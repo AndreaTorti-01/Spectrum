@@ -14,8 +14,7 @@ function resolve(pref: Pref): "light" | "dark" {
 }
 
 function setLabel(pref: Pref) {
-  const el = document.querySelector(".theme-label");
-  if (el) el.textContent = LABEL[pref];
+  document.querySelector(".theme-toggle")?.setAttribute("aria-label", `Theme: ${LABEL[pref]}`);
 }
 
 function apply(pref: Pref, persist: boolean) {

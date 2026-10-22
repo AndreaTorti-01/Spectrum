@@ -133,26 +133,6 @@
   flex-wrap: wrap;
   gap: 12px;
 }
-.facts {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 12px 48px;
-  margin-top: 48px;
-}
-.facts div {
-  display: flex;
-  flex-direction: column-reverse;
-  gap: 6px;
-}
-.facts dt {
-  font: 500 0.75rem var(--font-mono);
-  letter-spacing: 0.08em;
-  text-transform: uppercase;
-  color: var(--ink-dim);
-}
-.facts dd {
-  font: 500 clamp(1.5rem, 2.6vw, 2.25rem) / 1 var(--font-mono);
-}
 .hero-diagram {
   grid-column: 7 / 13;
   margin-right: -15vw;
@@ -725,9 +705,5 @@ input[type="range"]:focus-visible {
   }
   .hero .actions {
     order: 5;
-  }
-  .hero .facts {
-    order: 6;
-    margin-top: 32px;
   }
 }

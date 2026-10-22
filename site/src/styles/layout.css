@@ -57,16 +57,31 @@
   color: var(--ink);
 }
 .theme-toggle {
-  min-width: 70px;
-  padding: 8px 10px;
+  display: inline-grid;
+  place-items: center;
+  width: 34px;
+  height: 34px;
+  padding: 0;
   border: 1px solid var(--rule);
   border-radius: var(--r-ui);
   background: transparent;
-  font: 500 0.75rem var(--font-mono);
-  letter-spacing: 0.08em;
-  text-transform: uppercase;
   color: var(--ink-dim);
   cursor: pointer;
+}
+.theme-toggle .ti {
+  display: none;
+  width: 16px;
+  height: 16px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.4;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+:root:not([data-theme-pref="light"]):not([data-theme-pref="dark"]) .ti-system,
+:root[data-theme-pref="light"] .ti-light,
+:root[data-theme-pref="dark"] .ti-dark {
+  display: block;
 }
 .theme-toggle:hover {
   color: var(--ink);
@@ -149,10 +164,6 @@
   }
   .brand-word {
     font-size: 1rem;
-  }
-  .theme-toggle {
-    min-width: 0;
-    padding: 8px;
   }
   .btn-sm {
     padding: 10px;
