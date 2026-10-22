@@ -352,6 +352,8 @@ pub struct Fonts {
     pub body: HFONT,
     pub dim: HFONT,
     pub heading: HFONT,
+    /// Semibold body size, for a title line above `body` text.
+    pub title: HFONT,
     pub big: HFONT,
 }
 
@@ -440,6 +442,7 @@ impl Fonts {
             body: make_font(text, 10.0, 400, dpi, CLEARTYPE_QUALITY),
             dim: make_font(text, 9.0, 400, dpi, CLEARTYPE_QUALITY),
             heading: make_font(display, 13.0, 600, dpi, CLEARTYPE_QUALITY),
+            title: make_font(text, 10.0, 600, dpi, CLEARTYPE_QUALITY),
             big: make_font(display, 28.0, 600, dpi, CLEARTYPE_QUALITY),
         }
     }
@@ -449,7 +452,7 @@ impl Drop for Fonts {
     fn drop(&mut self) {
         // SAFETY: handles created by CreateFontW and owned here.
         unsafe {
-            for f in [self.body, self.dim, self.heading, self.big] {
+            for f in [self.body, self.dim, self.heading, self.title, self.big] {
                 if !f.is_null() {
                     DeleteObject(f as HGDIOBJ);
                 }

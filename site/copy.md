@@ -1,6 +1,6 @@
 # Spectrum website copy
 
-Total prose words: 111 (budget 380; counts Headline, Hero text, Body, Caption, Callout, noscript and the footer line; excludes kickers, button and label lines, numbers, axis ticks, alt text and the gamut descriptions, which are the app's own strings)
+Total prose words: 110 (budget 380; counts Headline, Hero text, Body, Caption, Callout, noscript and the footer line; excludes kickers, button and label lines, numbers, axis ticks, alt text and the gamut descriptions, which are the app's own strings)
 
 Line types: Headline, Hero text, Body, Caption, Callout and Noscript count as prose and carry a word count. Kicker, Button, Label, Alt, Aria and Description are UI text and are not counted. Placeholders in braces ({rx}, {area}) are filled by the builder from the measurement report and monitor.json. Coverage percentages are computed from monitor.json (checked by hand: 100, 98.4, 94.9 and 78.1).
 
@@ -68,7 +68,7 @@ UI labels quoted here match the app verbatim: "Read profile from monitor", "Comp
 ## 5. Gamut
 
 - Kicker: "Gamut · CIE 1931 xy"
-- Headline: "Compare gamuts against six reference spaces." (6 words)
+- Headline: "Compare gamuts against reference spaces." (5 words)
 - Body: none
 - Caption: "Computed from the EDID of an MSI MAG 271QPX E2." (10 words)
 - Spec row 1 label: "sRGB" · "100%"

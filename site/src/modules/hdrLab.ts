@@ -68,7 +68,20 @@ export function initHdrLab() {
   }
 
   const reduce = matchMedia("(prefers-reduced-motion: reduce)").matches;
-  [rBlack, rPeak, rFull, rSat].forEach((el) => el.addEventListener("input", () => read(reduce)));
+  // Full-frame never sits above Peak, as in the app (move_full, move_peak). Both ranges share one scale, so
+  // comparing slider positions compares nits. Lowering Peak pushes Full-frame down with it.
+  const capFull = () => {
+    if (Number(rFull!.value) > Number(rPeak!.value)) rFull!.value = rPeak!.value;
+  };
+  rPeak.addEventListener("input", () => {
+    capFull();
+    read(reduce);
+  });
+  rFull.addEventListener("input", () => {
+    capFull();
+    read(reduce);
+  });
+  [rBlack, rSat].forEach((el) => el.addEventListener("input", () => read(reduce)));
   // initial values: 0 / 450 / 450 / 0 (the author's calibration)
   rFull.value = rPeak.value;
   read(true);

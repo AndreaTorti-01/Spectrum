@@ -46,6 +46,7 @@ enum Command {
     DebugDxgi(String),
     DebugDeleteProfile(String),
     DebugSdrWhite(String, Option<String>),
+    DebugSdrCap(String, String),
 }
 
 #[derive(Debug)]
@@ -103,6 +104,10 @@ fn parse_args<I: Iterator<Item = String>>(it: I) -> Args {
                 let n = it.next().unwrap_or_default();
                 let v = it.next_if(|v| !v.starts_with("--"));
                 args.command = Command::DebugSdrWhite(n, v)
+            }
+            "--debug-sdr-cap" => {
+                args.command =
+                    Command::DebugSdrCap(it.next().unwrap_or_default(), it.next().unwrap_or_default())
             }
             "--debug-delete-profile" => {
                 args.command = Command::DebugDeleteProfile(it.next().unwrap_or_default())
@@ -241,6 +246,7 @@ fn main() {
         Command::DebugAutostart(v) => debug::autostart(&v, out),
         Command::DebugDeleteProfile(f) => debug::delete_profile(&f, out),
         Command::DebugSdrWhite(n, v) => debug::sdr_white(&n, v.as_deref(), out),
+        Command::DebugSdrCap(n, v) => debug::sdr_cap(&n, &v, out),
         Command::DebugOpen(what) => debug_open(format!("open {what}")),
         Command::DebugTrayCmd(id) => debug_open(format!("tray-cmd {id}")),
         Command::DebugStage(t) => debug::stage(&t),

@@ -87,6 +87,8 @@ pub struct UiMonitor {
     pub hdr_custom_active: bool,
     /// Windows "SDR content brightness" in nits; `None` when the driver does not report it.
     pub sdr_white_nits: Option<f64>,
+    /// "Allow SDR content above the monitor peak" is on (the slider may go past the EDID cap).
+    pub sdr_above_peak: bool,
     pub hdr_profile: HdrProfile,
     /// Luminance Windows reports for the output (read through DXGI); `None` with HDR off or when DXGI fails.
     pub reported: Option<crate::dxgi::Reported>,
@@ -109,10 +111,22 @@ impl UiMonitor {
             })
     }
 
-    /// "Above the 455-nit peak" when the SDR content brightness `white` exceeds the peak.
-    pub fn white_warning(&self, white: f64) -> Option<String> {
-        let peak = self.effective_peak()?;
-        (white > peak.round()).then(|| format!("Above the {}-nit peak", peak.round() as i64))
+    /// The EDID cap on the SDR content slider (see [`monitors::sdr_white_cap`]); `None` without an EDID max.
+    pub fn sdr_cap(&self) -> Option<u32> {
+        monitors::sdr_white_cap(self.edid_hdr.as_ref().and_then(|h| h.max_nits))
+    }
+
+    /// Top of the SDR content slider: the cap unless "Allow SDR content above the monitor peak" is on.
+    pub fn sdr_max(&self) -> f64 {
+        match self.sdr_cap() {
+            Some(cap) if !self.sdr_above_peak => cap as f64,
+            _ => monitors::SDR_WHITE_MAX_NITS,
+        }
+    }
+
+    /// SDR content `white` is above the EDID cap (drawn in amber).
+    pub fn sdr_over_cap(&self, white: f64) -> bool {
+        self.sdr_cap().is_some_and(|cap| white > cap as f64)
     }
 }
 
@@ -133,6 +147,7 @@ pub enum UiAction {
     ApplyHdr { mon: usize, params: HdrParams },
     ResetHdr { mon: usize },
     SetSdrWhite { mon: usize, nits: f64 },
+    SetSdrAbovePeak { mon: usize, on: bool },
     SetAutostart(bool),
     SetAdvanced(bool),
     OpenGamut,
@@ -416,6 +431,7 @@ fn build_ui_monitor(m: &Monitor, cfg: &Config) -> UiMonitor {
         } else {
             None
         },
+        sdr_above_peak: entry.sdr_above_peak.unwrap_or(false),
         hdr_profile: if m.hdr_supported {
             hdr_profile_of(m)
         } else {
@@ -431,10 +447,29 @@ fn build_ui_monitor(m: &Monitor, cfg: &Config) -> UiMonitor {
 }
 
 pub fn snapshot() -> UiState {
-    let cfg = Config::load();
+    let mut cfg = Config::load();
     let mons = enumerate_cached();
+    let mut monitors: Vec<UiMonitor> = mons.iter().map(|m| build_ui_monitor(m, &cfg)).collect();
+    // SDR content already above the EDID cap in Windows: turn the toggle on rather than lower the value.
+    let mut changed = false;
+    for (m, ui) in mons.iter().zip(monitors.iter_mut()) {
+        let above = ui
+            .sdr_cap()
+            .zip(ui.sdr_white_nits)
+            .is_some_and(|(cap, white)| monitors::snap_back(white.round() as u32, cap).is_some());
+        if above && !ui.sdr_above_peak {
+            ui.sdr_above_peak = true;
+            let e = cfg.monitor_mut(&m.key);
+            e.name = monitor_name(m);
+            e.sdr_above_peak = Some(true);
+            changed = true;
+        }
+    }
+    if changed {
+        cfg.save();
+    }
     UiState {
-        monitors: mons.iter().map(|m| build_ui_monitor(m, &cfg)).collect(),
+        monitors,
         autostart: crate::autostart::autostart_enabled(),
         advanced: cfg.advanced,
         status: STATUS.with(|s| s.borrow().clone()),
@@ -698,6 +733,32 @@ fn set_sdr_white(idx_mon: usize, nits: f64) -> Result<String, String> {
     Ok(format!("Set SDR content to {nits} nits"))
 }
 
+/// The "Allow SDR content above the monitor peak" toggle. Turning it off snaps SDR content down to the cap
+/// through the same path as the slider.
+fn set_sdr_above_peak(idx_mon: usize, on: bool) -> Result<String, String> {
+    let m = monitor_at(idx_mon)?;
+    let edid_max = m
+        .edid
+        .as_ref()
+        .and_then(|e| e.hdr.as_ref())
+        .and_then(|h| h.max_nits);
+    let cap = monitors::sdr_white_cap(edid_max)
+        .ok_or_else(|| format!("Monitor {} reports no peak brightness to cap at.", m.num))?;
+    save_cfg(&m, |e| e.sdr_above_peak = Some(on));
+    log(&format!(
+        "allow sdr content above the peak on monitor {}: {on}",
+        m.num
+    ));
+    if on {
+        return Ok(String::new());
+    }
+    let current = monitors::sdr_white_nits(&m).map(|n| n.round() as u32);
+    match current.and_then(|c| monitors::snap_back(c, cap)) {
+        Some(to) => set_sdr_white(idx_mon, to as f64),
+        None => Ok(String::new()),
+    }
+}
+
 /// "Restore default values": writes the Spectrum HDR profile again with the EDID values and keeps it as
 /// the HDR default (same A/B alternation as `apply_hdr`). SDR content brightness is left alone.
 fn reset_hdr(idx_mon: usize) -> Result<String, String> {
@@ -918,6 +979,7 @@ pub fn execute(a: UiAction) -> Result<String, String> {
         UiAction::ApplyHdr { mon, params } => apply_hdr(mon, params),
         UiAction::ResetHdr { mon } => reset_hdr(mon),
         UiAction::SetSdrWhite { mon, nits } => set_sdr_white(mon, nits),
+        UiAction::SetSdrAbovePeak { mon, on } => set_sdr_above_peak(mon, on),
         UiAction::SetAutostart(on) => crate::autostart::set_autostart(on)
             .map(|_| String::new())
             .map_err(|e| {
@@ -1730,6 +1792,7 @@ mod tests {
             },
             hdr_custom_active: false,
             sdr_white_nits: Some(240.0),
+            sdr_above_peak: false,
             hdr_profile: HdrProfile::None,
             reported: None,
             edid_hdr: Some(crate::edid::HdrStatic {
@@ -1757,26 +1820,19 @@ mod tests {
     }
 
     #[test]
-    fn sdr_white_warning_uses_the_best_peak() {
+    fn sdr_cap_follows_the_edid_max() {
         let mut m = ui_mon();
-        assert_eq!(m.white_warning(372.0), None);
-        assert_eq!(m.white_warning(460.0).unwrap(), "Above the 455-nit peak");
-        // The value Windows reports wins over the EDID.
-        m.reported = Some(crate::dxgi::Reported {
-            min_nits: 0.0,
-            max_nits: 450.0,
-            max_full_frame_nits: 250.0,
-            color_space: 12,
-            bits_per_color: 10,
-            red: [0.0; 2],
-            green: [0.0; 2],
-            blue: [0.0; 2],
-            white: [0.0; 2],
-        });
-        assert_eq!(m.white_warning(452.0).unwrap(), "Above the 450-nit peak");
-        m.reported = None;
+        // EDID max 455 caps SDR content at 452; the reported max does not move the cap.
+        assert_eq!(m.sdr_cap(), Some(452));
+        assert_eq!(m.sdr_max(), 452.0);
+        assert!(m.sdr_over_cap(460.0));
+        assert!(!m.sdr_over_cap(452.0));
+        m.sdr_above_peak = true;
+        assert_eq!(m.sdr_max(), 480.0);
         m.edid_hdr = None;
-        assert_eq!(m.white_warning(480.0), None);
+        assert_eq!(m.sdr_cap(), None);
+        assert_eq!(m.sdr_max(), 480.0);
+        assert!(!m.sdr_over_cap(480.0));
     }
 
     #[test]

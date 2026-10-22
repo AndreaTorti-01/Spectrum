@@ -74,6 +74,7 @@ fn mock_state(args: &[String]) -> UiState {
         },
         hdr_custom_active: true,
         sdr_white_nits: Some(240.0),
+        sdr_above_peak: false,
         hdr_profile: HdrProfile::Spectrum,
         reported: None,
         edid_hdr: Some(HdrStatic {
@@ -108,6 +109,7 @@ fn mock_state(args: &[String]) -> UiState {
         },
         hdr_custom_active: false,
         sdr_white_nits: Some(120.0),
+        sdr_above_peak: false,
         hdr_profile: HdrProfile::None,
         reported: None,
         edid_hdr: None,
