@@ -21,11 +21,11 @@ The website lives in `site/`: `npm ci`, then `npm run build`.
 
 ## Rules
 
-- Tests never change your real color settings. Exercise flows headlessly with the `--debug-*` switches. Don't drive the UI to test function.
-- UI changes need screenshots in the light and dark themes.
-- Text you write (UI strings, docs, templates, commit messages) follows `.claude/rules/copy.md`.
-- Windows API bindings come from `windows-sys` only. Don't add other crates.
-- Nothing may need admin rights.
+- Prefer the `--debug-*` switches over driving the UI for functional checks: they hit the same code path and are repeatable. Driving the UI is fine when you're exploring. Back up your color settings (`--debug-dump`) before any check that changes them.
+- UI changes are easiest to review with screenshots in the light and dark themes.
+- Text you write (UI strings, docs, templates, commit messages) reads best when it follows `.claude/rules/copy.md`.
+- Windows API bindings come from `windows-sys`. Open an issue before adding other crates; the single dependency is deliberate.
+- Nothing should need admin rights, so the install stays per-user.
 
 ## License
 
