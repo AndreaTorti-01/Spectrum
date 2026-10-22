@@ -30,7 +30,7 @@ export const SPACES: readonly Space[] = [
     id: "srgb",
     name: "sRGB",
     prims: BT709,
-    description: "The default for the web and Windows. A monitor's sRGB mode emulates it.",
+    description: "The web and Windows default, with the same primaries as Rec. 709 (HD video).",
     color: "#8FA3B8",
   },
   {
