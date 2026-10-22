@@ -226,7 +226,7 @@ fn sdr_options(m: &Monitor, cfg: &MonitorCfg) -> (Vec<(String, String)>, Option<
     let mut list: Vec<(String, String)> = Vec::new();
     if let Some(f) = &cfg.edid_profile {
         if wcs::profile_exists(f) || backup_has(f) {
-            list.push((format!("{} (from EDID)", monitor_name(m)), f.clone()));
+            list.push((format!("{} (EDID)", monitor_name(m)), f.clone()));
         }
     }
     list.push(("sRGB".into(), wcs::SRGB_INBOX.into()));
@@ -337,7 +337,7 @@ fn monitor_at(idx: usize) -> Result<Monitor, String> {
     enumerate_cached()
         .into_iter()
         .nth(idx)
-        .ok_or_else(|| "Couldn't find that monitor. Try again.".to_string())
+        .ok_or_else(|| "Couldn't find that monitor. Reopen the window and try again.".to_string())
 }
 
 fn save_cfg(m: &Monitor, f: impl FnOnce(&mut MonitorCfg)) {
@@ -358,7 +358,7 @@ fn ensure_file(file: &str) -> Result<(), String> {
         wcs::ensure_reference_profile(id)?;
         return Ok(());
     }
-    Err(format!("profile {file} is missing and has no backup"))
+    Err(format!("Profile {file} is missing and has no backup"))
 }
 
 fn set_sdr(idx_mon: usize, idx: usize) -> Result<String, String> {
@@ -369,7 +369,7 @@ fn set_sdr(idx_mon: usize, idx: usize) -> Result<String, String> {
     let (label, file) = opts
         .get(idx)
         .cloned()
-        .ok_or_else(|| "Couldn't find that profile. Try again.".to_string())?;
+        .ok_or_else(|| "Couldn't find that profile. Reopen the window and try again.".to_string())?;
     let fail = |e: String| {
         log(&format!("set sdr: {file} on monitor {}: {e}", m.num));
         format!("Couldn't apply {label} to monitor {}. Try again.", m.num)
@@ -501,7 +501,7 @@ fn reset_hdr(idx_mon: usize) -> Result<String, String> {
     let cfg = Config::load();
     let entry = cfg.monitors.get(&m.key).cloned().unwrap_or_default();
     let Some(file) = entry.hdr_file else {
-        return Ok(format!("No Spectrum HDR profile on monitor {}", m.num));
+        return Ok(format!("Nothing to reset on monitor {}", m.num));
     };
     if let Err(e) = wcs::disassociate(&m, &file, true) {
         log(&format!("reset hdr: removing {file}: {e}"));

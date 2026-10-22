@@ -232,7 +232,7 @@ impl Main {
                 let peak = round_nits(self.peak, 100.0, 4000.0);
                 format!("{} nits", round_nits(self.full, 100.0, peak) as i64)
             }
-            _ => format!("{} %", self.sat.round() as i64),
+            _ => format!("{}%", self.sat.round() as i64),
         }
     }
 
@@ -496,7 +496,7 @@ impl Main {
             } else {
                 "HDR off"
             };
-            let line = format!("{} \u{b7} {}\u{d7}{} \u{b7} {}", m.name, m.width, m.height, hdr);
+            let line = format!("{} \u{b7} {} \u{d7} {} \u{b7} {}", m.name, m.width, m.height, hdr);
             c.text(
                 R::new(g.info.l + sc(18, dpi), g.info.t, g.info.r, g.info.b),
                 &line,

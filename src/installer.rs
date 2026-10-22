@@ -177,7 +177,9 @@ fn set_value(key: HKEY, name: &str, v: &RegValue) -> Result<(), String> {
     if rc == 0 {
         Ok(())
     } else {
-        Err(format!("registry write of {name} failed (error {rc})"))
+        Err(format!(
+            "Couldn't write {name} to the registry (error {rc}). Run the installer again."
+        ))
     }
 }
 
@@ -324,10 +326,10 @@ fn copy_exe(src: &Path, dst: &Path) -> Result<(), String> {
         Err(e) => match e.raw_os_error() {
             // ERROR_ACCESS_DENIED / ERROR_SHARING_VIOLATION / ERROR_LOCK_VIOLATION
             Some(5) | Some(32) | Some(33) => Err(format!(
-                "{} is in use. Spectrum is probably running from its install folder: exit it from the tray menu, then install again.",
+                "{} is in use. Exit Spectrum from its tray menu, then install again.",
                 dst.display()
             )),
-            _ => Err(format!("cannot copy Spectrum to {}: {e}", dst.display())),
+            _ => Err(format!("Couldn't copy Spectrum to {}: {e}", dst.display())),
         },
     }
 }
@@ -337,14 +339,14 @@ pub fn install(autostart: bool) -> Result<PathBuf, String> {
     let dir = install_dir();
     let exe = installed_exe();
     let ico = dir.join(ICO_NAME);
-    std::fs::create_dir_all(&dir).map_err(|e| format!("cannot create {}: {e}", dir.display()))?;
+    std::fs::create_dir_all(&dir).map_err(|e| format!("Couldn't create {}: {e}", dir.display()))?;
 
     if !is_running_installed() {
-        let src = std::env::current_exe().map_err(|e| format!("cannot locate the running exe: {e}"))?;
+        let src = std::env::current_exe().map_err(|e| format!("Couldn't locate Spectrum.exe: {e}"))?;
         copy_exe(&src, &exe)?;
     }
     std::fs::write(&ico, crate::icon::ico_bytes())
-        .map_err(|e| format!("cannot write {}: {e}", ico.display()))?;
+        .map_err(|e| format!("Couldn't write {}: {e}", ico.display()))?;
 
     let lnk = shortcut_path();
     if let Some(parent) = lnk.parent() {
@@ -357,13 +359,15 @@ pub fn install(autostart: bool) -> Result<PathBuf, String> {
         icon: &ico,
         description: "Spectrum: color profiles for your monitors",
         work_dir: &dir,
-    })?;
+    })
+    .map_err(|e| format!("Couldn't create the Start menu shortcut: {e}"))?;
 
     let size_kb = ((std::fs::metadata(&exe).map(|m| m.len()).unwrap_or(0)
         + std::fs::metadata(&ico).map(|m| m.len()).unwrap_or(0))
         / 1024) as u32;
-    let key = open_key(UNINSTALL_KEY, KEY_WRITE, true)
-        .ok_or_else(|| "cannot create the Uninstall registry entry".to_string())?;
+    let key = open_key(UNINSTALL_KEY, KEY_WRITE, true).ok_or_else(|| {
+        "Couldn't create the Uninstall registry entry. Run the installer again.".to_string()
+    })?;
     let mut res = Ok(());
     for (name, v) in uninstall_values(&dir, &exe, &ico, size_kb) {
         if let Err(e) = set_value(key, name, &v) {
@@ -412,7 +416,7 @@ fn spawn_self_delete(dir: &Path) -> Result<(), String> {
         );
         if ok == 0 {
             return Err(format!(
-                "could not start the cleanup process: {}",
+                "Couldn't start the cleanup process: {}. Delete the Spectrum folder in %LOCALAPPDATA%\\Programs by hand.",
                 std::io::Error::last_os_error()
             ));
         }
@@ -442,8 +446,8 @@ pub fn autostart_enabled() -> bool {
 }
 
 pub fn set_autostart(on: bool) -> Result<(), String> {
-    let key =
-        open_key(RUN_KEY, KEY_WRITE, true).ok_or_else(|| "cannot open the Run registry key".to_string())?;
+    let key = open_key(RUN_KEY, KEY_WRITE, true)
+        .ok_or_else(|| "Couldn't open the Run registry key. Run the installer again.".to_string())?;
     let r = if on {
         let mut exe = installed_exe();
         if !exe.exists() {
@@ -458,7 +462,7 @@ pub fn set_autostart(on: bool) -> Result<(), String> {
         if rc == 0 || rc == 2 {
             Ok(())
         } else {
-            Err(format!("cannot remove the Run entry (error {rc})"))
+            Err(format!("Couldn't remove the Run entry (error {rc})"))
         }
     };
     unsafe { RegCloseKey(key) };

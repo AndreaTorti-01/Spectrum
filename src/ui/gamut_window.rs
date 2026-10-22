@@ -181,7 +181,7 @@ fn build_entries(selected_file: Option<&str>) -> (Vec<Entry>, Option<usize>) {
             detail: if plottable {
                 format!("{file} \u{b7} matrix/TRC profile")
             } else {
-                format!("{file} \u{b7} LUT-based profile, so there is no triangle to draw")
+                format!("{file} \u{b7} LUT-based profile, no triangle to plot")
             },
             prims,
             color,
@@ -232,7 +232,7 @@ fn mock_profiles() -> Vec<(String, String, Option<Primaries>, String)> {
     vec![
         (
             "Spectrum MAG 271QPX E2 EDID.icm".to_string(),
-            "MAG 271QPX E2 (from EDID)".to_string(),
+            "MAG 271QPX E2 (EDID)".to_string(),
             Some(Primaries {
                 r: xy(0.6855, 0.3047),
                 g: xy(0.2373, 0.7041),
@@ -275,14 +275,14 @@ fn mock_profiles() -> Vec<(String, String, Option<Primaries>, String)> {
 impl Gamut {
     fn rebuild_rows(&mut self) {
         self.rows.clear();
-        self.rows.push(Row::Header("REFERENCE SPACES"));
+        self.rows.push(Row::Header("Reference spaces"));
         for (i, e) in self.entries.iter().enumerate() {
             if e.reference {
                 self.rows.push(Row::Entry(i));
             }
         }
         if self.entries.iter().any(|e| !e.reference) {
-            self.rows.push(Row::Header("INSTALLED PROFILES"));
+            self.rows.push(Row::Header("Installed profiles"));
             for (i, e) in self.entries.iter().enumerate() {
                 if !e.reference {
                     self.rows.push(Row::Entry(i));
@@ -398,7 +398,7 @@ impl Gamut {
                 (
                     self.entries[i].name.clone(),
                     format!(
-                        "Coverage of {} {}% \u{b7} {} {}% \u{b7} {} {}% \u{2014} closest: {}",
+                        "Coverage: {} {}% \u{b7} {} {}% \u{b7} {} {}%\nClosest match: {}",
                         short_name(STANDARD_SPACES[0].name),
                         cov(0),
                         short_name(STANDARD_SPACES[1].name),
@@ -675,12 +675,7 @@ impl Gamut {
                 th.text_dim,
             );
         } else {
-            c.text_wrapped(
-                g.desc,
-                "Click a row to tick it and see what it is.",
-                self.fonts.dim,
-                th.text_dim,
-            );
+            c.text_wrapped(g.desc, "Select a row to see details", self.fonts.dim, th.text_dim);
         }
         c.fill_rect(
             R::new(
@@ -890,7 +885,7 @@ pub fn open(selected_monitor_profile: Option<String>) {
         let x = (wa.left + ((wa.right - wa.left) - w) / 2).max(wa.left);
         let y = (wa.top + ((wa.bottom - wa.top) - h) / 2).max(wa.top);
         let cls = wide(CLASS);
-        let title = wide("Spectrum \u{2014} Compare gamuts");
+        let title = wide("Spectrum: compare gamuts");
         let hwnd = CreateWindowExW(
             0,
             cls.as_ptr(),
