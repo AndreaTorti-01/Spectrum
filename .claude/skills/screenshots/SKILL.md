@@ -24,7 +24,7 @@ cargo build --release
 
 - Defaults: `-Theme both`, `-Scale 1,2`, no demo. A full run takes about a minute and owns the screen. It's polite to tell the user first.
 - It stops any running Spectrum (including the user's tray copy) at the start and end of each pass. The user restarts it afterwards.
-- Per theme and scale it starts `--debug-stage <theme>`, then `--tray --theme <theme>` (plus `--debug-scale <f>` for scales other than 1), then opens `gamut`, `profiles`, `traymenu` (1x pass only) and `main` through `--debug-open gamut-showcase|profiles-showcase|traymenu-showcase|main-hdr`. The profiles window shows made-up rows (`debug::showcase_profiles`), so the shots hold no real profile names.
+- Per theme and scale it starts `--debug-stage <theme>`, then `--tray --theme <theme>` (plus `--debug-scale <f>` for scales other than 1), then opens `gamut`, `profiles`, `traymenu` (1x pass only) and `main` through `--debug-open gamut-showcase|profiles-showcase|traymenu-showcase|main-hdr`. The profiles window shows this machine's real profile rows (`debug::showcase_profiles` is read-only and the window is a mock, so Delete never touches a file), so the shots hold real profile names.
 - Files, per theme `<t>`:
   - Scale 1: `main-<t>-1x.png`, `gamut-<t>-1x.png`, `profiles-<t>-1x.png`, `hdr-<t>-1x.png` (full window with the OS title bar), plus `traymenu-<t>.png` and `traymenu-<t>-1x.png`.
   - Other scales (the 2x pass): `main-<t>.png`, `gamut-<t>.png`, `profiles-<t>.png`, `hdr-<t>.png`, client area only, because the OS title bar does not scale. The site draws a CSS title strip over them.
