@@ -227,6 +227,19 @@ pub fn full_scale(peak: f64) -> Scale {
         max: peak.max(PEAK_MIN_NITS),
     }
 }
+/// Windows "SDR content brightness": 80 to 480 nits.
+pub fn white_scale() -> Scale {
+    Scale::Linear {
+        min: crate::monitors::SDR_WHITE_MIN_NITS,
+        max: crate::monitors::SDR_WHITE_MAX_NITS,
+    }
+}
+
+/// Slider value snapped to the 4-nit grid Windows uses.
+pub fn round_sdr_white_nits(v: f64) -> f64 {
+    crate::monitors::round_sdr_white_nits(v)
+}
+
 pub fn sat_scale() -> Scale {
     Scale::Linear { min: 0.0, max: 100.0 }
 }

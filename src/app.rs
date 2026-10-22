@@ -77,6 +77,8 @@ pub struct UiMonitor {
     pub has_edid: bool,
     pub hdr: HdrParams,
     pub hdr_custom_active: bool,
+    /// Windows "SDR content brightness" in nits; `None` when the driver does not report it.
+    pub sdr_white_nits: Option<f64>,
 }
 
 #[derive(Clone, Debug)]
@@ -93,6 +95,7 @@ pub enum UiAction {
     SetHdrEnabled { mon: usize, on: bool },
     ApplyHdr { mon: usize, params: HdrParams },
     ResetHdr { mon: usize },
+    SetSdrWhite { mon: usize, nits: f64 },
     SetAutostart(bool),
     OpenGamut,
     OpenProfiles,
@@ -355,6 +358,11 @@ fn build_ui_monitor(m: &Monitor, cfg: &Config) -> UiMonitor {
         has_edid: m.edid.is_some(),
         hdr: initial_hdr(m, &entry),
         hdr_custom_active,
+        sdr_white_nits: if m.hdr_supported {
+            monitors::sdr_white_nits(m)
+        } else {
+            None
+        },
     }
 }
 
@@ -585,6 +593,24 @@ fn drop_hdr_profile(m: &Monitor, file: &str) -> bool {
     }
 }
 
+/// Windows' own "SDR content brightness" (not part of the MHC2 profile).
+fn set_sdr_white(idx_mon: usize, nits: f64) -> Result<String, String> {
+    let m = monitor_at(idx_mon)?;
+    let nits = monitors::round_sdr_white_nits(nits);
+    if let Err(e) = monitors::set_sdr_white_nits(&m, nits) {
+        log(&format!("set sdr white on monitor {}: {e}", m.num));
+        return Err(format!(
+            "Couldn't set SDR content on monitor {}. Check Settings \u{203a} Display \u{203a} HDR.",
+            m.num
+        ));
+    }
+    log(&format!(
+        "SDR content brightness {nits} nits on monitor {}",
+        m.num
+    ));
+    Ok(format!("Set SDR content to {nits} nits"))
+}
+
 fn reset_hdr(idx_mon: usize) -> Result<String, String> {
     let m = monitor_at(idx_mon)?;
     let cfg = Config::load();
@@ -812,6 +838,7 @@ pub fn execute(a: UiAction) -> Result<String, String> {
         UiAction::SetHdrEnabled { mon, on } => set_hdr_enabled(mon, on),
         UiAction::ApplyHdr { mon, params } => apply_hdr(mon, params),
         UiAction::ResetHdr { mon } => reset_hdr(mon),
+        UiAction::SetSdrWhite { mon, nits } => set_sdr_white(mon, nits),
         UiAction::SetAutostart(on) => crate::autostart::set_autostart(on)
             .map(|_| String::new())
             .map_err(|e| {

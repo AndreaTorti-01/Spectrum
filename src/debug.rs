@@ -234,6 +234,11 @@ fn dump_text(mons: &[Monitor], cfg: &Config, ui: &UiState) -> String {
             "  hdr:            supported={} enabled={}",
             m.hdr_supported, m.hdr_enabled
         );
+        let _ = writeln!(
+            s,
+            "  sdr white:      {}",
+            crate::monitors::sdr_white_nits(m).map_or("(unavailable)".to_string(), |n| format!("{n} nits"))
+        );
         let _ = writeln!(s, "  user scope:     {:?}", i.user_scope);
         let _ = writeln!(
             s,
@@ -689,6 +694,54 @@ fn profile_presence(file: &str) -> String {
     s
 }
 
+/// `--debug-sdr-white <num> [nits]`: reads Windows' "SDR content brightness" and, with `nits`, sets it
+/// (exactly as given: no rounding, so off-grid values can be probed) and reads it back.
+pub fn sdr_white(num: &str, nits: Option<&str>, out: Option<&Path>) -> i32 {
+    let n = match parse_num(num) {
+        Ok(n) => n,
+        Err(e) => return fail(out, &e),
+    };
+    let mons = app::current_monitors();
+    let Some(m) = mons.iter().find(|m| m.num == n) else {
+        return fail(out, &format!("no monitor {n}"));
+    };
+    let mut text = format!("monitor {n}: hdr enabled={}\n", m.hdr_enabled);
+    let show = |label: &str, text: &mut String| {
+        let _ = match crate::monitors::sdr_white_raw(m) {
+            Some(raw) => writeln!(
+                text,
+                "{label}: raw {raw} = {} nits",
+                crate::monitors::sdr_white_raw_to_nits(raw)
+            ),
+            None => writeln!(text, "{label}: unavailable"),
+        };
+    };
+    show("before", &mut text);
+    let mut code = 0;
+    if let Some(v) = nits {
+        match v.trim().parse::<f64>() {
+            Ok(v) if v.is_finite() && v > 0.0 => {
+                let raw = crate::monitors::sdr_white_nits_to_raw(v);
+                let _ = writeln!(text, "set: {v} nits -> raw {raw}");
+                match crate::monitors::set_sdr_white_raw(m, raw) {
+                    Ok(()) => text.push_str("result: ok\n"),
+                    Err(e) => {
+                        let _ = writeln!(text, "result: error: {e}");
+                        code = 1;
+                    }
+                }
+                show("after", &mut text);
+            }
+            _ => {
+                let _ = writeln!(text, "error: invalid nits {v:?}");
+                code = 1;
+            }
+        }
+    }
+    emit(out, &text);
+    code
+}
+
 /// `--debug-delete-profile <file name>`: the profiles window's Delete (second click), headless.
 pub fn delete_profile(file: &str, out: Option<&Path>) -> i32 {
     let mut text = format!("action: delete profile {file}\n");
@@ -1026,6 +1079,7 @@ pub fn showcase_state() -> UiState {
         }
         m.hdr_supported = true;
         m.hdr_on = true;
+        m.sdr_white_nits = Some(240.0);
         m.hdr_custom_active = true;
         m.hdr = HdrParams {
             min_nits: 0.0,

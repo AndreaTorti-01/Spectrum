@@ -462,6 +462,108 @@ pub fn set_hdr(m: &Monitor, on: bool) -> Result<(), String> {
     }
 }
 
+// ---- SDR content brightness ("SDR content brightness" slider in Settings > Display > HDR) ----
+
+/// `DISPLAYCONFIG_DEVICE_INFO_GET_SDR_WHITE_LEVEL`.
+const GET_SDR_WHITE_LEVEL: DISPLAYCONFIG_DEVICE_INFO_TYPE = 11;
+/// The undocumented set request (`0xFFFFFFEE`) Twinkle Tray and other tools use.
+const SET_SDR_WHITE_LEVEL: DISPLAYCONFIG_DEVICE_INFO_TYPE = -18;
+
+/// `DISPLAYCONFIG_SDR_WHITE_LEVEL`: `level` is in units where 1000 = 80 nits.
+#[repr(C)]
+#[derive(Clone, Copy)]
+struct SdrWhiteLevel {
+    header: DISPLAYCONFIG_DEVICE_INFO_HEADER,
+    level: u32,
+}
+
+/// The community definition of the set request: header, level, then a flag byte (1 = final value, not a
+/// preview). The compiler pads the struct to 28 bytes, which is what the header's `size` must say.
+#[repr(C)]
+#[derive(Clone, Copy)]
+struct SetSdrWhiteLevel {
+    header: DISPLAYCONFIG_DEVICE_INFO_HEADER,
+    level: u32,
+    final_value: u8,
+}
+
+/// Verified on Windows 11 26300 (MSI MAG 271QPX E2, HDR on): the Settings slider s (0..100) is
+/// nits = 80 + 4 * s, and the raw value is nits * 1000 / 80 (s = 0, 25, 50, 77, 100 gave 1000, 2250,
+/// 3500, 4850, 6000; the registry `MonitorDataStore\<monitor>\SDRWhiteLevel` holds the same raw value).
+/// Off-grid values are stored as given and Settings shows the floor of s (82 nits = 0, 246 nits = 41).
+/// With HDR off, GET returns 1000 (80 nits) whatever the stored setting is.
+/// Raw driver units per nit: 1000 units = 80 nits.
+const SDR_UNITS_PER_80_NITS: f64 = 1000.0;
+/// Range and step of the "SDR content" slider, in nits.
+pub const SDR_WHITE_MIN_NITS: f64 = 80.0;
+pub const SDR_WHITE_MAX_NITS: f64 = 480.0;
+pub const SDR_WHITE_STEP_NITS: f64 = 4.0;
+
+/// Raw SDR white level to nits.
+pub fn sdr_white_raw_to_nits(raw: u32) -> f64 {
+    raw as f64 * 80.0 / SDR_UNITS_PER_80_NITS
+}
+
+/// Nits to the raw unit Windows stores (rounded to the nearest unit).
+pub fn sdr_white_nits_to_raw(nits: f64) -> u32 {
+    (nits * SDR_UNITS_PER_80_NITS / 80.0).round().max(0.0) as u32
+}
+
+/// Snaps a brightness to the slider grid (4 nits from 80), clamped to 80..=480.
+pub fn round_sdr_white_nits(nits: f64) -> f64 {
+    let steps = ((nits - SDR_WHITE_MIN_NITS) / SDR_WHITE_STEP_NITS).round();
+    (SDR_WHITE_MIN_NITS + steps * SDR_WHITE_STEP_NITS).clamp(SDR_WHITE_MIN_NITS, SDR_WHITE_MAX_NITS)
+}
+
+/// Raw SDR white level of a monitor (1000 = 80 nits), `None` when Windows does not answer.
+pub fn sdr_white_raw(m: &Monitor) -> Option<u32> {
+    unsafe {
+        let mut s: SdrWhiteLevel = std::mem::zeroed();
+        s.header = header(
+            GET_SDR_WHITE_LEVEL,
+            std::mem::size_of::<SdrWhiteLevel>(),
+            m.adapter.to_win(),
+            m.target_id,
+        );
+        if DisplayConfigGetDeviceInfo(&mut s.header) == 0 {
+            Some(s.level)
+        } else {
+            None
+        }
+    }
+}
+
+/// Current SDR content brightness in nits.
+pub fn sdr_white_nits(m: &Monitor) -> Option<f64> {
+    sdr_white_raw(m).map(sdr_white_raw_to_nits)
+}
+
+/// Sets the raw SDR white level (the unit of [`sdr_white_raw`]).
+pub fn set_sdr_white_raw(m: &Monitor, raw: u32) -> Result<(), String> {
+    let s = SetSdrWhiteLevel {
+        header: header(
+            SET_SDR_WHITE_LEVEL,
+            std::mem::size_of::<SetSdrWhiteLevel>(),
+            m.adapter.to_win(),
+            m.target_id,
+        ),
+        level: raw,
+        final_value: 1,
+    };
+    // SAFETY: `s` is a live, correctly sized request; the call only reads it.
+    let rc = unsafe { DisplayConfigSetDeviceInfo(&s.header) };
+    if rc == 0 {
+        Ok(())
+    } else {
+        Err(format!("could not set the SDR white level (error {rc})"))
+    }
+}
+
+/// Sets the SDR content brightness in nits (snapped to the slider grid).
+pub fn set_sdr_white_nits(m: &Monitor, nits: f64) -> Result<(), String> {
+    set_sdr_white_raw(m, sdr_white_nits_to_raw(round_sdr_white_nits(nits)))
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -512,8 +614,34 @@ mod tests {
     }
 
     #[test]
+    fn sdr_white_mapping() {
+        assert_eq!(sdr_white_nits_to_raw(80.0), 1000);
+        assert_eq!(sdr_white_nits_to_raw(240.0), 3000);
+        assert_eq!(sdr_white_nits_to_raw(480.0), 6000);
+        assert_eq!(sdr_white_raw_to_nits(1000), 80.0);
+        assert_eq!(sdr_white_raw_to_nits(3000), 240.0);
+        for n in (80..=480).step_by(4) {
+            let n = n as f64;
+            assert_eq!(sdr_white_raw_to_nits(sdr_white_nits_to_raw(n)), n);
+        }
+    }
+
+    #[test]
+    fn sdr_white_rounding() {
+        assert_eq!(round_sdr_white_nits(79.0), 80.0);
+        assert_eq!(round_sdr_white_nits(81.9), 80.0);
+        assert_eq!(round_sdr_white_nits(82.1), 84.0);
+        assert_eq!(round_sdr_white_nits(241.0), 240.0);
+        assert_eq!(round_sdr_white_nits(243.0), 244.0);
+        assert_eq!(round_sdr_white_nits(900.0), 480.0);
+        assert_eq!(round_sdr_white_nits(0.0), 80.0);
+    }
+
+    #[test]
     fn struct_sizes_match_sdk() {
         assert_eq!(std::mem::size_of::<AdvancedColorInfo2>(), 36);
         assert_eq!(std::mem::size_of::<SetHdrState>(), 24);
+        assert_eq!(std::mem::size_of::<SdrWhiteLevel>(), 24);
+        assert_eq!(std::mem::size_of::<SetSdrWhiteLevel>(), 28);
     }
 }

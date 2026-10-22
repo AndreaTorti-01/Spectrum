@@ -72,6 +72,7 @@ fn mock_state(args: &[String]) -> UiState {
             saturation: 0.0,
         },
         hdr_custom_active: true,
+        sdr_white_nits: Some(240.0),
     };
     let m2 = UiMonitor {
         num: 2,
@@ -97,6 +98,7 @@ fn mock_state(args: &[String]) -> UiState {
             saturation: 0.0,
         },
         hdr_custom_active: false,
+        sdr_white_nits: Some(120.0),
     };
     UiState {
         monitors: if mons == 1 { vec![m1] } else { vec![m1, m2] },

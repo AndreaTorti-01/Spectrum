@@ -82,6 +82,11 @@ fn mock_apply(a: &UiAction) {
                     u.hdr_custom_active = true;
                 }
             }
+            UiAction::SetSdrWhite { mon, nits } => {
+                if let Some(u) = s.monitors.get_mut(*mon) {
+                    u.sdr_white_nits = Some(*nits);
+                }
+            }
             UiAction::ResetHdr { mon } => {
                 if let Some(u) = s.monitors.get_mut(*mon) {
                     u.hdr_custom_active = false;
