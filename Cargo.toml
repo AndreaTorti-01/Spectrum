@@ -1,6 +1,6 @@
 [package]
 name = "spectrum"
-version = "0.1.2"
+version = "0.1.3"
 edition = "2021"
 license = "MIT"
 description = "A tiny Windows tray utility that builds and applies ICC and HDR color profiles from your monitor's EDID."
