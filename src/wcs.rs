@@ -139,6 +139,61 @@ pub fn delete_profile(file_name: &str) -> Result<(), String> {
     }
 }
 
+/// Why a color folder profile can't be offered for deletion. `hint()` is the text shown beside the
+/// disabled button.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Undeletable {
+    /// The inbox sRGB profile, which Windows relies on.
+    Inbox,
+    /// The current user has no DELETE access to the file.
+    NoAccess,
+    /// Not a plain file name.
+    Invalid,
+}
+
+impl Undeletable {
+    pub fn hint(self) -> &'static str {
+        match self {
+            Undeletable::Inbox => "Installed by Windows. Needs admin to delete",
+            Undeletable::NoAccess => "Needs admin to delete",
+            Undeletable::Invalid => "Not a profile file",
+        }
+    }
+}
+
+/// The deletion rule, separated from the file system: `has_delete_access` is the result of the access
+/// check on the file.
+pub fn delete_decision(file_name: &str, has_delete_access: bool) -> Result<(), Undeletable> {
+    if !valid_file_name(file_name) {
+        Err(Undeletable::Invalid)
+    } else if file_name.eq_ignore_ascii_case(SRGB_INBOX) {
+        Err(Undeletable::Inbox)
+    } else if !has_delete_access {
+        Err(Undeletable::NoAccess)
+    } else {
+        Ok(())
+    }
+}
+
+/// True when the current user may delete the file: opens it with DELETE access (nothing is deleted) and
+/// closes it again. A missing file counts as not deletable.
+fn has_delete_access(path: &Path) -> bool {
+    use std::os::windows::fs::OpenOptionsExt;
+    const DELETE: u32 = 0x0001_0000;
+    const SHARE_ALL: u32 = 0x1 | 0x2 | 0x4;
+    std::fs::OpenOptions::new()
+        .access_mode(DELETE)
+        .share_mode(SHARE_ALL)
+        .open(path)
+        .is_ok()
+}
+
+/// Whether Spectrum may offer to delete this color folder file.
+pub fn can_delete(file_name: &str) -> Result<(), Undeletable> {
+    let access = valid_file_name(file_name) && has_delete_access(&color_dir().join(file_name));
+    delete_decision(file_name, access)
+}
+
 /// `*.icc` / `*.icm` file names in the color dir.
 pub fn list_installed() -> Vec<String> {
     let mut v: Vec<String> = match std::fs::read_dir(color_dir()) {
@@ -461,6 +516,31 @@ mod tests {
             "Windows kept b.icm as the default for monitor 2."
         );
         assert!(check_default(None, "a.icm", 1).is_err());
+    }
+
+    #[test]
+    fn delete_rules() {
+        assert_eq!(delete_decision("Spectrum Test.icm", true), Ok(()));
+        assert_eq!(
+            delete_decision("Spectrum Test.icm", false),
+            Err(Undeletable::NoAccess)
+        );
+        // The inbox profile is never offered, even with access.
+        assert_eq!(delete_decision(SRGB_INBOX, true), Err(Undeletable::Inbox));
+        assert_eq!(
+            delete_decision("srgb color space profile.ICM", true),
+            Err(Undeletable::Inbox)
+        );
+        assert_eq!(delete_decision("..\\x.icm", true), Err(Undeletable::Invalid));
+        for u in [Undeletable::Inbox, Undeletable::NoAccess, Undeletable::Invalid] {
+            assert!(u.hint().split_whitespace().count() <= 8);
+        }
+    }
+
+    #[test]
+    fn inbox_profile_is_not_deletable_here() {
+        assert_eq!(can_delete(SRGB_INBOX), Err(Undeletable::Inbox));
+        assert!(can_delete("no such file.icm").is_err());
     }
 
     #[test]

@@ -8,6 +8,7 @@ pub mod gamut_window;
 pub mod main_window;
 pub mod mockbar;
 pub mod overlay;
+pub mod profiles_window;
 pub mod widgets;
 
 use crate::app::{self, UiAction, UiState};
@@ -99,6 +100,7 @@ fn mock_apply(a: &UiAction) {
         UiAction::Highlight(None) => overlay::hide_all(),
         UiAction::Identify => overlay::identify_all(&rects),
         UiAction::OpenGamut => gamut_window::open(None, main_window::selected()),
+        UiAction::OpenProfiles => profiles_window::open_showcase(crate::debug::showcase_profiles()),
         _ => {}
     }
 }
