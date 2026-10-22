@@ -139,14 +139,12 @@
   gap: 12px 48px;
   margin-top: 48px;
 }
-.facts div,
-.stats div {
+.facts div {
   display: flex;
   flex-direction: column-reverse;
   gap: 6px;
 }
-.facts dt,
-.stats dt {
+.facts dt {
   font: 500 0.75rem var(--font-mono);
   letter-spacing: 0.08em;
   text-transform: uppercase;
@@ -185,139 +183,6 @@ html:not(.js) .hero-diagram {
 .hero-diagram img {
   max-width: 100%;
   height: auto;
-}
-
-/* ---------- EDID ---------- */
-.edid-grid {
-  display: grid;
-  grid-template-columns: repeat(12, minmax(0, 1fr));
-  gap: var(--gap);
-  position: relative;
-  align-items: start;
-}
-.edid-dump {
-  grid-column: 1 / 7;
-  font: 400 clamp(0.6875rem, 1.05vw, 0.875rem) / 1 var(--font-mono);
-  color: var(--ink-dim);
-  display: grid;
-  gap: 0;
-  padding-top: 18px;
-}
-.edid-row {
-  display: grid;
-  grid-template-columns: 3.4em repeat(16, minmax(0, 1fr));
-  padding-block: 7px;
-}
-.edid-row:nth-child(2) {
-  margin-top: 34px; /* room for one connector lane per byte above the 0x10 row */
-}
-.edid-row:nth-child(3) {
-  margin-top: 18px;
-  margin-bottom: 18px;
-}
-.edid-off {
-  color: var(--ink-dim);
-}
-.byte {
-  text-align: center;
-  position: relative;
-  transition: color 0.2s;
-}
-.byte.hot {
-  --c: var(--ink);
-}
-.byte[data-i="27"], .byte[data-i="28"] { --c: var(--c-r); }
-.byte[data-i="29"], .byte[data-i="30"] { --c: var(--c-g); }
-.byte[data-i="31"], .byte[data-i="32"] { --c: var(--c-b); }
-.byte[data-i="25"] { --c: var(--c-r); }
-.byte[data-i="26"] { --c: var(--c-b); }
-.byte.lit {
-  color: var(--c);
-  font-weight: 500;
-}
-.byte.lit::before {
-  content: "";
-  position: absolute;
-  inset: -5px 0;
-  background: color-mix(in srgb, var(--c) 16%, transparent);
-  z-index: -1;
-}
-.byte[data-i="25"].lit::after,
-.byte[data-i="26"].lit::after {
-  content: "";
-  position: absolute;
-  left: 15%;
-  right: 15%;
-  bottom: -6px;
-  height: 2px;
-  background: linear-gradient(90deg, var(--c-r) 50%, var(--c-g) 50%);
-}
-.byte[data-i="26"].lit::after {
-  background: linear-gradient(90deg, var(--c-b) 50%, var(--ink) 50%);
-}
-.edid-readout {
-  grid-column: 8 / 10;
-  display: grid;
-  gap: 22px;
-  padding-top: 18px;
-  font: 400 0.8125rem/1.35 var(--font-mono);
-}
-.edid-readout li {
-  opacity: 0.35;
-  transition: opacity 0.4s;
-}
-.edid-readout li.on {
-  opacity: 1;
-}
-.ro-name {
-  display: block;
-  font-weight: 500;
-  font-size: 0.75rem;
-  letter-spacing: 0.08em;
-  text-transform: uppercase;
-  color: var(--ink-dim);
-}
-li[data-k="r"] .ro-name { color: var(--c-r); }
-li[data-k="g"] .ro-name { color: var(--c-g); }
-li[data-k="b"] .ro-name { color: var(--c-b); }
-.ro-v {
-  white-space: nowrap;
-}
-.edid-text {
-  grid-column: 10 / 13;
-  grid-row: 1;
-}
-.edid-text h2 {
-  font-size: clamp(1.75rem, 3.2vw, 3rem);
-}
-.edid-text .body {
-  margin-top: 24px;
-  font-size: 1rem;
-}
-.edid-plot {
-  grid-column: 1 / 5;
-  grid-row: 2;
-  margin-top: 16px;
-}
-.edid-plot canvas {
-  width: 100%;
-  aspect-ratio: 1 / 1.05;
-}
-.edid-plot .label {
-  margin-top: 10px;
-}
-.edid-lines {
-  position: absolute;
-  inset: 0;
-  width: 100%;
-  height: 100%;
-  pointer-events: none;
-  overflow: visible;
-}
-.edid-lines path {
-  fill: none;
-  stroke-width: 1;
-  vector-effect: non-scaling-stroke;
 }
 
 /* ---------- main window ---------- */
@@ -708,71 +573,6 @@ input[type="range"]:focus-visible {
   border-radius: 8px;
 }
 
-/* ---------- drivers ---------- */
-.drivers h2 {
-  margin-bottom: clamp(32px, 5vw, 56px);
-}
-.drv-v {
-  display: none;
-}
-.drv-diagram {
-  width: 100%;
-  height: auto;
-  margin-bottom: 40px;
-}
-.drv-diagram line {
-  stroke: var(--ink);
-  stroke-width: 2;
-  fill: none;
-}
-/* step 2: the broken line is dimmer than the applied one, and its node turns red */
-.drv-diagram .drv-l2a,
-.drv-diagram .drv-l2b {
-  stroke: var(--ink-dim);
-}
-/* step 3: solid line in the spectral gradient (the stroke comes from the inline style) */
-.drv-diagram .drv-l3 {
-  stroke-width: 3;
-}
-.drv-node {
-  fill: var(--bg);
-  stroke: var(--ink);
-  stroke-width: 2;
-}
-.drv-diagram .drv-node-2 {
-  stroke: var(--c-r);
-}
-/* while the animation runs the node is red only after the break */
-.drv-diagram.is-anim:not(.is-broken) .drv-node-2 {
-  stroke: var(--ink);
-}
-.drv-labels text {
-  font: 500 12px var(--font-mono);
-  letter-spacing: 0.08em;
-  text-transform: uppercase;
-  fill: var(--ink-dim);
-}
-.drivers .body {
-  font-size: 1.125rem;
-}
-
-/* ---------- download ---------- */
-.download h2 {
-  margin-bottom: 24px;
-}
-.stats {
-  display: grid;
-  grid-template-columns: repeat(4, minmax(0, 1fr));
-  gap: 32px var(--gap);
-  margin: clamp(40px, 6vw, 72px) 0;
-}
-.stats dd {
-  font: 500 clamp(1.75rem, 4.2vw, 3.5rem) / 1 var(--font-mono);
-}
-.download .body {
-  word-break: break-word;
-}
-
 /* ---------- footer ---------- */
 .footer {
   position: relative;
@@ -801,7 +601,6 @@ input[type="range"]:focus-visible {
     padding-block: 48px;
   }
   .hero-grid,
-  .edid-grid,
   .hdr-grid,
   .gamut-grid {
     display: flex;
@@ -818,23 +617,6 @@ input[type="range"]:focus-visible {
   }
   .hero-diagram noscript .shot {
     width: 100%;
-  }
-  .edid-text { order: 1; }
-  .edid-dump { order: 2; }
-  .edid-readout { order: 3; }
-  .edid-plot { order: 4; margin-top: 0; }
-  .edid-readout {
-    grid-template-columns: repeat(2, minmax(0, 1fr));
-    gap: 16px;
-  }
-  .edid-row {
-    grid-template-columns: repeat(16, minmax(0, 1fr));
-  }
-  .edid-off {
-    display: none;
-  }
-  .edid-lines {
-    display: none;
   }
   .win-stage {
     padding-left: 0;
@@ -900,19 +682,9 @@ input[type="range"]:focus-visible {
   .slab-gamut {
     order: -1;
   }
-  .stats {
-    grid-template-columns: repeat(2, minmax(0, 1fr));
-  }
   .footer-inner p {
     margin-left: 0;
     width: 100%;
-  }
-  .drv-h {
-    display: none;
-  }
-  .drv-v {
-    display: block;
-    max-width: 360px;
   }
 }
 @media (min-width: 900px) {

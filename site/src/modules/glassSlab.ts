@@ -9,7 +9,6 @@ export function initSlabs() {
 }
 
 function setup(slab: HTMLElement) {
-  const sway = slab.querySelector<HTMLElement>(".slab-sway")!;
   const tilt = slab.querySelector<HTMLElement>(".slab-tilt")!;
   const edge = slab.querySelector<HTMLElement>(".slab-edge")!;
   const caustic = slab.querySelector<HTMLElement>(".slab-caustic");
@@ -20,13 +19,9 @@ function setup(slab: HTMLElement) {
     gsap.fromTo(
       slab,
       { rotationX: 24, y: 80, opacity: 0, transformPerspective: 1400, transformOrigin: "50% 100%" },
-      { rotationX: 0, y: 0, opacity: 1, ease: "none", scrollTrigger: { trigger: slab, start: "top 85%", end: "top 35%", scrub: true } },
+      { rotationX: 0, y: 0, opacity: 1, ease: "none", scrollTrigger: { trigger: slab, start: "top 95%", end: "top 70%", scrub: true } },
     );
   }
-
-  // Idle: slow sway, only while on screen.
-  const idle = gsap.fromTo(sway, { rotationY: -4 }, { rotationY: 4, duration: 6, ease: "sine.inOut", yoyo: true, repeat: -1, paused: true });
-  new IntersectionObserver((es) => es.forEach((e) => (e.isIntersecting ? idle.play() : idle.pause()))).observe(slab);
 
   if (!finePointer) return;
 

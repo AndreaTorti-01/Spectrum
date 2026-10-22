@@ -1,6 +1,6 @@
 # Spectrum website copy
 
-Total prose words: 176 (budget 380; counts Headline, Hero text, Body, Caption, Callout, noscript and the footer line; excludes kickers, button and label lines, numbers, axis ticks, alt text and the gamut descriptions, which are the app's own strings)
+Total prose words: 111 (budget 380; counts Headline, Hero text, Body, Caption, Callout, noscript and the footer line; excludes kickers, button and label lines, numbers, axis ticks, alt text and the gamut descriptions, which are the app's own strings)
 
 Line types: Headline, Hero text, Body, Caption, Callout and Noscript count as prose and carry a word count. Kicker, Button, Label, Alt, Aria and Description are UI text and are not counted. Placeholders in braces ({EXE_KB}, {IDLE_MB}, {rx}, {area}) are filled by the builder from the measurement report and monitor.json. Coverage percentages are computed from monitor.json (checked by hand: 100, 98.4, 94.9 and 78.1).
 
@@ -19,7 +19,7 @@ UI labels quoted here match the app verbatim: "Read profile from monitor", "Comp
 
 - Skip link: "Skip to content"
 - Wordmark: "SPECTRUM"
-- Link: "How it works" (jumps to section 3)
+- Link: "How it works" (jumps to section 3, main window)
 - Link: "GitHub"
 - Button: "Download"
 - Label: "System" / "Light" / "Dark" (theme toggle states)
@@ -37,17 +37,7 @@ UI labels quoted here match the app verbatim: "Read profile from monitor", "Comp
 - Canvas axis labels: wavelength ticks every 20 nm, "x" and "y"
 - Aria: "CIE 1931 xy chromaticity diagram. The gamut triangle morphs from sRGB through Display P3 and Adobe RGB (1998) to the author's monitor, an MSI MAG 271QPX E2."
 
-## 3. EDID
-
-- Kicker: "EDID · bytes 0x19–0x22"
-- Headline: "Ten bytes define the gamut." (5 words)
-- Body: "Spectrum decodes them and the gamma at byte 0x17, then writes an ICC v4 profile. ArgyllCMS and DisplayCAL aren't needed." (20 words)
-- Readout labels (mono, filled from monitor.json): "Red x {rx} y {ry}" · "Green x {gx} y {gy}" · "Blue x {bx} y {by}" · "White x {wx} y {wy}" · "Gamma {gamma}"
-- Mini plot label: "ICC v4 profile"
-- Aria (hex dump): "Hex dump of the 128-byte EDID base block from the author's MSI MAG 271QPX E2. Bytes 0x19 to 0x22 are highlighted."
-- Aria (mini plot): "CIE 1931 xy diagram with the triangle drawn from the decoded primaries."
-
-## 4. Main window
+## 3. Main window
 
 - Headline: "One window, every monitor." (4 words)
 - Body: none
@@ -57,7 +47,7 @@ UI labels quoted here match the app verbatim: "Read profile from monitor", "Comp
 - Alt (light): "Spectrum main window, light theme. A map of the connected monitors, an SDR profile dropdown, Read profile from monitor and Compare gamuts… buttons, an HDR toggle with four sliders, and a Start with Windows checkbox."
 - Alt (dark): "Spectrum main window, dark theme. A map of the connected monitors, an SDR profile dropdown, Read profile from monitor and Compare gamuts… buttons, an HDR toggle with four sliders, and a Start with Windows checkbox."
 
-## 5. HDR lab
+## 4. HDR lab
 
 - Kicker: "HDR · MHC2"
 - Headline: "Tune HDR with four sliders." (5 words)
@@ -65,7 +55,7 @@ UI labels quoted here match the app verbatim: "Read profile from monitor", "Comp
 - Caption: "Same MHC2 layout as the Windows HDR Calibration app." (9 words)
 - Label: "Black level" (unit "nits", range 0–0.5)
 - Label: "Peak brightness" (unit "nits", range 100–4000)
-- Label: "Full-frame" (unit "nits", range 100 to peak)
+- Label: "Full-frame" (unit "nits", range 100�4000, independent of peak)
 - Label: "Saturation" (unit "%", range 0–100)
 - Label (chart 1 title): "PQ (ST 2084) response"
 - Label (chart 1 legend): "Reference" · "Your display" · "Full-frame"
@@ -76,7 +66,7 @@ UI labels quoted here match the app verbatim: "Read profile from monitor", "Comp
 - Aria (chart 1): "Line chart of the PQ response from 0 to 10,000 nits, with the reference curve dashed and your display's curve clipped at peak brightness."
 - Aria (chart 2): "CIE 1931 xy diagram with the BT.709 triangle growing toward BT.2020 as saturation rises."
 
-## 6. Gamut
+## 5. Gamut
 
 - Kicker: "Gamut · CIE 1931 xy"
 - Headline: "Compare gamuts against six reference spaces." (6 words)
@@ -93,7 +83,7 @@ UI labels quoted here match the app verbatim: "Read profile from monitor", "Comp
 - Alt (light): "Spectrum gamut window, light theme. A CIE 1931 xy diagram with gamut triangles, and a checklist of color spaces with coverage figures."
 - Alt (dark): "Spectrum gamut window, dark theme. A CIE 1931 xy diagram with gamut triangles, and a checklist of color spaces with coverage figures."
 
-## 7. Tray
+## 6. Tray
 
 - Headline: "Switch profiles from the tray." (5 words)
 - Body: none
@@ -102,28 +92,7 @@ UI labels quoted here match the app verbatim: "Read profile from monitor", "Comp
 - Alt (light): "Spectrum tray menu, light theme. For each monitor, a radio list of SDR profiles (MAG 271QPX E2 (EDID), sRGB, Display P3, Adobe RGB), an HDR check item, then Open Spectrum and Exit."
 - Alt (dark): "Spectrum tray menu, dark theme. For each monitor, a radio list of SDR profiles (MAG 271QPX E2 (EDID), sRGB, Display P3, Adobe RGB), an HDR check item, then Open Spectrum and Exit."
 
-## 8. Driver updates
-
-- Kicker: none
-- Headline: "Survives driver updates." (3 words)
-- Body: "Monitors are keyed by EDID (manufacturer, product code, serial), and Spectrum keeps its own copy of every profile." (18 words)
-- Label (diagram step 1): "Profile applied"
-- Label (diagram step 2): "Driver update wipes it"
-- Label (diagram step 3): "Spectrum puts it back"
-- Aria (diagram): "Three steps: the profile is applied, a driver update removes it, Spectrum restores it."
-
-## 9. Download
-
-- Kicker: none
-- Headline: "Installs without an admin prompt." (5 words)
-- Body: "SpectrumSetup.exe puts Spectrum in %LOCALAPPDATA%\Programs\Spectrum. The portable Spectrum.exe is on the same release page." (14 words)
-- Stat: "{EXE_KB} KB" with label "exe"; "{IDLE_MB} MB" with label "idle RAM" (same as the hero)
-- Stat: "0" with label "admin prompts"
-- Stat: "0" with label "network connections"
-- Button: "Download SpectrumSetup.exe"
-- Button (ghost): "View on GitHub"
-
-## 10. Footer
+## 7. Footer
 
 - Link: "MIT license"
 - Link: "GitHub"
