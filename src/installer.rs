@@ -431,6 +431,75 @@ fn spawn_self_delete(dir: &Path) -> Result<(), String> {
     Ok(())
 }
 
+/// Where the install stands, for `--debug-dump` and the headless install check.
+#[derive(Clone, Debug)]
+pub struct InstallState {
+    pub exe: PathBuf,
+    pub exe_exists: bool,
+    pub running_installed: bool,
+    /// Data of the Run key value, if set.
+    pub run_value: Option<String>,
+    pub shortcut: PathBuf,
+    pub shortcut_exists: bool,
+    pub uninstall_key_exists: bool,
+}
+
+fn read_run_value() -> Option<String> {
+    let key = open_key(RUN_KEY, KEY_READ, false)?;
+    let name = wide(RUN_VALUE);
+    let mut size = 0u32;
+    // SAFETY: size query, then a read into a buffer of exactly that many bytes.
+    let out = unsafe {
+        let rc = RegQueryValueExW(
+            key,
+            name.as_ptr(),
+            std::ptr::null(),
+            std::ptr::null_mut(),
+            std::ptr::null_mut(),
+            &mut size,
+        );
+        if rc != 0 || size < 2 {
+            None
+        } else {
+            let mut buf = vec![0u16; (size as usize).div_ceil(2)];
+            let rc = RegQueryValueExW(
+                key,
+                name.as_ptr(),
+                std::ptr::null(),
+                std::ptr::null_mut(),
+                buf.as_mut_ptr() as *mut u8,
+                &mut size,
+            );
+            (rc == 0).then(|| from_wide(&buf))
+        }
+    };
+    // SAFETY: key was opened above.
+    unsafe { RegCloseKey(key) };
+    out
+}
+
+pub fn state() -> InstallState {
+    let exe = installed_exe();
+    let shortcut = shortcut_path();
+    let uninstall_key_exists = match open_key(UNINSTALL_KEY, KEY_READ, false) {
+        Some(k) => {
+            // SAFETY: key was opened above.
+            unsafe { RegCloseKey(k) };
+            true
+        }
+        None => false,
+    };
+    InstallState {
+        exe_exists: exe.exists(),
+        exe,
+        running_installed: is_running_installed(),
+        run_value: read_run_value(),
+        shortcut_exists: shortcut.exists(),
+        shortcut,
+        uninstall_key_exists,
+    }
+}
+
 pub fn autostart_enabled() -> bool {
     let Some(key) = open_key(RUN_KEY, KEY_READ, false) else {
         return false;

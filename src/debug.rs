@@ -3,9 +3,11 @@
 
 #![allow(clippy::not_unsafe_ptr_arg_deref)]
 
-use crate::app::{self, UiAction};
+use crate::app::{self, UiAction, UiMonitor, UiState};
 use crate::color::Primaries;
 use crate::config::Config;
+use crate::icc_write::HdrParams;
+use crate::installer::{self, InstallState};
 use crate::monitors::Monitor;
 use crate::ui;
 use crate::util::wide;
@@ -139,11 +141,86 @@ fn name_of(m: &Monitor) -> String {
         .unwrap_or_else(|| m.friendly_name.clone())
 }
 
-fn dump_text(mons: &[Monitor], cfg: &Config) -> String {
+fn opt(s: &Option<String>) -> &str {
+    s.as_deref().unwrap_or("(none)")
+}
+
+fn hdr_text(h: &Option<HdrParams>) -> String {
+    match h {
+        Some(h) => format!(
+            "min {} peak {} full {} sat {}",
+            h.min_nits, h.peak_nits, h.full_frame_nits, h.saturation
+        ),
+        None => "(none)".into(),
+    }
+}
+
+/// Install and autostart state, one line each.
+fn install_text(st: &InstallState, autostart: bool) -> String {
+    let mut s = String::new();
+    let _ = writeln!(s, "autostart:       {}", if autostart { "on" } else { "off" });
+    let _ = writeln!(s, "installed:       {}", st.exe_exists);
+    let _ = writeln!(
+        s,
+        "install path:    {} (exists={})",
+        st.exe.display(),
+        st.exe_exists
+    );
+    let _ = writeln!(s, "running installed copy: {}", st.running_installed);
+    let _ = writeln!(s, "run key value:   {}", opt(&st.run_value));
+    let _ = writeln!(
+        s,
+        "shortcut:        {} (exists={})",
+        st.shortcut.display(),
+        st.shortcut_exists
+    );
+    let _ = writeln!(s, "uninstall key:   {}", st.uninstall_key_exists);
+    s
+}
+
+fn sdr_option_lines(m: &UiMonitor, indent: &str) -> String {
+    let mut s = String::new();
+    for (i, (label, file)) in m.sdr_options.iter().enumerate() {
+        let mark = if m.sdr_current == Some(i) {
+            "  <- current"
+        } else {
+            ""
+        };
+        let _ = writeln!(s, "{indent}[{i}] {label} ({file}){mark}");
+    }
+    s
+}
+
+fn dump_text(mons: &[Monitor], cfg: &Config, ui: &UiState) -> String {
     let mut s = String::new();
     let _ = writeln!(s, "Spectrum {} debug dump", env!("CARGO_PKG_VERSION"));
     let _ = writeln!(s, "color folder: {}", wcs::color_dir().display());
-    let _ = writeln!(s, "monitors: {}", mons.len());
+    let cpath = crate::config::config_path();
+    let _ = writeln!(
+        s,
+        "\nconfig file:     {} (exists={})",
+        cpath.display(),
+        cpath.exists()
+    );
+    let _ = writeln!(s, "config load failed: {}", cfg.load_failed);
+    let _ = writeln!(s, "config monitors: {}", cfg.monitors.len());
+    for (key, c) in &cfg.monitors {
+        let _ = writeln!(
+            s,
+            "  [monitor:{key}] name={} edid_profile={} sdr={} hdr={} hdr_file={}",
+            c.name,
+            opt(&c.edid_profile),
+            opt(&c.sdr),
+            hdr_text(&c.hdr),
+            opt(&c.hdr_file)
+        );
+    }
+    let _ = writeln!(
+        s,
+        "\n{}",
+        install_text(&installer::state(), ui.autostart).trim_end()
+    );
+    let _ = writeln!(s, "\nmonitors: {}", mons.len());
     for m in mons {
         let i = info(m);
         let _ = writeln!(s, "\nmonitor {}: {}", m.num, name_of(m));
@@ -178,6 +255,21 @@ fn dump_text(mons: &[Monitor], cfg: &Config) -> String {
             i.hdr_default.as_deref().unwrap_or("(none)")
         );
         let _ = writeln!(s, "  hdr associated: {:?}", i.hdr_assoc);
+        match ui.monitors.iter().find(|u| u.num == m.num) {
+            Some(u) => {
+                let _ = writeln!(s, "  sdr options:");
+                s.push_str(&sdr_option_lines(u, "    "));
+                let _ = writeln!(
+                    s,
+                    "  hdr sliders:    {}  (custom active={})",
+                    hdr_text(&Some(u.hdr)),
+                    u.hdr_custom_active
+                );
+            }
+            None => {
+                let _ = writeln!(s, "  sdr options:    (none)");
+            }
+        }
         match &m.edid {
             Some(e) => {
                 let p = &e.primaries;
@@ -211,7 +303,7 @@ fn dump_text(mons: &[Monitor], cfg: &Config) -> String {
     s
 }
 
-fn dump_json(mons: &[Monitor], cfg: &Config) -> String {
+fn dump_json(mons: &[Monitor], cfg: &Config, ui: &UiState) -> String {
     let mut items = Vec::new();
     for m in mons {
         let i = info(m);
@@ -245,6 +337,26 @@ fn dump_json(mons: &[Monitor], cfg: &Config) -> String {
             json_list(i.sdr_assoc.as_deref().unwrap_or_default()),
             json_list(i.hdr_assoc.as_deref().unwrap_or_default())
         );
+        let opts: Vec<String> = ui
+            .monitors
+            .iter()
+            .find(|u| u.num == m.num)
+            .map(|u| {
+                u.sdr_options
+                    .iter()
+                    .enumerate()
+                    .map(|(i, (label, file))| {
+                        format!(
+                            "{{\"index\":{i},\"label\":{},\"file\":{},\"current\":{}}}",
+                            json_str(label),
+                            json_str(file),
+                            u.sdr_current == Some(i)
+                        )
+                    })
+                    .collect()
+            })
+            .unwrap_or_default();
+        let _ = write!(o, "\"sdr_options\":[{}],", opts.join(","));
         match &m.edid {
             Some(e) => {
                 let hdr = match &e.hdr {
@@ -302,17 +414,37 @@ fn dump_json(mons: &[Monitor], cfg: &Config) -> String {
         o.push('}');
         items.push(o);
     }
-    format!("{{\"monitors\":[{}]}}\n", items.join(",\n"))
+    let st = installer::state();
+    let install = format!(
+        "{{\"installed\":{},\"path\":{},\"running_installed\":{},\"run_value\":{},\"shortcut\":{},\"shortcut_exists\":{},\"uninstall_key\":{}}}",
+        st.exe_exists,
+        json_str(&st.exe.display().to_string()),
+        st.running_installed,
+        json_opt(&st.run_value),
+        json_str(&st.shortcut.display().to_string()),
+        st.shortcut_exists,
+        st.uninstall_key_exists
+    );
+    let cpath = crate::config::config_path();
+    format!(
+        "{{\"autostart\":{},\"install\":{},\"config_file\":{},\"config_exists\":{},\"monitors\":[{}]}}\n",
+        ui.autostart,
+        install,
+        json_str(&cpath.display().to_string()),
+        cpath.exists(),
+        items.join(",\n")
+    )
 }
 
 /// `--debug-dump [--json]`
 pub fn dump(json: bool, out: Option<&Path>) {
     let mons = crate::monitors::enumerate();
     let cfg = Config::load();
+    let ui = app::snapshot();
     let text = if json {
-        dump_json(&mons, &cfg)
+        dump_json(&mons, &cfg, &ui)
     } else {
-        dump_text(&mons, &cfg)
+        dump_text(&mons, &cfg, &ui)
     };
     emit(out, &text);
 }
@@ -348,6 +480,239 @@ pub fn reconcile(out: Option<&Path>) {
         lines.join("\n") + "\n"
     };
     emit(out, &text);
+}
+
+// ---------------------------------------------------------------------------------------------
+// Headless UI actions (same dispatch path as the windows)
+// ---------------------------------------------------------------------------------------------
+
+fn parse_num(s: &str) -> Result<u32, String> {
+    match s.trim().parse::<u32>() {
+        Ok(n) if n >= 1 => Ok(n),
+        _ => Err(format!("invalid monitor number {s:?}")),
+    }
+}
+
+fn parse_on_off(s: &str) -> Result<bool, String> {
+    match s.trim().to_ascii_lowercase().as_str() {
+        "on" => Ok(true),
+        "off" => Ok(false),
+        _ => Err(format!("expected on or off, got {s:?}")),
+    }
+}
+
+/// Parses `min,peak,full,sat` (sat 0..1).
+fn parse_hdr_params(s: &str) -> Result<HdrParams, String> {
+    let bad = || format!("expected min,peak,full,sat as numbers, got {s:?}");
+    let nums: Vec<f64> = s
+        .split(',')
+        .map(|p| p.trim().parse::<f64>())
+        .collect::<Result<_, _>>()
+        .map_err(|_| bad())?;
+    if nums.len() != 4 || nums.iter().any(|n| !n.is_finite()) {
+        return Err(bad());
+    }
+    if !(0.0..=1.0).contains(&nums[3]) {
+        return Err(format!("saturation must be between 0 and 1, got {}", nums[3]));
+    }
+    Ok(HdrParams {
+        min_nits: nums[0],
+        peak_nits: nums[1],
+        full_frame_nits: nums[2],
+        saturation: nums[3],
+    })
+}
+
+/// Position of monitor `num` in the UI list (what the `mon` field of a `UiAction` indexes).
+fn ui_index(num: u32) -> Result<usize, String> {
+    app::snapshot()
+        .monitors
+        .iter()
+        .position(|m| m.num == num)
+        .ok_or_else(|| format!("no monitor {num}"))
+}
+
+/// State of one monitor after an action: SDR options, Windows defaults, HDR state and our config.
+fn monitor_state(num: u32) -> String {
+    let ui = app::snapshot();
+    let Some(u) = ui.monitors.iter().find(|m| m.num == num) else {
+        return format!("monitor {num}: not found\n");
+    };
+    let mut s = String::new();
+    let _ = writeln!(s, "monitor {num}: {}", u.name);
+    let _ = writeln!(s, "  sdr options:");
+    s.push_str(&sdr_option_lines(u, "    "));
+    let cfg = Config::load();
+    if let Some(m) = app::current_monitors().iter().find(|m| m.num == num) {
+        let _ = writeln!(s, "  sdr default:    {}", opt(&wcs::default_profile(m, false)));
+        let _ = writeln!(s, "  hdr default:    {}", opt(&wcs::default_profile(m, true)));
+        let _ = writeln!(s, "  hdr associated: {:?}", wcs::associated(m, true));
+        let _ = writeln!(
+            s,
+            "  hdr:            supported={} enabled={}",
+            m.hdr_supported, m.hdr_enabled
+        );
+        match cfg.monitors.get(&m.key) {
+            Some(c) => {
+                let _ = writeln!(
+                    s,
+                    "  config:         sdr={} hdr={} hdr_file={}",
+                    opt(&c.sdr),
+                    hdr_text(&c.hdr),
+                    opt(&c.hdr_file)
+                );
+            }
+            None => {
+                let _ = writeln!(s, "  config:         (none)");
+            }
+        }
+    }
+    let _ = writeln!(s, "  hdr custom active: {}", u.hdr_custom_active);
+    s
+}
+
+/// Runs one action through `app::dispatch_result` and reports it. Exit code 0 on success, 1 on failure.
+fn run_action(what: &str, num: u32, action: UiAction, out: Option<&Path>) -> i32 {
+    let mut text = format!("action: {what}\n");
+    let code = match app::dispatch_result(action) {
+        Ok(m) if m.is_empty() => {
+            text.push_str("result: ok\n");
+            0
+        }
+        Ok(m) => {
+            let _ = writeln!(text, "result: ok: {m}");
+            0
+        }
+        Err(e) => {
+            let _ = writeln!(text, "result: error: {e}");
+            1
+        }
+    };
+    text.push_str(&monitor_state(num));
+    emit(out, &text);
+    code
+}
+
+fn fail(out: Option<&Path>, msg: &str) -> i32 {
+    emit(out, &format!("error: {msg}\n"));
+    1
+}
+
+/// Parses the monitor number and finds its UI index.
+fn target(num: &str) -> Result<(u32, usize), String> {
+    let n = parse_num(num)?;
+    Ok((n, ui_index(n)?))
+}
+
+/// `--debug-sdr <num> <option-index>`
+pub fn set_sdr(num: &str, idx: &str, out: Option<&Path>) -> i32 {
+    let Ok(idx) = idx.trim().parse::<usize>() else {
+        return fail(out, &format!("invalid option index {idx:?}"));
+    };
+    let (num, mon) = match target(num) {
+        Ok(t) => t,
+        Err(e) => return fail(out, &e),
+    };
+    let label = app::snapshot()
+        .monitors
+        .get(mon)
+        .and_then(|m| m.sdr_options.get(idx))
+        .map(|(l, f)| format!("{l} ({f})"))
+        .unwrap_or_else(|| "no such option".into());
+    run_action(
+        &format!("set sdr on monitor {num}, option {idx}: {label}"),
+        num,
+        UiAction::SetSdr { mon, idx },
+        out,
+    )
+}
+
+/// `--debug-hdr <num> <min>,<peak>,<full>,<sat>`
+pub fn apply_hdr(num: &str, params: &str, out: Option<&Path>) -> i32 {
+    let p = match parse_hdr_params(params) {
+        Ok(p) => p,
+        Err(e) => return fail(out, &e),
+    };
+    let (num, mon) = match target(num) {
+        Ok(t) => t,
+        Err(e) => return fail(out, &e),
+    };
+    run_action(
+        &format!("apply hdr on monitor {num}: {}", hdr_text(&Some(p))),
+        num,
+        UiAction::ApplyHdr { mon, params: p },
+        out,
+    )
+}
+
+/// `--debug-hdr-reset <num>`
+pub fn reset_hdr(num: &str, out: Option<&Path>) -> i32 {
+    let (num, mon) = match target(num) {
+        Ok(t) => t,
+        Err(e) => return fail(out, &e),
+    };
+    run_action(
+        &format!("reset hdr on monitor {num}"),
+        num,
+        UiAction::ResetHdr { mon },
+        out,
+    )
+}
+
+/// `--debug-hdr-toggle <num> on|off`
+pub fn toggle_hdr(num: &str, state: &str, out: Option<&Path>) -> i32 {
+    let on = match parse_on_off(state) {
+        Ok(o) => o,
+        Err(e) => return fail(out, &e),
+    };
+    let (num, mon) = match target(num) {
+        Ok(t) => t,
+        Err(e) => return fail(out, &e),
+    };
+    run_action(
+        &format!("turn hdr {} on monitor {num}", if on { "on" } else { "off" }),
+        num,
+        UiAction::SetHdrEnabled { mon, on },
+        out,
+    )
+}
+
+/// Result line plus install and autostart state, for the two switches that touch the install.
+fn finish_install(mut text: String, r: Result<String, String>, out: Option<&Path>) -> i32 {
+    let code = match r {
+        Ok(m) if m.is_empty() => {
+            text.push_str("result: ok\n");
+            0
+        }
+        Ok(m) => {
+            let _ = writeln!(text, "result: ok: {m}");
+            0
+        }
+        Err(e) => {
+            let _ = writeln!(text, "result: error: {e}");
+            1
+        }
+    };
+    text.push_str(&install_text(&installer::state(), installer::autostart_enabled()));
+    emit(out, &text);
+    code
+}
+
+/// `--debug-autostart on|off`
+pub fn autostart(state: &str, out: Option<&Path>) -> i32 {
+    let on = match parse_on_off(state) {
+        Ok(o) => o,
+        Err(e) => return fail(out, &e),
+    };
+    let text = format!("action: set autostart {}\n", if on { "on" } else { "off" });
+    finish_install(text, app::dispatch_result(UiAction::SetAutostart(on)), out)
+}
+
+/// `--debug-install`: the install window's Install button with autostart on, without launching the copy.
+pub fn install(out: Option<&Path>) -> i32 {
+    let text = "action: install with autostart on, no launch\n".to_string();
+    let r = installer::install(true).map(|exe| format!("installed to {}", exe.display()));
+    finish_install(text, r, out)
 }
 
 // ---------------------------------------------------------------------------------------------

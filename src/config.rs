@@ -27,7 +27,7 @@ pub struct Config {
 
 const SECTION_PREFIX: &str = "monitor:";
 
-fn config_path() -> PathBuf {
+pub fn config_path() -> PathBuf {
     app_data_dir().join("spectrum.ini")
 }
 
