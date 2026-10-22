@@ -664,6 +664,60 @@ pub fn toggle_hdr(num: &str, state: &str, out: Option<&Path>) -> i32 {
     )
 }
 
+/// Where a profile file shows up: the color folder and every monitor's SDR and HDR association lists.
+fn profile_presence(file: &str) -> String {
+    let mut s = String::new();
+    let _ = writeln!(s, "  file in color folder: {}", wcs::profile_exists(file));
+    let _ = writeln!(
+        s,
+        "  backup copy:          {}",
+        wcs::backup_dir().join(file).is_file()
+    );
+    for m in &app::current_monitors() {
+        for hdr in [false, true] {
+            let listed = wcs::associated(m, hdr)
+                .map(|l| l.iter().any(|f| f.eq_ignore_ascii_case(file)))
+                .map_or("unknown".to_string(), |b| b.to_string());
+            let _ = writeln!(
+                s,
+                "  monitor {} {} associated: {listed}",
+                m.num,
+                if hdr { "HDR" } else { "SDR" }
+            );
+        }
+    }
+    s
+}
+
+/// `--debug-delete-profile <file name>`: the profiles window's Delete (second click), headless.
+pub fn delete_profile(file: &str, out: Option<&Path>) -> i32 {
+    let mut text = format!("action: delete profile {file}\n");
+    match wcs::can_delete(file) {
+        Ok(()) => text.push_str("deletable: yes\n"),
+        Err(why) => {
+            let _ = writeln!(text, "deletable: no ({})", why.hint());
+        }
+    }
+    text.push_str("before:\n");
+    text.push_str(&profile_presence(file));
+    let code = match app::dispatch_result(UiAction::DeleteProfile {
+        file: file.to_string(),
+    }) {
+        Ok(m) => {
+            let _ = writeln!(text, "result: ok: {m}");
+            0
+        }
+        Err(e) => {
+            let _ = writeln!(text, "result: error: {e}");
+            1
+        }
+    };
+    text.push_str("after:\n");
+    text.push_str(&profile_presence(file));
+    emit(out, &text);
+    code
+}
+
 /// Result line plus autostart state, for the switch that touches the Startup shortcut.
 fn finish_install(mut text: String, r: Result<String, String>, out: Option<&Path>) -> i32 {
     let code = match r {
@@ -981,6 +1035,70 @@ pub fn showcase_state() -> UiState {
         };
     }
     st
+}
+
+/// Made-up profile rows for the profiles window screenshots. Nothing here exists on disk.
+pub fn showcase_profiles() -> Vec<app::ProfileRow> {
+    use app::{ProfileKind, ProfileRow};
+    use wcs::Undeletable;
+    let row = |file: &str, name: &str, kind, used: &str, deletable| ProfileRow {
+        file: file.into(),
+        name: name.into(),
+        kind,
+        used: used.into(),
+        deletable,
+    };
+    vec![
+        row(
+            "Spectrum MAG 271QPX E2 EDID.icm",
+            "MAG 271QPX E2 (EDID)",
+            ProfileKind::Sdr,
+            "Used by monitor 1 (default)",
+            Ok(()),
+        ),
+        row(
+            "Spectrum HDR MSI-3CB0 A.icc",
+            "Spectrum HDR MAG 271QPX E2",
+            ProfileKind::Hdr,
+            "Used by monitor 1 (default)",
+            Ok(()),
+        ),
+        row(
+            "Spectrum Display P3.icm",
+            "Spectrum Display P3",
+            ProfileKind::Matrix,
+            "Not in use",
+            Ok(()),
+        ),
+        row(
+            "Spectrum Adobe RGB compatible.icm",
+            "Spectrum Adobe RGB compatible",
+            ProfileKind::Matrix,
+            "Not in use",
+            Ok(()),
+        ),
+        row(
+            "Studio Display Calibrated.icc",
+            "Studio Display Calibrated",
+            ProfileKind::Lut,
+            "Used by monitor 2",
+            Ok(()),
+        ),
+        row(
+            wcs::SRGB_INBOX,
+            "sRGB IEC61966-2.1",
+            ProfileKind::Sdr,
+            "Used by monitor 2 (default)",
+            Err(Undeletable::Inbox),
+        ),
+        row(
+            "Spectrum Test Delete.icm",
+            "Spectrum Test Delete",
+            ProfileKind::Matrix,
+            "Not in use",
+            Ok(()),
+        ),
+    ]
 }
 
 /// `open gamut-showcase`: the gamut window with the monitor's EDID-derived profile, sRGB and Display P3

@@ -43,6 +43,7 @@ enum Command {
     DebugHdrReset(String),
     DebugHdrToggle(String, String),
     DebugAutostart(String),
+    DebugDeleteProfile(String),
 }
 
 #[derive(Debug)]
@@ -94,6 +95,9 @@ fn parse_args<I: Iterator<Item = String>>(mut it: I) -> Args {
                     Command::DebugHdrToggle(it.next().unwrap_or_default(), it.next().unwrap_or_default())
             }
             "--debug-autostart" => args.command = Command::DebugAutostart(it.next().unwrap_or_default()),
+            "--debug-delete-profile" => {
+                args.command = Command::DebugDeleteProfile(it.next().unwrap_or_default())
+            }
             _ => {}
         }
     }
@@ -225,6 +229,7 @@ fn main() {
         Command::DebugHdrReset(n) => debug::reset_hdr(&n, out),
         Command::DebugHdrToggle(n, v) => debug::toggle_hdr(&n, &v, out),
         Command::DebugAutostart(v) => debug::autostart(&v, out),
+        Command::DebugDeleteProfile(f) => debug::delete_profile(&f, out),
         Command::DebugOpen(what) => debug_open(format!("open {what}")),
         Command::DebugTrayCmd(id) => debug_open(format!("tray-cmd {id}")),
         Command::DebugStage(t) => debug::stage(&t),

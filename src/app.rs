@@ -95,6 +95,8 @@ pub enum UiAction {
     ResetHdr { mon: usize },
     SetAutostart(bool),
     OpenGamut,
+    OpenProfiles,
+    DeleteProfile { file: String },
     Identify,
     Highlight(Option<usize>),
     CloseMain,
@@ -605,6 +607,180 @@ fn reset_hdr(idx_mon: usize) -> Result<String, String> {
     Ok(format!("Reset HDR on monitor {}", m.num))
 }
 
+// ---------------------------------------------------------------------------------------------
+// Manage profiles
+// ---------------------------------------------------------------------------------------------
+
+/// What a color folder profile is, for the tag in the profiles window.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum ProfileKind {
+    Sdr,
+    Hdr,
+    Lut,
+    Matrix,
+}
+
+impl ProfileKind {
+    pub fn label(self) -> &'static str {
+        match self {
+            ProfileKind::Sdr => "SDR",
+            ProfileKind::Hdr => "HDR",
+            ProfileKind::Lut => "LUT",
+            ProfileKind::Matrix => "Matrix",
+        }
+    }
+}
+
+/// One row of the profiles window.
+#[derive(Clone, Debug)]
+pub struct ProfileRow {
+    pub file: String,
+    pub name: String,
+    pub kind: ProfileKind,
+    /// "Used by monitor 1 (default)" or "Not in use".
+    pub used: String,
+    pub deletable: Result<(), wcs::Undeletable>,
+}
+
+/// Tag rule: MHC2 in an advanced-color list is HDR, a profile with LUTs is LUT, a matrix profile in an
+/// SDR list is SDR, any other matrix profile is Matrix.
+fn profile_kind(has_mhc2: bool, matrix: bool, in_hdr_list: bool, in_sdr_list: bool) -> ProfileKind {
+    if has_mhc2 && in_hdr_list {
+        ProfileKind::Hdr
+    } else if !matrix {
+        ProfileKind::Lut
+    } else if in_sdr_list {
+        ProfileKind::Sdr
+    } else {
+        ProfileKind::Matrix
+    }
+}
+
+/// `users` are (monitor number, is default). "Used by monitor 1 (default), 2" or "Not in use".
+pub fn used_by_text(users: &[(u32, bool)]) -> String {
+    if users.is_empty() {
+        return "Not in use".to_string();
+    }
+    let list: Vec<String> = users
+        .iter()
+        .map(|(n, d)| {
+            if *d {
+                format!("{n} (default)")
+            } else {
+                n.to_string()
+            }
+        })
+        .collect();
+    format!(
+        "Used by monitor{} {}",
+        if users.len() > 1 { "s" } else { "" },
+        list.join(", ")
+    )
+}
+
+/// Every .icc/.icm in the color folder with its type, the monitors using it and whether it can be deleted.
+pub fn list_profiles() -> Vec<ProfileRow> {
+    struct Use {
+        num: u32,
+        sdr: bool,
+        hdr: bool,
+        default: bool,
+    }
+    let mons = enumerate_cached();
+    let mut uses: HashMap<String, Vec<Use>> = HashMap::new();
+    for m in &mons {
+        for hdr in [false, true] {
+            let default = wcs::default_profile(m, hdr);
+            for f in wcs::associated(m, hdr).unwrap_or_default() {
+                let key = f.to_ascii_lowercase();
+                let is_default = default.as_deref().map(|d| eq(d, &f)).unwrap_or(false);
+                let list = uses.entry(key).or_default();
+                match list.iter_mut().find(|u| u.num == m.num) {
+                    Some(u) => {
+                        u.sdr |= !hdr;
+                        u.hdr |= hdr;
+                        u.default |= is_default;
+                    }
+                    None => list.push(Use {
+                        num: m.num,
+                        sdr: !hdr,
+                        hdr,
+                        default: is_default,
+                    }),
+                }
+            }
+        }
+    }
+    wcs::list_installed()
+        .into_iter()
+        .map(|file| {
+            let u = uses.get(&file.to_ascii_lowercase());
+            let in_hdr = u.map(|l| l.iter().any(|x| x.hdr)).unwrap_or(false);
+            let in_sdr = u.map(|l| l.iter().any(|x| x.sdr)).unwrap_or(false);
+            let info = wcs::read_profile(&file).and_then(|b| icc_read::parse(&b).ok());
+            let kind = match &info {
+                Some(i) => profile_kind(i.mhc2.is_some(), i.is_matrix_trc, in_hdr, in_sdr),
+                None => profile_kind(false, true, in_hdr, in_sdr),
+            };
+            let users: Vec<(u32, bool)> = u
+                .map(|l| l.iter().map(|x| (x.num, x.default)).collect())
+                .unwrap_or_default();
+            ProfileRow {
+                name: profile_label(&file),
+                kind,
+                used: used_by_text(&users),
+                deletable: wcs::can_delete(&file),
+                file,
+            }
+        })
+        .collect()
+}
+
+/// Removes a profile from the system: disassociates it from every monitor (SDR and HDR), deletes the file
+/// and Spectrum's backup copy, and clears the config fields that name it so reconcile leaves it gone.
+pub fn delete_profile(file: &str) -> Result<String, String> {
+    if let Err(why) = wcs::can_delete(file) {
+        return Err(format!("Can't delete {file}. {}", why.hint()));
+    }
+    let label = profile_label(file);
+    for m in &enumerate_cached() {
+        for hdr in [false, true] {
+            let listed = match wcs::associated(m, hdr) {
+                Ok(l) => contains_ci(&l, file),
+                Err(_) => true,
+            };
+            if !listed {
+                continue;
+            }
+            if let Err(e) = wcs::disassociate(m, file, hdr) {
+                let still = wcs::associated(m, hdr)
+                    .map(|l| contains_ci(&l, file))
+                    .unwrap_or(true);
+                if still {
+                    log(&format!("delete profile: {file} on monitor {}: {e}", m.num));
+                    return Err(format!(
+                        "Couldn't remove {label} from monitor {}. Try again.",
+                        m.num
+                    ));
+                }
+            }
+        }
+    }
+    if let Err(e) = wcs::delete_profile(file) {
+        log(&format!("delete profile: {file}: {e}"));
+        return Err(format!(
+            "Couldn't delete {label}. Close apps using it and try again."
+        ));
+    }
+    let mut cfg = Config::load();
+    if cfg.forget_profile(file) {
+        cfg.save();
+    }
+    LABELS.with(|l| l.borrow_mut().remove(file));
+    log(&format!("deleted profile {file}"));
+    Ok(format!("Deleted {label}"))
+}
+
 fn current_sdr_file(m: &Monitor) -> Option<String> {
     wcs::default_profile(m, false)
 }
@@ -646,6 +822,11 @@ pub fn execute(a: UiAction) -> Result<String, String> {
             open_gamut();
             Ok(String::new())
         }
+        UiAction::OpenProfiles => {
+            ui::profiles_window::open();
+            Ok(String::new())
+        }
+        UiAction::DeleteProfile { file } => delete_profile(&file),
         UiAction::Identify => {
             identify();
             Ok(String::new())
@@ -663,7 +844,8 @@ pub fn execute(a: UiAction) -> Result<String, String> {
         UiAction::CloseMain => {
             ui::overlay::hide_all();
             draw::trim_working_set();
-            if !TRAY_MODE.with(|t| t.get()) && !ui::gamut_window::is_open() {
+            if !TRAY_MODE.with(|t| t.get()) && !ui::gamut_window::is_open() && !ui::profiles_window::is_open()
+            {
                 // SAFETY: plain call on the UI thread.
                 unsafe { PostQuitMessage(0) };
             }
@@ -682,7 +864,11 @@ pub fn dispatch(a: UiAction) {
 pub fn dispatch_result(a: UiAction) -> Result<String, String> {
     let quiet = matches!(
         a,
-        UiAction::Highlight(_) | UiAction::CloseMain | UiAction::OpenGamut | UiAction::Identify
+        UiAction::Highlight(_)
+            | UiAction::CloseMain
+            | UiAction::OpenGamut
+            | UiAction::OpenProfiles
+            | UiAction::Identify
     );
     let r = execute(a);
     match &r {
@@ -1094,6 +1280,14 @@ pub fn run_command(cmd: &str) {
             crate::debug::open_gamut_showcase();
             raise(ui::gamut_window::hwnd());
         }
+        (Some("open"), Some("profiles")) => {
+            ui::profiles_window::open();
+            raise(ui::profiles_window::hwnd());
+        }
+        (Some("open"), Some("profiles-showcase")) => {
+            ui::profiles_window::open_showcase(crate::debug::showcase_profiles());
+            raise(ui::profiles_window::hwnd());
+        }
         (Some("open"), Some("gamut")) => {
             open_gamut();
             raise(ui::gamut_window::hwnd());
@@ -1117,6 +1311,7 @@ fn exit_app() {
     tray::remove(h);
     ui::overlay::hide_all();
     ui::gamut_window::close();
+    ui::profiles_window::close();
     ui::main_window::request_close();
     if !h.is_null() {
         // SAFETY: window created by this thread; WM_DESTROY posts the quit message.
@@ -1374,6 +1569,24 @@ pub fn run_tray() -> i32 {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn used_by_text_lists_monitors() {
+        assert_eq!(used_by_text(&[]), "Not in use");
+        assert_eq!(used_by_text(&[(1, true)]), "Used by monitor 1 (default)");
+        assert_eq!(
+            used_by_text(&[(1, true), (2, false)]),
+            "Used by monitors 1 (default), 2"
+        );
+    }
+
+    #[test]
+    fn profile_tags() {
+        assert_eq!(profile_kind(true, false, true, false), ProfileKind::Hdr);
+        assert_eq!(profile_kind(true, true, false, true), ProfileKind::Sdr);
+        assert_eq!(profile_kind(false, false, false, true), ProfileKind::Lut);
+        assert_eq!(profile_kind(false, true, false, false), ProfileKind::Matrix);
+    }
 
     #[test]
     fn edid_file_name_includes_the_monitor_key() {

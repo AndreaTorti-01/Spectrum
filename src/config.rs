@@ -158,6 +158,33 @@ impl Config {
         }
     }
 
+    /// A deliberate deletion: clears every field that names `file` so reconcile does not bring it back.
+    /// Returns true when something changed.
+    pub fn forget_profile(&mut self, file: &str) -> bool {
+        let is = |v: &Option<String>| {
+            v.as_deref()
+                .map(|x| x.eq_ignore_ascii_case(file))
+                .unwrap_or(false)
+        };
+        let mut changed = false;
+        for m in self.monitors.values_mut() {
+            if is(&m.edid_profile) {
+                m.edid_profile = None;
+                changed = true;
+            }
+            if is(&m.sdr) {
+                m.sdr = None;
+                changed = true;
+            }
+            if is(&m.hdr_file) {
+                m.hdr_file = None;
+                m.hdr = None;
+                changed = true;
+            }
+        }
+        changed
+    }
+
     pub fn monitor_mut(&mut self, key: &str) -> &mut MonitorCfg {
         self.monitors.entry(key.to_string()).or_default()
     }
@@ -317,6 +344,23 @@ name=x
             Err(Error::from(ErrorKind::NotFound))
         });
         assert_eq!(calls, 1);
+    }
+
+    #[test]
+    fn forgetting_a_profile_clears_matching_fields_only() {
+        let mut c = sample();
+        c.monitor_mut("DEL-1234-0").sdr = Some("Other.icm".into());
+        assert!(c.forget_profile("spectrum hdr msi a.ICC"));
+        let m = &c.monitors["MSI-3CB0-0000012A"];
+        assert_eq!(m.hdr_file, None);
+        assert_eq!(m.hdr, None);
+        assert!(m.edid_profile.is_some() && m.sdr.is_some());
+        assert!(c.forget_profile("MAG 271QPX (EDID).icm"));
+        assert_eq!(c.monitors["MSI-3CB0-0000012A"].edid_profile, None);
+        assert!(c.forget_profile("sRGB Color Space Profile.icm"));
+        assert_eq!(c.monitors["MSI-3CB0-0000012A"].sdr, None);
+        assert_eq!(c.monitors["DEL-1234-0"].sdr.as_deref(), Some("Other.icm"));
+        assert!(!c.forget_profile("nothing.icm"));
     }
 
     #[test]

@@ -37,7 +37,7 @@ use windows_sys::Win32::UI::WindowsAndMessaging::{
 
 const CLASS: &str = "SpectrumMainWindow";
 const CLIENT_W: i32 = 440;
-const CLIENT_H: i32 = 620;
+const CLIENT_H: i32 = 662;
 const MARGIN: i32 = 20;
 const WM_DROPDOWN_DONE: u32 = WM_APP + 10;
 const TIMER_COMMIT: usize = 1;
@@ -50,6 +50,7 @@ enum Id {
     Sdr,
     Read,
     Compare,
+    Manage,
     HdrToggle,
     Black,
     Peak,
@@ -111,6 +112,7 @@ struct Geo {
     sdr: R,
     read: R,
     compare: R,
+    manage: R,
     div1: i32,
     hdr_head: R,
     hdr_hint: R,
@@ -128,7 +130,7 @@ fn geo(dpi: u32) -> Geo {
     let right = CLIENT_W - MARGIN;
     let mut rows = [(R::default(), R::default(), R::default()); 4];
     for (i, row) in rows.iter_mut().enumerate() {
-        let y = 356 + i as i32 * 38;
+        let y = 398 + i as i32 * 38;
         *row = (
             R::new(s(MARGIN), s(y), s(134), s(y + 38)),
             R::new(s(138), s(y + 5), s(322), s(y + 33)),
@@ -143,15 +145,16 @@ fn geo(dpi: u32) -> Geo {
         sdr: R::new(s(126), s(170), s(right), s(204)),
         read: R::new(s(MARGIN), s(216), s(right), s(250)),
         compare: R::new(s(MARGIN), s(258), s(right), s(292)),
-        div1: s(306),
-        hdr_head: R::new(s(MARGIN), s(316), s(120), s(348)),
-        hdr_hint: R::new(s(120), s(316), s(right - 58), s(348)),
-        toggle: R::new(s(right - 44), s(321), s(right), s(343)),
+        manage: R::new(s(MARGIN), s(300), s(right), s(334)),
+        div1: s(348),
+        hdr_head: R::new(s(MARGIN), s(358), s(120), s(390)),
+        hdr_hint: R::new(s(120), s(358), s(right - 58), s(390)),
+        toggle: R::new(s(right - 44), s(363), s(right), s(385)),
         rows,
-        reset: R::new(s(MARGIN), s(514), s(MARGIN + 92), s(542)),
-        div2: s(552),
-        autostart: R::new(s(MARGIN), s(562), s(right), s(586)),
-        status: R::new(s(MARGIN), s(592), s(right), s(612)),
+        reset: R::new(s(MARGIN), s(556), s(MARGIN + 92), s(584)),
+        div2: s(594),
+        autostart: R::new(s(MARGIN), s(604), s(right), s(628)),
+        status: R::new(s(MARGIN), s(634), s(right), s(654)),
     }
 }
 
@@ -290,6 +293,7 @@ impl Main {
             true,
         );
         self.ui.add(Id::Compare, Kind::Button, g.compare, true, true);
+        self.ui.add(Id::Manage, Kind::Button, g.manage, true, true);
         self.ui.add(
             Id::HdrToggle,
             Kind::Toggle,
@@ -362,6 +366,7 @@ impl Main {
                 .pending
                 .push(Pending::Dispatch(UiAction::ReadEdid { mon: sel })),
             Id::Compare => self.pending.push(Pending::Dispatch(UiAction::OpenGamut)),
+            Id::Manage => self.pending.push(Pending::Dispatch(UiAction::OpenProfiles)),
             Id::HdrToggle => {
                 let on = !self.mon().map(|m| m.hdr_on).unwrap_or(false);
                 self.pending
@@ -539,6 +544,14 @@ impl Main {
             g.compare,
             "Compare gamuts\u{2026}",
             ui.state(Id::Compare),
+            BtnStyle::Normal,
+        );
+        draw_button(
+            c,
+            &ctx,
+            g.manage,
+            "Manage profiles{2026}",
+            ui.state(Id::Manage),
             BtnStyle::Normal,
         );
 
