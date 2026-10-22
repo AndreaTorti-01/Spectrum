@@ -38,6 +38,12 @@ enum Command {
     DebugOpen(String),
     DebugTrayCmd(u32),
     DebugDemo,
+    DebugSdr(String, String),
+    DebugHdr(String, String),
+    DebugHdrReset(String),
+    DebugHdrToggle(String, String),
+    DebugInstall,
+    DebugAutostart(String),
 }
 
 #[derive(Debug)]
@@ -47,6 +53,8 @@ struct Args {
     dark: Option<bool>,
     /// `--out <file>`: debug output target (console otherwise).
     out: Option<PathBuf>,
+    /// `--quiet`: no message boxes (uninstall).
+    quiet: bool,
 }
 
 fn parse_args<I: Iterator<Item = String>>(mut it: I) -> Args {
@@ -54,6 +62,7 @@ fn parse_args<I: Iterator<Item = String>>(mut it: I) -> Args {
         command: Command::Default,
         dark: None,
         out: None,
+        quiet: false,
     };
     let mut json = false;
     let mut dump = false;
@@ -64,6 +73,7 @@ fn parse_args<I: Iterator<Item = String>>(mut it: I) -> Args {
             "--theme" => args.dark = it.next().map(|v| v.eq_ignore_ascii_case("dark")),
             "--out" => args.out = it.next().map(PathBuf::from),
             "--json" => json = true,
+            "--quiet" => args.quiet = true,
             "--debug-dump" => dump = true,
             "--debug-edid" => args.command = Command::DebugEdid(num(it.next())),
             "--debug-wipe" => args.command = Command::DebugWipe(num(it.next())),
@@ -71,6 +81,19 @@ fn parse_args<I: Iterator<Item = String>>(mut it: I) -> Args {
             "--debug-open" => args.command = Command::DebugOpen(it.next().unwrap_or_default()),
             "--debug-tray-cmd" => args.command = Command::DebugTrayCmd(num(it.next())),
             "--debug-demo" => args.command = Command::DebugDemo,
+            "--debug-sdr" => {
+                args.command = Command::DebugSdr(it.next().unwrap_or_default(), it.next().unwrap_or_default())
+            }
+            "--debug-hdr" => {
+                args.command = Command::DebugHdr(it.next().unwrap_or_default(), it.next().unwrap_or_default())
+            }
+            "--debug-hdr-reset" => args.command = Command::DebugHdrReset(it.next().unwrap_or_default()),
+            "--debug-hdr-toggle" => {
+                args.command =
+                    Command::DebugHdrToggle(it.next().unwrap_or_default(), it.next().unwrap_or_default())
+            }
+            "--debug-install" => args.command = Command::DebugInstall,
+            "--debug-autostart" => args.command = Command::DebugAutostart(it.next().unwrap_or_default()),
             _ => {}
         }
     }
@@ -240,13 +263,18 @@ fn run_tray() -> i32 {
 
 /// Order matters: profiles and associations first, then the registry and shortcut, then the message.
 /// The folder removal starts last, so its delay begins after the box is dismissed.
-fn uninstall() -> i32 {
+fn uninstall(quiet: bool) -> i32 {
     debug::stop_running(3000);
     app::remove_all_profiles();
     installer::remove_entries();
-    message_box("Uninstalled Spectrum.", false);
+    if !quiet {
+        message_box("Uninstalled Spectrum.", false);
+    }
     if let Err(e) = installer::schedule_dir_removal() {
-        message_box(&e, true);
+        log(&format!("uninstall: {e}"));
+        if !quiet {
+            message_box(&e, true);
+        }
         return 1;
     }
     0
@@ -274,7 +302,7 @@ fn main() {
     let code = match args.command {
         Command::Default => run_default(),
         Command::Tray => run_tray(),
-        Command::Uninstall => uninstall(),
+        Command::Uninstall => uninstall(args.quiet),
         Command::DebugDump { json } => {
             debug::dump(json, out);
             0
@@ -291,6 +319,12 @@ fn main() {
             debug::reconcile(out);
             0
         }
+        Command::DebugSdr(n, idx) => debug::set_sdr(&n, &idx, out),
+        Command::DebugHdr(n, v) => debug::apply_hdr(&n, &v, out),
+        Command::DebugHdrReset(n) => debug::reset_hdr(&n, out),
+        Command::DebugHdrToggle(n, v) => debug::toggle_hdr(&n, &v, out),
+        Command::DebugInstall => debug::install(out),
+        Command::DebugAutostart(v) => debug::autostart(&v, out),
         Command::DebugOpen(what) => debug_open(format!("open {what}")),
         Command::DebugTrayCmd(id) => debug_open(format!("tray-cmd {id}")),
         Command::DebugDemo => app::run(RunOpts {

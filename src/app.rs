@@ -663,19 +663,27 @@ pub fn execute(a: UiAction) -> Result<String, String> {
 
 /// Synchronous; the UI calls `snapshot()` again afterwards.
 pub fn dispatch(a: UiAction) {
+    let _ = dispatch_result(a);
+}
+
+/// Same as [`dispatch`] (status line and monitor cache included), but also returns the outcome so
+/// headless callers can report it.
+pub fn dispatch_result(a: UiAction) -> Result<String, String> {
     let quiet = matches!(
         a,
         UiAction::Highlight(_) | UiAction::CloseMain | UiAction::OpenGamut | UiAction::Identify
     );
-    match execute(a) {
-        Ok(msg) if !msg.is_empty() => set_status(Some(msg)),
+    let r = execute(a);
+    match &r {
+        Ok(msg) if !msg.is_empty() => set_status(Some(msg.clone())),
         Ok(_) => {}
-        Err(msg) => set_status(Some(msg)),
+        Err(msg) => set_status(Some(msg.clone())),
     }
     if !quiet {
         // A changed default or HDR state may move other monitors' options too.
         enumerate_cached();
     }
+    r
 }
 
 // ---------------------------------------------------------------------------------------------
