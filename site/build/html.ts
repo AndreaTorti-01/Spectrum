@@ -3,7 +3,7 @@
 import { readFileSync, existsSync } from "node:fs";
 import { join } from "node:path";
 import type { Plugin } from "vite";
-import { REPO, SITE_URL, RELEASES, LICENSE_URL, EXE_KB, IDLE_MB } from "../src/data/site.ts";
+import { REPO, SITE_URL, RELEASES, DOWNLOAD, LICENSE_URL, EXE_KB, IDLE_MB } from "../src/data/site.ts";
 import { prismSvg, SMALL_VIEWBOX } from "../src/data/prism.ts";
 import { SPACES } from "../src/data/spaces.ts";
 import { coverage, tri } from "../src/data/color.ts";
@@ -122,6 +122,7 @@ export function spectrumHtml(): Plugin {
           .replace(/%REPO%/g, REPO)
           .replace(/%SITE_URL%/g, SITE_URL)
           .replace(/%RELEASES%/g, RELEASES)
+          .replace(/%DOWNLOAD%/g, DOWNLOAD)
           .replace(/%LICENSE%/g, LICENSE_URL)
           .replace(/%EXE_KB%/g, String(EXE_KB))
           .replace(/%IDLE_MB%/g, String(IDLE_MB));
