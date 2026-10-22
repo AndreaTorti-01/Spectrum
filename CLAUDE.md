@@ -65,3 +65,4 @@ Before changing the owner's real color settings (default profile, associations, 
 - UI changes are best reviewed with light and dark screenshots. The `screenshots` skill covers it.
 - Website guidance: `.claude/rules/site.md`.
 - `SETUP-NOTES.txt` is the owner's private, gitignored file. Keep it out of commits and public text.
+- Prefer PowerShell or Node over `python3` for quick checks: on this PC `python3` is the Microsoft Store alias, and a heredoc run through it waited without exiting until it was stopped by hand. Give any command that can wait (interpreters, UI Automation reads, servers) a `timeout`, and stop helpers you start (`npm run shots` leaves `vite preview` on port 4173) before reporting.
