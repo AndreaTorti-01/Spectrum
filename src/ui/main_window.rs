@@ -8,8 +8,8 @@ use super::draw::{
 };
 use super::widgets::{
     self, black_scale, draw_button, draw_checkbox, draw_dropdown, draw_slider, draw_toggle, full_scale,
-    key_to_t, peak_scale, round_black, round_nits, sat_scale, slider_t_at, BtnStyle, Ctx, Kind, WidgetList,
-    DROPDOWN_DISMISSED,
+    key_to_t, peak_scale, round_black, round_nits, round_sdr_white_nits, sat_scale, slider_t_at, white_scale,
+    BtnStyle, Ctx, Kind, WidgetList, DROPDOWN_DISMISSED,
 };
 use crate::app::{UiAction, UiMonitor, UiState};
 use crate::icc_write::HdrParams;
@@ -29,15 +29,15 @@ use windows_sys::Win32::UI::WindowsAndMessaging::{
     KillTimer, LoadCursorW, RegisterClassExW, SendMessageW, SetCursor, SetForegroundWindow, SetTimer,
     SetWindowPos, ShowWindow, SystemParametersInfoW, CS_HREDRAW, CS_VREDRAW, CW_USEDEFAULT, HICON, ICON_BIG,
     ICON_SMALL, IDC_ARROW, IDC_HAND, SM_CXICON, SM_CXSMICON, SPI_GETWORKAREA, SWP_NOACTIVATE, SWP_NOZORDER,
-    SW_RESTORE, SW_SHOW, WM_APP, WM_CAPTURECHANGED, WM_CLOSE, WM_CREATE, WM_DESTROY, WM_DPICHANGED,
-    WM_ERASEBKGND, WM_KEYDOWN, WM_KILLFOCUS, WM_LBUTTONDOWN, WM_LBUTTONUP, WM_MOUSEMOVE, WM_MOUSEWHEEL,
-    WM_NCDESTROY, WM_PAINT, WM_SETCURSOR, WM_SETFOCUS, WM_SETICON, WM_SETTINGCHANGE, WM_TIMER, WNDCLASSEXW,
-    WS_CAPTION, WS_MINIMIZEBOX, WS_OVERLAPPED, WS_SYSMENU,
+    SW_RESTORE, SW_SHOW, WM_ACTIVATE, WM_APP, WM_CAPTURECHANGED, WM_CLOSE, WM_CREATE, WM_DESTROY,
+    WM_DPICHANGED, WM_ERASEBKGND, WM_KEYDOWN, WM_KILLFOCUS, WM_LBUTTONDOWN, WM_LBUTTONUP, WM_MOUSEMOVE,
+    WM_MOUSEWHEEL, WM_NCDESTROY, WM_PAINT, WM_SETCURSOR, WM_SETFOCUS, WM_SETICON, WM_SETTINGCHANGE, WM_TIMER,
+    WNDCLASSEXW, WS_CAPTION, WS_MINIMIZEBOX, WS_OVERLAPPED, WS_SYSMENU,
 };
 
 const CLASS: &str = "SpectrumMainWindow";
 const CLIENT_W: i32 = 440;
-const CLIENT_H: i32 = 662;
+const CLIENT_H: i32 = 700;
 const MARGIN: i32 = 20;
 const WM_DROPDOWN_DONE: u32 = WM_APP + 10;
 const TIMER_COMMIT: usize = 1;
@@ -56,11 +56,12 @@ enum Id {
     Peak,
     Full,
     Sat,
+    SdrWhite,
     Reset,
     Autostart,
 }
 
-const SLIDERS: [Id; 4] = [Id::Black, Id::Peak, Id::Full, Id::Sat];
+const SLIDERS: [Id; 5] = [Id::Black, Id::Peak, Id::Full, Id::Sat, Id::SdrWhite];
 
 enum Pending {
     Dispatch(UiAction),
@@ -81,6 +82,9 @@ struct Main {
     peak: f64,
     full: f64,
     sat: f64,
+    /// Windows "SDR content brightness" in nits. Not part of the MHC2 profile; applied through DisplayConfig.
+    white: f64,
+    white_dirty: bool,
     drag: Option<Id>,
     dirty: bool,
     pending: Vec<Pending>,
@@ -118,7 +122,7 @@ struct Geo {
     hdr_hint: R,
     toggle: R,
     /// (label, slider, value) per slider row
-    rows: [(R, R, R); 4],
+    rows: [(R, R, R); 5],
     reset: R,
     div2: i32,
     autostart: R,
@@ -128,7 +132,7 @@ struct Geo {
 fn geo(dpi: u32) -> Geo {
     let s = |v: i32| sc(v, dpi);
     let right = CLIENT_W - MARGIN;
-    let mut rows = [(R::default(), R::default(), R::default()); 4];
+    let mut rows = [(R::default(), R::default(), R::default()); 5];
     for (i, row) in rows.iter_mut().enumerate() {
         let y = 398 + i as i32 * 38;
         *row = (
@@ -151,10 +155,10 @@ fn geo(dpi: u32) -> Geo {
         hdr_hint: R::new(s(120), s(358), s(right - 58), s(390)),
         toggle: R::new(s(right - 44), s(363), s(right), s(385)),
         rows,
-        reset: R::new(s(MARGIN), s(556), s(MARGIN + 92), s(584)),
-        div2: s(594),
-        autostart: R::new(s(MARGIN), s(604), s(right), s(628)),
-        status: R::new(s(MARGIN), s(634), s(right), s(654)),
+        reset: R::new(s(MARGIN), s(594), s(MARGIN + 92), s(622)),
+        div2: s(632),
+        autostart: R::new(s(MARGIN), s(642), s(right), s(666)),
+        status: R::new(s(MARGIN), s(672), s(right), s(692)),
     }
 }
 
@@ -183,11 +187,14 @@ impl Main {
 
     /// Pull HDR slider values from the snapshot unless the user is editing.
     fn sync_hdr(&mut self) {
-        if self.drag.is_some() || self.dirty {
+        if self.drag.is_some() || self.dirty || self.white_dirty {
             return;
         }
         if let Some(m) = self.mon() {
-            let h = m.hdr;
+            let (h, white) = (m.hdr, m.sdr_white_nits);
+            if let Some(n) = white {
+                self.white = round_sdr_white_nits(n);
+            }
             self.black = h.min_nits.clamp(0.0, widgets::BLACK_MAX_NITS);
             self.peak = h.peak_nits.clamp(widgets::PEAK_MIN_NITS, widgets::PEAK_MAX_NITS);
             self.full = h.full_frame_nits.clamp(widgets::PEAK_MIN_NITS, self.peak);
@@ -200,6 +207,7 @@ impl Main {
             Id::Black => black_scale(),
             Id::Peak => peak_scale(),
             Id::Full => full_scale(self.peak),
+            Id::SdrWhite => white_scale(),
             _ => sat_scale(),
         }
     }
@@ -209,12 +217,18 @@ impl Main {
             Id::Black => self.black,
             Id::Peak => self.peak,
             Id::Full => self.full,
+            Id::SdrWhite => self.white,
             _ => self.sat,
         }
     }
 
     fn set_slider_t(&mut self, id: Id, t: f64) {
         let v = self.slider_scale(id).to_value(t);
+        if id == Id::SdrWhite {
+            self.white = round_sdr_white_nits(v);
+            self.white_dirty = true;
+            return;
+        }
         match id {
             Id::Black => self.black = v,
             Id::Peak => {
@@ -237,6 +251,7 @@ impl Main {
                 let peak = round_nits(self.peak, 100.0, 4000.0);
                 format!("{} nits", round_nits(self.full, 100.0, peak) as i64)
             }
+            Id::SdrWhite => format!("{} nits", self.white.round() as i64),
             _ => format!("{}%", self.sat.round() as i64),
         }
     }
@@ -252,6 +267,13 @@ impl Main {
     }
 
     fn commit(&mut self) {
+        if self.white_dirty {
+            self.white_dirty = false;
+            self.pending.push(Pending::Dispatch(UiAction::SetSdrWhite {
+                mon: self.sel,
+                nits: self.white,
+            }));
+        }
         if !self.dirty {
             return;
         }
@@ -302,7 +324,8 @@ impl Main {
             true,
         );
         for (i, id) in SLIDERS.iter().enumerate() {
-            self.ui.add(*id, Kind::Slider, g.rows[i].1, hdr_on, true);
+            let live = *id != Id::SdrWhite || mon.as_ref().is_some_and(|m| m.sdr_white_nits.is_some());
+            self.ui.add(*id, Kind::Slider, g.rows[i].1, hdr_on && live, true);
         }
         self.ui.add(
             Id::Reset,
@@ -355,6 +378,7 @@ impl Main {
                     self.commit();
                     self.sel = i;
                     self.dirty = false;
+                    self.white_dirty = false;
                     self.sync_hdr();
                     self.layout();
                     self.invalidate();
@@ -577,7 +601,13 @@ impl Main {
             mon.map(|m| m.hdr_on).unwrap_or(false),
             ui.state(Id::HdrToggle),
         );
-        let labels = ["Black level", "Peak brightness", "Full-frame", "Saturation"];
+        let labels = [
+            "Black level",
+            "Peak brightness",
+            "Full-frame",
+            "Saturation",
+            "SDR content",
+        ];
         let enabled = self.hdr_enabled();
         for (i, id) in SLIDERS.iter().enumerate() {
             let (lab, sl, val) = g.rows[i];
@@ -685,6 +715,8 @@ pub fn open() {
         peak: 1000.0,
         full: 400.0,
         sat: 0.0,
+        white: 240.0,
+        white_dirty: false,
         drag: None,
         dirty: false,
         pending: Vec::new(),
@@ -1187,6 +1219,13 @@ unsafe fn handle(hwnd: HWND, msg: u32, wp: WPARAM, lp: LPARAM) -> LRESULT {
                 }
                 m.invalidate();
             });
+            0
+        }
+        WM_ACTIVATE => {
+            // Brightness changed in Settings while this window was in the background.
+            if wp & 0xFFFF != 0 {
+                refresh();
+            }
             0
         }
         WM_SETFOCUS | WM_KILLFOCUS => {

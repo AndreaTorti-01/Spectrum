@@ -44,6 +44,7 @@ enum Command {
     DebugHdrToggle(String, String),
     DebugAutostart(String),
     DebugDeleteProfile(String),
+    DebugSdrWhite(String, Option<String>),
 }
 
 #[derive(Debug)]
@@ -57,7 +58,8 @@ struct Args {
     out: Option<PathBuf>,
 }
 
-fn parse_args<I: Iterator<Item = String>>(mut it: I) -> Args {
+fn parse_args<I: Iterator<Item = String>>(it: I) -> Args {
+    let mut it = it.peekable();
     let mut args = Args {
         command: Command::Default,
         dark: None,
@@ -95,6 +97,11 @@ fn parse_args<I: Iterator<Item = String>>(mut it: I) -> Args {
                     Command::DebugHdrToggle(it.next().unwrap_or_default(), it.next().unwrap_or_default())
             }
             "--debug-autostart" => args.command = Command::DebugAutostart(it.next().unwrap_or_default()),
+            "--debug-sdr-white" => {
+                let n = it.next().unwrap_or_default();
+                let v = it.next_if(|v| !v.starts_with("--"));
+                args.command = Command::DebugSdrWhite(n, v)
+            }
             "--debug-delete-profile" => {
                 args.command = Command::DebugDeleteProfile(it.next().unwrap_or_default())
             }
@@ -230,6 +237,7 @@ fn main() {
         Command::DebugHdrToggle(n, v) => debug::toggle_hdr(&n, &v, out),
         Command::DebugAutostart(v) => debug::autostart(&v, out),
         Command::DebugDeleteProfile(f) => debug::delete_profile(&f, out),
+        Command::DebugSdrWhite(n, v) => debug::sdr_white(&n, v.as_deref(), out),
         Command::DebugOpen(what) => debug_open(format!("open {what}")),
         Command::DebugTrayCmd(id) => debug_open(format!("tray-cmd {id}")),
         Command::DebugStage(t) => debug::stage(&t),

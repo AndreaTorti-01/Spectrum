@@ -41,10 +41,10 @@ Switches (each takes `--out <file>`; monitor numbers are the 1-based numbers in 
 
 - `--debug-dump [--json]`: monitors, EDID keys, defaults, associations. Read-only. `site/src/data/monitor.json` comes from `--json`.
 - `--debug-edid <n>`: "Read profile from monitor" flow. Writes a profile into the color folder.
-- `--debug-sdr <n> <option-index>`, `--debug-hdr <n> <min>,<peak>,<full>,<sat>`, `--debug-hdr-reset <n>`, `--debug-hdr-toggle <n> on|off`, `--debug-autostart on|off`: the matching UI actions, headless. They change real settings.
+- `--debug-sdr <n> <option-index>`, `--debug-hdr <n> <min>,<peak>,<full>,<sat>`, `--debug-hdr-reset <n>`, `--debug-hdr-toggle <n> on|off`, `--debug-autostart on|off`, `--debug-sdr-white <n> [nits]`, `--debug-delete-profile <file name>`: the matching UI actions, headless. They change real settings (delete only files you created for the test).
 - `--debug-wipe <n>` removes Spectrum's associations (simulates a driver update); `--debug-reconcile` runs reconcile once.
 - `--debug-tray-cmd <id>`: runs a tray menu command in the running instance.
-- `--debug-open main|main-hdr|gamut|traymenu|gamut-showcase|traymenu-showcase`, `--debug-demo`, `--debug-stage`, `--debug-scale`: screenshots only. See the `screenshots` skill.
+- `--debug-open main|main-hdr|gamut|profiles|traymenu|gamut-showcase|profiles-showcase|traymenu-showcase`, `--debug-demo`, `--debug-stage`, `--debug-scale`: screenshots only. See the `screenshots` skill.
 
 Never change the user's real color settings (default profile, associations, HDR state) without a backup and their consent. Dump first, restore after. HDR toggles flash the screen. `examples/sysprobe.rs` is a read-only probe.
 
@@ -54,6 +54,7 @@ Never change the user's real color settings (default profile, associations, HDR 
 - `ColorProfileAddDisplayAssociation(setAsDefault)` is ignored for an already associated profile. Use `ColorProfileSetDisplayDefaultAssociation`, then read the default back to verify (`wcs::set_default`).
 - HDR profiles must mirror the byte layout of the Windows HDR Calibration app. Reference: `tests/fixtures/hdr_calibration_app.icc`, reproduced byte for byte by a test. `lumi` is full-frame nits, MHC2 holds min/peak, the MHC2 matrix is XYZ to XYZ, and colorants and white point are raw D65, not D50-adapted.
 - Monitors are keyed by EDID identity (manufacturer, product, serial), not device path, so profiles survive driver updates.
+- Windows' "SDR content brightness" is `nits = 80 + 4 * slider` (raw `nits * 1000 / 80`, set with the undocumented `DISPLAYCONFIG_DEVICE_INFO` type `0xFFFFFFEE`). Prefer reading it only while HDR is on: with HDR off the API reports 80 nits whatever the stored setting is (`monitors.rs`, verified on 26300).
 - Reconcile restores Spectrum's profile when its association was wiped. It must never fight a default the user picked in Windows: if another profile is the default, update the config to match.
 
 ## Process
