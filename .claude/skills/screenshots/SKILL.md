@@ -42,8 +42,8 @@ cargo build --release
 
 ## 4. Demo frames and banners
 
-- `-Demo` records the scripted `--debug-demo` (tray menu, profile switch, main window, peak slider; mock state) at about 10 fps into `screenshots-raw\demo-<t>\frame-NNNN.png`. `screenshots-raw` is gitignored. It only records during the 1x pass, so keep `1` in `-Scale`.
-- `cd site; npm run demo` joins the frames into the animated WebP the README embeds (`docs/demo-light.webp`, `docs/demo-dark.webp`, 2 MB or less each).
+- `-Demo` records the scripted `--debug-demo` (idle window, tray icon hover, tray menu, Display P3 picked, peak slider 400 to 1000 nits; mock state, about 8 s) at 10 fps into `screenshots-raw\demo-<t>\frame-NNNN.png`. The demo draws a mock taskbar on the stage, writes a layout file (`screenshots-raw\demo-<t>.layout.txt`: capture region, rectangles, start time, cursor path); the script crops to that region (about 736x783: window, menu and taskbar plus a 32 px margin) and draws the arrow cursor itself. It aborts on a blank frame or any stray pixel. `screenshots-raw` is gitignored. It only records during the 1x pass, so keep `1` in `-Scale`. To leave the committed screenshots alone, pass `-Out` and `-SiteOut` folders outside the repo.
+- `cd site; npm run demo` joins the frames into the animated WebP the README embeds (`docs/demo-light.webp`, `docs/demo-dark.webp`, 2 MB or less each; runs of identical frames become one frame with a longer delay).
 - `cd site; npm run banner` renders the README banners with headless Edge (`docs/banner-light.png`, `docs/banner-dark.png`, 1280×400).
 - If `site/scripts/demo.mjs` or `banner.mjs` is missing, they have not been written yet; do not invent a different pipeline without asking.
 
