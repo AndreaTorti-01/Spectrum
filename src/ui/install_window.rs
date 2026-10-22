@@ -97,7 +97,7 @@ impl State {
             true,
         );
         self.icon_px = s(ICON_PX);
-        self.icon_bgra = crate::icon::render_bgra(self.icon_px as u32);
+        self.icon_bgra = crate::icon_render::render_bgra(self.icon_px as u32);
     }
 
     fn invalidate(&self) {

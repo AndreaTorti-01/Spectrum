@@ -177,7 +177,7 @@ fn icon_sheet(path: &str) {
             }
         }
         for (i, &(s, zoom)) in sizes.iter().enumerate() {
-            let px = spectrum::icon::render_bgra(s as u32);
+            let px = spectrum::icon_render::render_bgra(s as u32);
             let ox = 20 + i * tile_w;
             let put = |img: &mut Vec<u8>, x: usize, y: usize, p: &[u8]| {
                 let a = p[3] as u32;

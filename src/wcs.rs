@@ -9,10 +9,10 @@ use windows_sys::Win32::Foundation::{LocalFree, TRUE};
 use windows_sys::Win32::Graphics::Gdi::{EnumDisplayDevicesW, DISPLAY_DEVICEW};
 use windows_sys::Win32::UI::ColorSystem::{
     ColorProfileAddDisplayAssociation, ColorProfileGetDisplayDefault, ColorProfileGetDisplayUserScope,
-    ColorProfileRemoveDisplayAssociation, GetColorDirectoryW, InstallColorProfileW, WcsEnumColorProfiles,
-    WcsEnumColorProfilesSize, WcsSetUsePerUserProfiles, COLORPROFILESUBTYPE,
-    CPST_EXTENDED_DISPLAY_COLOR_MODE, CPST_STANDARD_DISPLAY_COLOR_MODE, CPT_ICC, ENUMTYPEW,
-    ENUM_TYPE_VERSION, ET_DEVICENAME, ET_EXTENDEDDISPLAYCOLOR, ET_STANDARDDISPLAYCOLOR,
+    ColorProfileRemoveDisplayAssociation, ColorProfileSetDisplayDefaultAssociation, GetColorDirectoryW,
+    InstallColorProfileW, WcsEnumColorProfiles, WcsEnumColorProfilesSize, WcsSetUsePerUserProfiles,
+    COLORPROFILESUBTYPE, CPST_EXTENDED_DISPLAY_COLOR_MODE, CPST_STANDARD_DISPLAY_COLOR_MODE, CPT_ICC,
+    ENUMTYPEW, ENUM_TYPE_VERSION, ET_DEVICENAME, ET_EXTENDEDDISPLAYCOLOR, ET_STANDARDDISPLAYCOLOR,
     WCS_PROFILE_MANAGEMENT_SCOPE, WCS_PROFILE_MANAGEMENT_SCOPE_CURRENT_USER,
 };
 
@@ -200,6 +200,16 @@ fn monitor_device_id(m: &Monitor) -> Option<String> {
     }
 }
 
+fn subtype(hdr: bool) -> COLORPROFILESUBTYPE {
+    if hdr {
+        CPST_EXTENDED_DISPLAY_COLOR_MODE
+    } else {
+        CPST_STANDARD_DISPLAY_COLOR_MODE
+    }
+}
+
+/// Adds the association; with `set_default` also asks Windows to make it the default. Windows silently
+/// ignores that flag when the profile is already associated, so use [`set_default`] to change defaults.
 pub fn associate(m: &Monitor, file_name: &str, set_default: bool, hdr: bool) -> Result<(), String> {
     checked(file_name)?;
     let rc = unsafe {
@@ -217,6 +227,65 @@ pub fn associate(m: &Monitor, file_name: &str, set_default: bool, hdr: bool) -> 
     } else {
         Err(hr(&format!("associating {file_name}"), rc))
     }
+}
+
+/// Makes an already associated profile the default.
+fn set_default_association(m: &Monitor, file_name: &str, hdr: bool) -> Result<(), String> {
+    let rc = unsafe {
+        ColorProfileSetDisplayDefaultAssociation(
+            SCOPE,
+            wide(file_name).as_ptr(),
+            CPT_ICC,
+            subtype(hdr),
+            m.adapter.to_win(),
+            m.source_id,
+        )
+    };
+    if rc >= 0 {
+        Ok(())
+    } else {
+        Err(hr(&format!("making {file_name} the default"), rc))
+    }
+}
+
+/// Start of the error [`set_default`] returns when Windows keeps another default; safe to show to users.
+pub const KEPT_PREFIX: &str = "Windows kept ";
+
+/// `Ok` when `current` (the default Windows reports) is `wanted`.
+fn check_default(current: Option<&str>, wanted: &str, monitor_num: u32) -> Result<(), String> {
+    match current {
+        Some(c) if c.eq_ignore_ascii_case(wanted) => Ok(()),
+        Some(c) => Err(format!(
+            "{KEPT_PREFIX}{c} as the default for monitor {monitor_num}."
+        )),
+        None => Err(format!(
+            "Windows reports no default profile for monitor {monitor_num} after setting {wanted}."
+        )),
+    }
+}
+
+/// Makes `file_name` the default profile of the monitor (SDR, or advanced color when `hdr`) and verifies
+/// it by reading the default back. `ColorProfileAddDisplayAssociation(setAsDefault)` is ignored by
+/// Windows when the profile is already associated, so that case goes through
+/// `ColorProfileSetDisplayDefaultAssociation`.
+pub fn set_default(m: &Monitor, file_name: &str, hdr: bool) -> Result<(), String> {
+    checked(file_name)?;
+    let already = associated(m, hdr)
+        .map(|list| list.iter().any(|f| f.eq_ignore_ascii_case(file_name)))
+        .unwrap_or(false);
+    if already {
+        set_default_association(m, file_name, hdr)?;
+    } else {
+        associate(m, file_name, true, hdr)?;
+    }
+    let mut verdict = check_default(default_profile(m, hdr).as_deref(), file_name, m.num);
+    if verdict.is_err() && !already {
+        // The association list could not be read and the profile was there after all: set it explicitly.
+        if set_default_association(m, file_name, hdr).is_ok() {
+            verdict = check_default(default_profile(m, hdr).as_deref(), file_name, m.num);
+        }
+    }
+    verdict
 }
 
 pub fn disassociate(m: &Monitor, file_name: &str, hdr: bool) -> Result<(), String> {
@@ -251,11 +320,7 @@ unsafe fn read_pwstr(p: *const u16) -> String {
 
 /// File name (no directory) of the default profile; `None` when none is set.
 pub fn default_profile(m: &Monitor, hdr: bool) -> Option<String> {
-    let subtype: COLORPROFILESUBTYPE = if hdr {
-        CPST_EXTENDED_DISPLAY_COLOR_MODE
-    } else {
-        CPST_STANDARD_DISPLAY_COLOR_MODE
-    };
+    let subtype = subtype(hdr);
     unsafe {
         let mut name: PWSTR = std::ptr::null_mut();
         let rc = ColorProfileGetDisplayDefault(
@@ -386,6 +451,16 @@ mod tests {
         assert_eq!(parse_profile_list(&buf), vec!["a.icm", "b.icc"]);
         assert!(parse_profile_list(&utf16_list(&[])).is_empty());
         assert!(parse_profile_list(&[]).is_empty());
+    }
+
+    #[test]
+    fn default_check() {
+        assert!(check_default(Some("a.icm"), "A.ICM", 1).is_ok());
+        assert_eq!(
+            check_default(Some("b.icm"), "a.icm", 2).unwrap_err(),
+            "Windows kept b.icm as the default for monitor 2."
+        );
+        assert!(check_default(None, "a.icm", 1).is_err());
     }
 
     #[test]
