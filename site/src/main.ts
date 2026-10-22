@@ -3,7 +3,7 @@
  *
  * Screenshot mode (used for visual checks and by the screenshot skill):
  *   ?shot=<section-id>&theme=light|dark
- *   <section-id> is one of hero, edid, window, hdr, gamut, tray, drivers, download, footer, or "all"
+ *   <section-id> is one of hero, window, hdr, gamut, tray, footer, or "all"
  *   (no scroll jump, whole page). The page jumps to that section, forces the theme (not persisted), turns
  *   off Lenis, pins and every animation, and renders each animation in its final state.
  *   The same static path is used for prefers-reduced-motion. window.__shotReady becomes true once the final
@@ -24,10 +24,9 @@ import { initNav } from "./modules/nav.ts";
 import { initSpectralBars } from "./modules/spectralBar.ts";
 import { initReveal } from "./modules/reveal.ts";
 import { initHero } from "./modules/hero.ts";
-import { initEdid } from "./modules/edidDecoder.ts";
 import { initSlabs } from "./modules/glassSlab.ts";
 import { initHdrLab } from "./modules/hdrLab.ts";
-import { initCallouts, initDrivers, initGamut, initTray } from "./modules/sections.ts";
+import { initCallouts, initGamut, initTray } from "./modules/sections.ts";
 
 declare global {
   interface Window {
@@ -66,7 +65,7 @@ document.querySelectorAll<HTMLAnchorElement>('a[href^="#"]').forEach((a) => {
 
 /** Lets the browser paint and handle input between two init steps, so no single task runs long. */
 const nextTask = () => new Promise<void>((r) => setTimeout(r, 0));
-for (const step of [initSpectralBars, initReveal, initHero, initEdid, initHdrLab, initSlabs, initCallouts, initGamut, initTray, initDrivers]) {
+for (const step of [initSpectralBars, initReveal, initHero, initHdrLab, initSlabs, initCallouts, initGamut, initTray]) {
   step();
   if (!isStatic) await nextTask();
 }

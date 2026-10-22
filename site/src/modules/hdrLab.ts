@@ -1,5 +1,5 @@
 // HDR lab: four real range inputs drive a PQ (ST 2084) response chart and a BT.709 -> BT.2020 gamut chart.
-// Ranges match the app: black 0-0.5 nits, peak 100-4000 (log), full-frame 100..peak, saturation 0-100%.
+// Ranges match the app: black 0-0.5 nits, peak 100-4000 (log), full-frame 100-4000 (log, independent of peak), saturation 0-100%.
 import { gsap } from "gsap";
 import { pqToNits, saturatedPrims } from "../data/color.ts";
 import { BT709, BT2020 } from "../data/spaces.ts";
@@ -45,10 +45,7 @@ export function initHdrLab() {
   function read(reduce: boolean) {
     target.black = blackOf(Number(rBlack!.value));
     target.peak = peakOf(Number(rPeak!.value));
-    // full-frame can never exceed peak
-    rFull!.max = String(Math.round(target.peak));
-    if (Number(rFull!.value) > Number(rFull!.max)) rFull!.value = rFull!.max;
-    target.full = Number(rFull!.value);
+    target.full = peakOf(Number(rFull!.value));
     target.sat = Number(rSat!.value) / 100;
     $("o-black")!.textContent = `${target.black.toFixed(2)} nits`;
     $("o-peak")!.textContent = `${Math.round(target.peak)} nits`;
@@ -73,8 +70,7 @@ export function initHdrLab() {
   const reduce = matchMedia("(prefers-reduced-motion: reduce)").matches;
   [rBlack, rPeak, rFull, rSat].forEach((el) => el.addEventListener("input", () => read(reduce)));
   // initial values: 0 / 450 / 450 / 0 (the author's calibration)
-  rFull.max = "450";
-  rFull.value = "450";
+  rFull.value = rPeak.value;
   read(true);
 
   // ---- PQ chart ----
