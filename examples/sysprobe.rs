@@ -52,7 +52,7 @@ fn main() {
             return;
         }
         let before_default = wcs::default_profile(m, false);
-        let before_list = wcs::associated(m, false);
+        let before_list = wcs::associated(m, false).unwrap_or_default();
         let bytes = wcs::read_profile(wcs::SRGB_INBOX).expect("inbox sRGB profile");
         println!("install: {:?}", wcs::install_profile(TEST, &bytes));
         println!(
@@ -61,7 +61,7 @@ fn main() {
             wcs::list_installed().iter().any(|n| n == TEST)
         );
         println!("associate: {:?}", wcs::associate(m, TEST, false, false));
-        let l = wcs::associated(m, false);
+        let l = wcs::associated(m, false).unwrap_or_default();
         println!(
             "associated now: {:?}  contains test: {}",
             l,
@@ -72,7 +72,7 @@ fn main() {
             wcs::default_profile(m, false) == before_default
         );
         println!("disassociate: {:?}", wcs::disassociate(m, TEST, false));
-        let l = wcs::associated(m, false);
+        let l = wcs::associated(m, false).unwrap_or_default();
         println!(
             "associated after: {:?}  contains test: {}",
             l,
@@ -84,6 +84,9 @@ fn main() {
             wcs::profile_exists(TEST),
             wcs::backup_dir().join(TEST).exists()
         );
-        println!("list restored: {}", wcs::associated(m, false) == before_list);
+        println!(
+            "list restored: {}",
+            wcs::associated(m, false).unwrap_or_default() == before_list
+        );
     }
 }

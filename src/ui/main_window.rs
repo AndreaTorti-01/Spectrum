@@ -29,10 +29,10 @@ use windows_sys::Win32::UI::WindowsAndMessaging::{
     KillTimer, LoadCursorW, RegisterClassExW, SendMessageW, SetCursor, SetForegroundWindow, SetTimer,
     SetWindowPos, ShowWindow, SystemParametersInfoW, CS_HREDRAW, CS_VREDRAW, CW_USEDEFAULT, HICON, ICON_BIG,
     ICON_SMALL, IDC_ARROW, IDC_HAND, SM_CXICON, SM_CXSMICON, SPI_GETWORKAREA, SWP_NOACTIVATE, SWP_NOZORDER,
-    SW_RESTORE, SW_SHOW, WM_APP, WM_CLOSE, WM_CREATE, WM_DESTROY, WM_DPICHANGED, WM_ERASEBKGND, WM_KEYDOWN,
-    WM_KILLFOCUS, WM_LBUTTONDOWN, WM_LBUTTONUP, WM_MOUSEMOVE, WM_MOUSEWHEEL, WM_NCDESTROY, WM_PAINT,
-    WM_SETCURSOR, WM_SETFOCUS, WM_SETICON, WM_SETTINGCHANGE, WM_TIMER, WNDCLASSEXW, WS_CAPTION,
-    WS_MINIMIZEBOX, WS_OVERLAPPED, WS_SYSMENU,
+    SW_RESTORE, SW_SHOW, WM_APP, WM_CAPTURECHANGED, WM_CLOSE, WM_CREATE, WM_DESTROY, WM_DPICHANGED,
+    WM_ERASEBKGND, WM_KEYDOWN, WM_KILLFOCUS, WM_LBUTTONDOWN, WM_LBUTTONUP, WM_MOUSEMOVE, WM_MOUSEWHEEL,
+    WM_NCDESTROY, WM_PAINT, WM_SETCURSOR, WM_SETFOCUS, WM_SETICON, WM_SETTINGCHANGE, WM_TIMER, WNDCLASSEXW,
+    WS_CAPTION, WS_MINIMIZEBOX, WS_OVERLAPPED, WS_SYSMENU,
 };
 
 const CLASS: &str = "SpectrumMainWindow";
@@ -738,6 +738,17 @@ pub fn close() {
     }
 }
 
+/// Closes through `WM_CLOSE`, so pending slider edits are committed first.
+pub fn request_close() {
+    let h = hwnd();
+    if !h.is_null() {
+        // SAFETY: valid window handle owned by this thread; handled synchronously.
+        unsafe {
+            SendMessageW(h, WM_CLOSE, 0, 0);
+        }
+    }
+}
+
 pub fn refresh() {
     with(|m| {
         m.st = super::snapshot();
@@ -874,6 +885,7 @@ fn on_dpi_changed(hwnd: HWND, dpi: u32, suggested: Option<RECT>) {
         m.canvas = None;
         m.layout();
     });
+    refresh_icons(hwnd, dpi);
     // SAFETY: valid window; nested messages are handled with MAIN unborrowed.
     unsafe {
         let r = match suggested {
@@ -954,7 +966,8 @@ unsafe fn handle(hwnd: HWND, msg: u32, wp: WPARAM, lp: LPARAM) -> LRESULT {
             0
         }
         WM_SETTINGCHANGE => {
-            if lp != 0 {
+            // A string lParam only comes with wParam 0; anything else may not be a pointer.
+            if wp == 0 && lp != 0 {
                 let p = lp as *const u16;
                 let mut n = 0;
                 while n < 64 && *p.add(n) != 0 {
@@ -983,7 +996,14 @@ unsafe fn handle(hwnd: HWND, msg: u32, wp: WPARAM, lp: LPARAM) -> LRESULT {
                     m.tracking = true;
                 }
                 if let Some(id) = m.drag {
-                    m.slider_at_x(id, x);
+                    if wp & 1 == 0 {
+                        // MK_LBUTTON is gone: the button-up was missed, so end the drag here.
+                        m.drag = None;
+                        m.ui.pressed = None;
+                        m.commit();
+                    } else {
+                        m.slider_at_x(id, x);
+                    }
                 } else {
                     let h = m.ui.hit(x, y);
                     m.set_hover(h);
@@ -1028,9 +1048,6 @@ unsafe fn handle(hwnd: HWND, msg: u32, wp: WPARAM, lp: LPARAM) -> LRESULT {
         }
         WM_LBUTTONUP => {
             let (x, y) = (lo(lp), hi(lp));
-            if GetCapture_is(hwnd) {
-                ReleaseCapture();
-            }
             with(|m| {
                 let pressed = m.ui.pressed.take();
                 if let Some(id) = m.drag.take() {
@@ -1043,6 +1060,21 @@ unsafe fn handle(hwnd: HWND, msg: u32, wp: WPARAM, lp: LPARAM) -> LRESULT {
                 }
                 let h = m.ui.hit(x, y);
                 m.set_hover(h);
+                m.invalidate();
+            });
+            // After the state is taken: ReleaseCapture sends WM_CAPTURECHANGED.
+            if GetCapture_is(hwnd) {
+                ReleaseCapture();
+            }
+            0
+        }
+        WM_CAPTURECHANGED => {
+            // Capture stolen mid-press (Alt+Tab, a menu, a notification): end the press and drag.
+            with(|m| {
+                m.ui.pressed = None;
+                if m.drag.take().is_some() {
+                    m.commit();
+                }
                 m.invalidate();
             });
             0
@@ -1147,7 +1179,7 @@ unsafe fn handle(hwnd: HWND, msg: u32, wp: WPARAM, lp: LPARAM) -> LRESULT {
             KillTimer(hwnd, TIMER_COMMIT);
             let had_highlight = with(|m| m.highlight.take().is_some()).unwrap_or(false);
             HWND_CELL.with(|c| c.set(0));
-            let main = MAIN.with(|m| m.borrow_mut().take());
+            let main = MAIN.with(|m| m.try_borrow_mut().ok().and_then(|mut b| b.take()));
             if let Some(m) = &main {
                 for i in m.icons {
                     if !i.is_null() {
@@ -1173,8 +1205,32 @@ fn GetCapture_is(hwnd: HWND) -> bool {
 }
 
 fn icon_for(hwnd: HWND, metric: i32) -> HICON {
+    icon_at(window_dpi(hwnd), metric)
+}
+
+/// Rebuilds the title bar icons for a new DPI and frees the old ones.
+fn refresh_icons(hwnd: HWND, dpi: u32) {
+    if with(|_| ()).is_none() {
+        return;
+    }
+    let big = icon_at(dpi, SM_CXICON);
+    let small = icon_at(dpi, SM_CXSMICON);
+    // SAFETY: valid window; the old icons are released only after the window stops using them.
+    unsafe {
+        SendMessageW(hwnd, WM_SETICON, ICON_BIG as usize, big as LPARAM);
+        SendMessageW(hwnd, WM_SETICON, ICON_SMALL as usize, small as LPARAM);
+        if let Some(old) = with(|x| std::mem::replace(&mut x.icons, [big, small])) {
+            for i in old {
+                if !i.is_null() {
+                    DestroyIcon(i);
+                }
+            }
+        }
+    }
+}
+
+fn icon_at(dpi: u32, metric: i32) -> HICON {
     // SAFETY: plain query.
-    let dpi = window_dpi(hwnd);
     let px = unsafe { windows_sys::Win32::UI::HiDpi::GetSystemMetricsForDpi(metric, dpi) };
     crate::icon::create_hicon(px.max(16) as u32)
 }

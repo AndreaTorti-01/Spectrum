@@ -7,7 +7,7 @@
 
 #![allow(clippy::not_unsafe_ptr_arg_deref)]
 
-use crate::color::{Primaries, BT709};
+use crate::color::{self, Primaries, BT709};
 use crate::config::{Config, MonitorCfg};
 use crate::icc_read;
 use crate::icc_write::{self, HdrParams};
@@ -17,6 +17,7 @@ use crate::ui::{self, draw};
 use crate::util::{app_data_dir, log, wide};
 use crate::wcs;
 use std::cell::{Cell, RefCell};
+use std::collections::HashMap;
 use std::time::{Duration, Instant};
 use windows_sys::Win32::Foundation::{HWND, LPARAM, LRESULT, WPARAM};
 use windows_sys::Win32::System::DataExchange::COPYDATASTRUCT;
@@ -28,7 +29,7 @@ use windows_sys::Win32::UI::WindowsAndMessaging::{
     SystemParametersInfoW, TranslateMessage, DBT_DEVNODES_CHANGED, HWND_NOTOPMOST, HWND_TOPMOST, MSG,
     PBT_APMRESUMEAUTOMATIC, SPI_GETWORKAREA, SWP_NOACTIVATE, SWP_NOMOVE, SWP_NOSIZE, WM_APP, WM_CLOSE,
     WM_CONTEXTMENU, WM_COPYDATA, WM_DESTROY, WM_DEVICECHANGE, WM_DISPLAYCHANGE, WM_LBUTTONUP,
-    WM_POWERBROADCAST, WM_RBUTTONUP, WM_SETTINGCHANGE, WM_TIMER, WNDCLASSEXW, WS_POPUP,
+    WM_POWERBROADCAST, WM_SETTINGCHANGE, WM_TIMER, WNDCLASSEXW, WS_POPUP,
 };
 
 /// Window class of the hidden top-level window (message-only windows miss broadcast messages).
@@ -40,6 +41,10 @@ pub const COPYDATA_MAGIC: usize = 0x5350_4543;
 
 const TIMER_RECONCILE: usize = 1;
 const RECONCILE_DELAY_MS: u32 = 2000;
+/// Retries adding the tray icon while the shell is not ready (Run-key start at logon).
+const TIMER_TRAY_RETRY: usize = 2;
+const TRAY_RETRY_MS: u32 = 2000;
+const TRAY_RETRY_MAX: u32 = 15;
 /// Timer ids at or above this value belong to `debug` (the demo).
 pub const TIMER_DEBUG_BASE: usize = 100;
 /// NIN_KEYSELECT (NIN_SELECT | 1).
@@ -108,11 +113,18 @@ thread_local! {
     static TRAY_MODE: Cell<bool> = const { Cell::new(false) };
     static LAST_TOGGLE: Cell<Option<Instant>> = const { Cell::new(None) };
     static LAST_MENU: Cell<Option<Instant>> = const { Cell::new(None) };
+    /// True while the (modal) tray menu is up; the second v4 notification must not open another.
+    static IN_MENU: Cell<bool> = const { Cell::new(false) };
+    static TRAY_TRIES: Cell<u32> = const { Cell::new(0) };
+    /// Profile description cache: file -> (stamp, label), so snapshots don't re-read profile files.
+    static LABELS: RefCell<HashMap<String, (ProfileStamp, String)>> = RefCell::new(HashMap::new());
     static COMMANDS: RefCell<Vec<String>> = const { RefCell::new(Vec::new()) };
     static SHOW_MSG: Cell<u32> = const { Cell::new(0) };
     static TASKBAR_MSG: Cell<u32> = const { Cell::new(0) };
     static OPTS: RefCell<Option<RunOpts>> = const { RefCell::new(None) };
 }
+
+type ProfileStamp = (u64, Option<std::time::SystemTime>);
 
 fn set_status(s: Option<String>) {
     STATUS.with(|c| *c.borrow_mut() = s);
@@ -191,8 +203,13 @@ fn reference_id(file: &str) -> Option<&'static str> {
     }
 }
 
+/// EDID primaries for the HDR profile; BT.709 when the EDID is missing or its chromaticities are bogus.
 fn hdr_prims(m: &Monitor) -> Primaries {
-    m.edid.as_ref().map(|e| e.primaries).unwrap_or(BT709)
+    m.edid
+        .as_ref()
+        .map(|e| e.primaries)
+        .filter(color::primaries_plausible)
+        .unwrap_or(BT709)
 }
 
 fn backup_has(file: &str) -> bool {
@@ -201,13 +218,31 @@ fn backup_has(file: &str) -> bool {
 
 /// Reads the ICC description of an installed profile, falling back to the file stem.
 fn profile_label(file: &str) -> String {
+    let stamp = wcs::profile_stamp(file);
+    if let Some(st) = stamp {
+        let hit = LABELS.with(|l| {
+            l.borrow()
+                .get(file)
+                .filter(|(s, _)| *s == st)
+                .map(|(_, v)| v.clone())
+        });
+        if let Some(v) = hit {
+            return v;
+        }
+    }
+    let label = read_label(file);
+    if let Some(st) = stamp {
+        LABELS.with(|l| l.borrow_mut().insert(file.to_string(), (st, label.clone())));
+    }
+    label
+}
+
+fn read_label(file: &str) -> String {
     if let Some(bytes) = wcs::read_profile(file) {
-        if bytes.len() < (8 << 20) {
-            if let Ok(info) = icc_read::parse(&bytes) {
-                let d = info.desc.trim();
-                if !d.is_empty() {
-                    return d.to_string();
-                }
+        if let Ok(info) = icc_read::parse(&bytes) {
+            let d = info.desc.trim();
+            if !d.is_empty() {
+                return d.to_string();
             }
         }
     }
@@ -232,7 +267,7 @@ fn sdr_options(m: &Monitor, cfg: &MonitorCfg) -> (Vec<(String, String)>, Option<
     list.push(("sRGB".into(), wcs::SRGB_INBOX.into()));
     list.push(("Display P3".into(), P3_FILE.into()));
     list.push(("Adobe RGB".into(), ADOBE_FILE.into()));
-    for f in wcs::associated(m, false) {
+    for f in wcs::associated(m, false).unwrap_or_default() {
         let hdr_ours = cfg.hdr_file.as_deref().map(|h| eq(h, &f)).unwrap_or(false);
         if hdr_ours || list.iter().any(|(_, x)| eq(x, &f)) {
             continue;
@@ -299,7 +334,9 @@ fn build_ui_monitor(m: &Monitor, cfg: &Config) -> UiMonitor {
     let entry = cfg.monitors.get(&m.key).cloned().unwrap_or_default();
     let (sdr_options, sdr_current) = sdr_options(m, &entry);
     let hdr_custom_active = match (&entry.hdr_file, &entry.hdr) {
-        (Some(f), Some(_)) => contains_ci(&wcs::associated(m, true), f),
+        (Some(f), Some(_)) => wcs::associated(m, true)
+            .map(|l| contains_ci(&l, f))
+            .unwrap_or(false),
         _ => false,
     };
     UiMonitor {
@@ -382,6 +419,16 @@ fn set_sdr(idx_mon: usize, idx: usize) -> Result<String, String> {
     Ok(format!("Applied {label} to monitor {}", m.num))
 }
 
+/// "Spectrum <name> <key> EDID.icm": the key keeps two identical monitors apart. A config that still
+/// holds the older "Spectrum <name> EDID.icm" keeps using it.
+fn edid_file_name(name: &str, key: &str, current: Option<&str>) -> String {
+    let old = format!("Spectrum {} EDID.icm", safe_name(name));
+    match current {
+        Some(c) if eq(c, &old) => old,
+        _ => format!("Spectrum {} {} EDID.icm", safe_name(name), safe_name(key)),
+    }
+}
+
 fn read_edid(idx_mon: usize) -> Result<String, String> {
     let m = monitor_at(idx_mon)?;
     let fail = |e: &str| {
@@ -397,8 +444,20 @@ fn read_edid(idx_mon: usize) -> Result<String, String> {
             .and_then(|raw| crate::edid::parse(&raw).ok())
             .ok_or_else(|| fail("no EDID in the registry"))?,
     };
+    if !color::primaries_plausible(&edid.primaries) {
+        log(&format!(
+            "read edid: monitor {}: implausible chromaticities {:?}",
+            m.num, edid.primaries
+        ));
+        return Err(format!(
+            "Monitor {} reports invalid color data. Spectrum can't build a profile from it.",
+            m.num
+        ));
+    }
     let name = edid.display_name();
-    let file = format!("Spectrum {} EDID.icm", safe_name(&name));
+    let cfg = Config::load();
+    let current = cfg.monitors.get(&m.key).and_then(|e| e.edid_profile.clone());
+    let file = edid_file_name(&name, &m.key, current.as_deref());
     let desc = format!("{name} (EDID)");
     let bytes = icc_write::build_sdr_profile(&desc, &edid.primaries, edid.trc());
 
@@ -478,11 +537,10 @@ fn apply_hdr(idx_mon: usize, params: HdrParams) -> Result<String, String> {
         return Err(fail(e));
     }
     if let Some(p) = prev.filter(|p| !eq(p, &file)) {
-        if let Err(e) = wcs::disassociate(&m, &p, true) {
-            log(&format!("apply hdr: removing old {p}: {e}"));
-        }
-        if let Err(e) = wcs::delete_profile(&p) {
-            log(&format!("apply hdr: deleting old {p}: {e}"));
+        if drop_hdr_profile(&m, &p) {
+            if let Err(e) = wcs::delete_profile(&p) {
+                log(&format!("apply hdr: deleting old {p}: {e}"));
+            }
         }
     }
     save_cfg(&m, |e| {
@@ -496,6 +554,24 @@ fn apply_hdr(idx_mon: usize, params: HdrParams) -> Result<String, String> {
     Ok(format!("Applied HDR profile to monitor {}", m.num))
 }
 
+/// Removes the HDR association of `file`. True when it is gone (removed, or not listed any more), so the
+/// caller may delete the file; false when the association may still exist.
+fn drop_hdr_profile(m: &Monitor, file: &str) -> bool {
+    let Err(e) = wcs::disassociate(m, file, true) else {
+        return true;
+    };
+    match wcs::associated(m, true) {
+        Ok(list) if !contains_ci(&list, file) => true,
+        _ => {
+            log(&format!(
+                "monitor {}: could not remove HDR association of {file}: {e}",
+                m.num
+            ));
+            false
+        }
+    }
+}
+
 fn reset_hdr(idx_mon: usize) -> Result<String, String> {
     let m = monitor_at(idx_mon)?;
     let cfg = Config::load();
@@ -503,8 +579,9 @@ fn reset_hdr(idx_mon: usize) -> Result<String, String> {
     let Some(file) = entry.hdr_file else {
         return Ok(format!("Nothing to reset on monitor {}", m.num));
     };
-    if let Err(e) = wcs::disassociate(&m, &file, true) {
-        log(&format!("reset hdr: removing {file}: {e}"));
+    if !drop_hdr_profile(&m, &file) {
+        // Keep the file and the config entry so the next reconcile or reset can still find it.
+        return Err(format!("Couldn't reset HDR on monitor {}. Try again.", m.num));
     }
     if let Err(e) = wcs::delete_profile(&file) {
         log(&format!("reset hdr: deleting {file}: {e}"));
@@ -636,22 +713,36 @@ pub fn reconcile() -> Vec<String> {
             }
         }
 
+        // A driver update can switch "use my settings for this device" off while the list stays intact.
+        if entry.sdr.is_some() || entry.hdr_file.is_some() {
+            if let Err(e) = wcs::ensure_user_scope(m) {
+                out.push(format!("{tag}: could not enable per-user profiles: {e}"));
+            }
+        }
+
         // SDR choice.
         if let Some(file) = entry.sdr.clone() {
             if wcs::profile_exists(&file) {
-                if !contains_ci(&wcs::associated(m, false), &file) {
-                    let r = wcs::ensure_user_scope(m).and_then(|_| wcs::associate(m, &file, true, false));
-                    match r {
-                        Ok(()) => out.push(format!("{tag}: re-associated {file} as the SDR default")),
-                        Err(e) => out.push(format!("{tag}: could not re-associate {file}: {e}")),
+                match wcs::associated(m, false) {
+                    // A failed query is not an empty list: leave the monitor alone.
+                    Err(e) => out.push(format!("{tag}: skipped SDR check, could not list profiles: {e}")),
+                    Ok(list) if !contains_ci(&list, &file) => {
+                        let r = wcs::ensure_user_scope(m).and_then(|_| wcs::associate(m, &file, true, false));
+                        match r {
+                            Ok(()) => out.push(format!("{tag}: re-associated {file} as the SDR default")),
+                            Err(e) => out.push(format!("{tag}: could not re-associate {file}: {e}")),
+                        }
                     }
-                } else if let Some(def) = wcs::default_profile(m, false) {
-                    if !eq(&def, &file) {
-                        out.push(format!(
-                            "{tag}: default changed in Windows to {def}; config now follows it"
-                        ));
-                        entry.sdr = Some(def);
-                        changed = true;
+                    Ok(_) => {
+                        if let Some(def) = wcs::default_profile(m, false) {
+                            if !eq(&def, &file) {
+                                out.push(format!(
+                                    "{tag}: default changed in Windows to {def}; config now follows it"
+                                ));
+                                entry.sdr = Some(def);
+                                changed = true;
+                            }
+                        }
                     }
                 }
             }
@@ -673,23 +764,31 @@ pub fn reconcile() -> Vec<String> {
                     out.push(format!("{tag}: could not restore {file}"));
                 }
                 if wcs::profile_exists(&file) {
-                    if !contains_ci(&wcs::associated(m, true), &file) {
-                        let r = wcs::ensure_user_scope(m).and_then(|_| wcs::associate(m, &file, true, true));
-                        match r {
-                            Ok(()) => out.push(format!("{tag}: re-associated {file} as the HDR default")),
-                            Err(e) => out.push(format!("{tag}: could not re-associate {file}: {e}")),
+                    match wcs::associated(m, true) {
+                        Err(e) => out.push(format!("{tag}: skipped HDR check, could not list profiles: {e}")),
+                        Ok(list) if !contains_ci(&list, &file) => {
+                            let r =
+                                wcs::ensure_user_scope(m).and_then(|_| wcs::associate(m, &file, true, true));
+                            match r {
+                                Ok(()) => out.push(format!("{tag}: re-associated {file} as the HDR default")),
+                                Err(e) => out.push(format!("{tag}: could not re-associate {file}: {e}")),
+                            }
                         }
-                    } else if let Some(def) = wcs::default_profile(m, true) {
-                        if !eq(&def, &file) {
-                            // The user picked another HDR profile: stop managing ours instead of fighting.
-                            out.push(format!(
-                                "{tag}: HDR default changed in Windows to {def}; dropped {file}"
-                            ));
-                            let _ = wcs::disassociate(m, &file, true);
-                            let _ = wcs::delete_profile(&file);
-                            entry.hdr_file = None;
-                            entry.hdr = None;
-                            changed = true;
+                        Ok(_) => {
+                            if let Some(def) = wcs::default_profile(m, true) {
+                                if !eq(&def, &file) {
+                                    // The user picked another HDR profile: stop managing ours instead of fighting.
+                                    out.push(format!(
+                                        "{tag}: HDR default changed in Windows to {def}; dropped {file}"
+                                    ));
+                                    if drop_hdr_profile(m, &file) {
+                                        let _ = wcs::delete_profile(&file);
+                                    }
+                                    entry.hdr_file = None;
+                                    entry.hdr = None;
+                                    changed = true;
+                                }
+                            }
                         }
                     }
                 }
@@ -715,15 +814,20 @@ pub fn wipe_monitor(num: u32) -> Result<Vec<String>, String> {
         .ok_or_else(|| format!("no monitor {num}"))?;
     let mut out = Vec::new();
     for hdr in [false, true] {
-        for f in wcs::associated(m, hdr) {
+        let kind = if hdr { "HDR" } else { "SDR" };
+        let list = match wcs::associated(m, hdr) {
+            Ok(l) => l,
+            Err(e) => {
+                out.push(format!("could not list {kind} profiles: {e}"));
+                continue;
+            }
+        };
+        for f in list {
             if !is_ours(&f) {
                 continue;
             }
             match wcs::disassociate(m, &f, hdr) {
-                Ok(()) => out.push(format!(
-                    "removed {} association of {f}",
-                    if hdr { "HDR" } else { "SDR" }
-                )),
+                Ok(()) => out.push(format!("removed {kind} association of {f}")),
                 Err(e) => out.push(format!("could not remove {f}: {e}")),
             }
         }
@@ -732,17 +836,50 @@ pub fn wipe_monitor(num: u32) -> Result<Vec<String>, String> {
     Ok(out)
 }
 
+/// Every profile file name Spectrum may have associated with this monitor, from the config and the
+/// fixed names.
+fn known_files(m: &Monitor, cfg: &Config, hdr: bool) -> Vec<String> {
+    let mut v: Vec<String> = Vec::new();
+    if hdr {
+        v.push(hdr_file_name(m, "A"));
+        v.push(hdr_file_name(m, "B"));
+    } else {
+        v.push(P3_FILE.to_string());
+        v.push(ADOBE_FILE.to_string());
+    }
+    if let Some(e) = cfg.monitors.get(&m.key) {
+        let cfg_files = if hdr {
+            [e.hdr_file.clone(), None]
+        } else {
+            [e.edid_profile.clone(), e.sdr.clone()]
+        };
+        for f in cfg_files.into_iter().flatten().filter(|f| is_ours(f)) {
+            if !contains_ci(&v, &f) {
+                v.push(f);
+            }
+        }
+    }
+    v
+}
+
 /// Uninstall helper: removes every Spectrum profile association and file, plus Spectrum's data folder.
 pub fn remove_all_profiles() -> Vec<String> {
     let mut out = Vec::new();
+    let cfg = Config::load();
     for m in &monitors::enumerate() {
         for hdr in [false, true] {
-            for f in wcs::associated(m, hdr) {
-                if is_ours(&f) {
-                    match wcs::disassociate(m, &f, hdr) {
-                        Ok(()) => out.push(format!("monitor {}: removed {f}", m.num)),
-                        Err(e) => out.push(format!("monitor {}: could not remove {f}: {e}", m.num)),
-                    }
+            let names = match wcs::associated(m, hdr) {
+                Ok(list) => list.into_iter().filter(|f| is_ours(f)).collect(),
+                Err(e) => {
+                    // Can't list: try every file name Spectrum could have associated.
+                    out.push(format!("monitor {}: could not list profiles: {e}", m.num));
+                    known_files(m, &cfg, hdr)
+                }
+            };
+            for f in names {
+                match wcs::disassociate(m, &f, hdr) {
+                    Ok(()) => out.push(format!("monitor {}: removed {f}", m.num)),
+                    Err(e) => out.push(format!("monitor {}: could not remove {f}: {e}", m.num)),
                 }
             }
         }
@@ -789,6 +926,7 @@ fn finish() {
 
 /// Runs a tray menu command (also used by `--debug-tray-cmd`).
 pub fn run_tray_cmd(cmd: TrayCmd) {
+    let exiting = cmd == TrayCmd::Exit;
     match cmd {
         TrayCmd::Open => ui::main_window::open(),
         TrayCmd::Exit => exit_app(),
@@ -805,20 +943,29 @@ pub fn run_tray_cmd(cmd: TrayCmd) {
             finish();
         }
     }
+    if !exiting {
+        draw::trim_working_set();
+    }
 }
 
 /// Shows the tray menu at the cursor (modal) and runs the chosen command.
 pub fn show_tray_menu() {
+    if IN_MENU.with(|c| c.get()) {
+        return;
+    }
     let last = LAST_MENU.with(|l| l.get());
     if last.map(|t| t.elapsed() < TRAY_DEBOUNCE).unwrap_or(false) {
         return;
     }
+    IN_MENU.with(|c| c.set(true));
     let items = menu_monitors();
     let h = hwnd();
     let cmd = tray::show_menu(h, &items);
     LAST_MENU.with(|l| l.set(Some(Instant::now())));
-    if let Some(c) = cmd {
-        run_tray_cmd(c);
+    IN_MENU.with(|c| c.set(false));
+    match cmd {
+        Some(c) => run_tray_cmd(c),
+        None => draw::trim_working_set(),
     }
 }
 
@@ -829,7 +976,7 @@ fn toggle_main() {
     }
     LAST_TOGGLE.with(|l| l.set(Some(Instant::now())));
     if ui::main_window::is_open() {
-        ui::main_window::close();
+        ui::main_window::request_close();
     } else {
         ui::main_window::open();
     }
@@ -902,7 +1049,7 @@ fn exit_app() {
     tray::remove(h);
     ui::overlay::hide_all();
     ui::gamut_window::close();
-    ui::main_window::close();
+    ui::main_window::request_close();
     if !h.is_null() {
         // SAFETY: window created by this thread; WM_DESTROY posts the quit message.
         unsafe { DestroyWindow(h) };
@@ -931,6 +1078,30 @@ fn lo(v: isize) -> u32 {
     (v as usize & 0xFFFF) as u32
 }
 
+/// Adds the tray icon; on failure (shell not ready yet) retries every 2 s, at most 15 times.
+fn add_tray_with_retry(hwnd: HWND) {
+    if tray::add(hwnd) {
+        TRAY_TRIES.with(|t| t.set(0));
+        // SAFETY: valid window; killing an unset timer is harmless.
+        unsafe { KillTimer(hwnd, TIMER_TRAY_RETRY) };
+        return;
+    }
+    let n = TRAY_TRIES.with(|t| t.get());
+    if n >= TRAY_RETRY_MAX {
+        // SAFETY: as above.
+        unsafe { KillTimer(hwnd, TIMER_TRAY_RETRY) };
+        log("could not add the tray icon; giving up");
+        return;
+    }
+    TRAY_TRIES.with(|t| t.set(n + 1));
+    log(&format!(
+        "could not add the tray icon; retry {} of {TRAY_RETRY_MAX}",
+        n + 1
+    ));
+    // SAFETY: valid window.
+    unsafe { SetTimer(hwnd, TIMER_TRAY_RETRY, TRAY_RETRY_MS, None) };
+}
+
 fn schedule_reconcile(hwnd: HWND) {
     // SAFETY: valid window; re-arming the same timer id restarts the delay.
     unsafe {
@@ -948,7 +1119,8 @@ unsafe extern "system" fn wnd_proc(hwnd: HWND, msg: u32, wp: WPARAM, lp: LPARAM)
     }
     if msg != 0 && msg == taskbar_msg {
         if TRAY_MODE.with(|t| t.get()) {
-            tray::readd(hwnd);
+            TRAY_TRIES.with(|t| t.set(0));
+            add_tray_with_retry(hwnd);
         }
         return 0;
     }
@@ -956,7 +1128,8 @@ unsafe extern "system" fn wnd_proc(hwnd: HWND, msg: u32, wp: WPARAM, lp: LPARAM)
         WM_TRAY => {
             match lo(lp) {
                 WM_LBUTTONUP | NIN_SELECT | NIN_KEYSELECT => toggle_main(),
-                WM_CONTEXTMENU | WM_RBUTTONUP => show_tray_menu(),
+                // v4 sends WM_CONTEXTMENU for a right click and for Shift+F10 / the menu key.
+                WM_CONTEXTMENU => show_tray_menu(),
                 _ => {}
             }
             0
@@ -972,6 +1145,7 @@ unsafe extern "system" fn wnd_proc(hwnd: HWND, msg: u32, wp: WPARAM, lp: LPARAM)
             if let Some(c) = opts.command {
                 run_command(&c);
             }
+            draw::trim_working_set();
             0
         }
         WM_RUN_CMD => {
@@ -1018,7 +1192,8 @@ unsafe extern "system" fn wnd_proc(hwnd: HWND, msg: u32, wp: WPARAM, lp: LPARAM)
             1
         }
         WM_SETTINGCHANGE => {
-            if lp != 0 {
+            // A string lParam only comes with wParam 0; anything else may not be a pointer.
+            if wp == 0 && lp != 0 {
                 let p = lp as *const u16;
                 let mut n = 0;
                 while n < 64 && *p.add(n) != 0 {
@@ -1039,6 +1214,9 @@ unsafe extern "system" fn wnd_proc(hwnd: HWND, msg: u32, wp: WPARAM, lp: LPARAM)
                     log(&format!("display change: {} reconcile action(s)", lines.len()));
                 }
                 finish();
+                draw::trim_working_set();
+            } else if wp == TIMER_TRAY_RETRY {
+                add_tray_with_retry(hwnd);
             } else if wp >= TIMER_DEBUG_BASE {
                 crate::debug::on_timer(hwnd, wp);
             }
@@ -1102,8 +1280,8 @@ pub fn run(opts: RunOpts) -> i32 {
     }
     HWND_CELL.with(|c| c.set(h as isize));
     log(&format!("message window {h:?} up, tray={tray_on}"));
-    if tray_on && !tray::add(h) {
-        log("could not add the tray icon");
+    if tray_on {
+        add_tray_with_retry(h);
     }
     // SAFETY: valid window handle.
     unsafe {
@@ -1123,4 +1301,24 @@ pub fn run_tray() -> i32 {
         tray: true,
         ..Default::default()
     })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn edid_file_name_includes_the_monitor_key() {
+        let a = edid_file_name("MAG 271QPX E2", "MSI-3CB0-0000012A", None);
+        let b = edid_file_name("MAG 271QPX E2", "MSI-3CB0-0000012B", None);
+        assert_eq!(a, "Spectrum MAG 271QPX E2 MSI-3CB0-0000012A EDID.icm");
+        assert_ne!(a, b);
+        // Config from an older version keeps its file name.
+        let old = "Spectrum MAG 271QPX E2 EDID.icm";
+        assert_eq!(edid_file_name("MAG 271QPX E2", "K-1", Some(old)), old);
+        assert_eq!(
+            edid_file_name("MAG 271QPX E2", "K-1", Some("other.icm")),
+            "Spectrum MAG 271QPX E2 K-1 EDID.icm"
+        );
+    }
 }

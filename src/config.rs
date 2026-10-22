@@ -20,6 +20,9 @@ pub struct MonitorCfg {
 #[derive(Clone, Debug, Default)]
 pub struct Config {
     pub monitors: BTreeMap<String, MonitorCfg>,
+    /// The file exists but could not be read (antivirus lock, permissions). `save` refuses to overwrite
+    /// it, so a transient read error cannot wipe the other monitors' settings.
+    pub load_failed: bool,
 }
 
 const SECTION_PREFIX: &str = "monitor:";
@@ -56,14 +59,30 @@ fn clean(v: &str) -> String {
 
 impl Config {
     pub fn load() -> Config {
-        match std::fs::read(config_path()) {
+        Config::from_read(std::fs::read(config_path()))
+    }
+
+    /// A missing file is an empty config; any other read error marks the config as `load_failed`.
+    fn from_read(r: std::io::Result<Vec<u8>>) -> Config {
+        match r {
             Ok(bytes) => Config::parse(&String::from_utf8_lossy(&bytes)),
-            Err(_) => Config::default(),
+            Err(e) if e.kind() == std::io::ErrorKind::NotFound => Config::default(),
+            Err(e) => {
+                crate::util::log(&format!("config: read failed, keeping the file untouched: {e}"));
+                Config {
+                    load_failed: true,
+                    ..Config::default()
+                }
+            }
         }
     }
 
     /// Atomic: writes `spectrum.ini.tmp`, then replaces the real file. Failures are logged, not fatal.
     pub fn save(&self) {
+        if self.load_failed {
+            crate::util::log("config: not saving, the file could not be read earlier");
+            return;
+        }
         let path = config_path();
         let tmp = path.with_extension("ini.tmp");
         if let Err(e) = std::fs::write(&tmp, self.serialize()) {
@@ -201,6 +220,23 @@ mod tests {
         assert_eq!(a.sdr, None);
         assert_eq!(a.edid_profile.as_deref(), Some("e.icm"));
         assert_eq!(c.monitors["C-3"].hdr.unwrap().peak_nits, 1000.0);
+    }
+
+    #[test]
+    fn read_error_is_not_not_found() {
+        use std::io::{Error, ErrorKind};
+        let missing = Config::from_read(Err(Error::from(ErrorKind::NotFound)));
+        assert!(!missing.load_failed);
+        assert!(missing.monitors.is_empty());
+        let locked = Config::from_read(Err(Error::from(ErrorKind::PermissionDenied)));
+        assert!(locked.load_failed);
+        assert!(locked.monitors.is_empty());
+        let ok = Config::from_read(Ok(b"[monitor:A-1]
+name=x
+"
+        .to_vec()));
+        assert!(!ok.load_failed);
+        assert_eq!(ok.monitors.len(), 1);
     }
 
     #[test]

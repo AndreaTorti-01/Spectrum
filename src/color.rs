@@ -414,6 +414,32 @@ pub fn triangle(p: &Primaries) -> [Xy; 3] {
     [p.r, p.g, p.b]
 }
 
+/// True when primaries look like a real display: every x,y in (0,1) with x+y<=1 (plus 0.01 for EDID
+/// rounding: Display P3 and BT.2020 reds sit on that line), a gamut triangle of at
+/// least 0.02 (sRGB is 0.112), and a white point near the daylight/Planckian range. EDIDs of TVs,
+/// adapters and virtual displays often carry zeroed or bogus chromaticities.
+pub fn primaries_plausible(p: &Primaries) -> bool {
+    let pts = [p.r, p.g, p.b, p.w];
+    let ok_pt = |q: &Xy| {
+        q.x.is_finite()
+            && q.y.is_finite()
+            && q.x > 0.0
+            && q.y > 0.0
+            && q.x < 1.0
+            && q.y < 1.0
+            && q.x + q.y <= 1.01
+    };
+    if !pts.iter().all(ok_pt) {
+        return false;
+    }
+    if polygon_area(&triangle(p)) < 0.02 {
+        return false;
+    }
+    // Box around x 0.28..0.36, y 0.29..0.38 (D93 to D50 and the Planckian locus), widened by 0.03.
+    const SLACK: f64 = 0.03;
+    (0.28 - SLACK..=0.36 + SLACK).contains(&p.w.x) && (0.29 - SLACK..=0.38 + SLACK).contains(&p.w.y)
+}
+
 /// area(a ∩ reference) / area(reference), 0..1.
 pub fn coverage(a: &Primaries, reference: &Primaries) -> f64 {
     let ref_area = polygon_area(&triangle(reference));
@@ -499,6 +525,53 @@ mod tests {
             }
         }
         assert!(mat_inv(&[[1.0, 2.0, 3.0], [2.0, 4.0, 6.0], [0.0, 0.0, 1.0]]).is_none());
+    }
+
+    #[test]
+    fn plausible_primaries() {
+        for s in STANDARD_SPACES.iter() {
+            assert!(primaries_plausible(&s.prims), "{}", s.id);
+        }
+        assert!(primaries_plausible(&BT2020));
+        let zero = Xy { x: 0.0, y: 0.0 };
+        let zeroed = Primaries {
+            r: zero,
+            g: zero,
+            b: zero,
+            w: zero,
+        };
+        assert!(!primaries_plausible(&zeroed));
+        // Good triangle, zeroed white.
+        assert!(!primaries_plausible(&Primaries { w: zero, ..BT709 }));
+        // Good white, collapsed triangle.
+        assert!(!primaries_plausible(&Primaries {
+            r: BT709.r,
+            g: BT709.r,
+            b: BT709.r,
+            w: D65
+        }));
+        // x + y >= 1, NaN, white far from the daylight range.
+        assert!(!primaries_plausible(&Primaries {
+            r: Xy { x: 0.7, y: 0.4 },
+            ..BT709
+        }));
+        assert!(!primaries_plausible(&Primaries {
+            g: Xy { x: f64::NAN, y: 0.6 },
+            ..BT709
+        }));
+        assert!(!primaries_plausible(&Primaries {
+            w: Xy { x: 0.5, y: 0.45 },
+            ..BT709
+        }));
+        // D50 and D93 whites are fine.
+        assert!(primaries_plausible(&Primaries {
+            w: Xy { x: 0.3457, y: 0.3585 },
+            ..BT709
+        }));
+        assert!(primaries_plausible(&Primaries {
+            w: Xy { x: 0.2831, y: 0.2971 },
+            ..BT709
+        }));
     }
 
     #[test]

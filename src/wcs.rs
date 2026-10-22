@@ -103,11 +103,28 @@ pub fn profile_exists(file_name: &str) -> bool {
     valid_file_name(file_name) && color_dir().join(file_name).is_file()
 }
 
+/// Largest profile file `read_profile` loads (real profiles are well under 1 MiB).
+pub const MAX_PROFILE_BYTES: u64 = 8 << 20;
+
+/// Size and modification time of a color folder file; changes when the file is rewritten.
+pub fn profile_stamp(file_name: &str) -> Option<(u64, Option<std::time::SystemTime>)> {
+    if !valid_file_name(file_name) {
+        return None;
+    }
+    let md = std::fs::metadata(color_dir().join(file_name)).ok()?;
+    Some((md.len(), md.modified().ok()))
+}
+
+/// Reads a color folder file; `None` when missing or larger than [`MAX_PROFILE_BYTES`] (checked before reading).
 pub fn read_profile(file_name: &str) -> Option<Vec<u8>> {
     if !valid_file_name(file_name) {
         return None;
     }
-    std::fs::read(color_dir().join(file_name)).ok()
+    let path = color_dir().join(file_name);
+    if std::fs::metadata(&path).ok()?.len() > MAX_PROFILE_BYTES {
+        return None;
+    }
+    std::fs::read(path).ok()
 }
 
 /// Removes from the color dir and the backup.
@@ -260,12 +277,13 @@ pub fn default_profile(m: &Monitor, hdr: bool) -> Option<String> {
 }
 
 /// Profiles associated with the monitor, as file names: standard (SDR) ones, or advanced-color (HDR)
-/// ones when `hdr`. Uses `WcsEnumColorProfiles` with the monitor's device id plus
+/// ones when `hdr`. `Err` when the query itself fails (an empty `Ok` is a real, empty list), so callers
+/// never mistake a failed query for "no associations". Uses `WcsEnumColorProfiles` with the monitor's device id plus
 /// `ET_STANDARDDISPLAYCOLOR` / `ET_EXTENDEDDISPLAYCOLOR`: `ColorProfileGetDisplayList` returned an
 /// empty list for every query on Windows 11 26300, even though the associations exist.
-pub fn associated(m: &Monitor, hdr: bool) -> Vec<String> {
+pub fn associated(m: &Monitor, hdr: bool) -> Result<Vec<String>, String> {
     let Some(device_id) = monitor_device_id(m) else {
-        return Vec::new();
+        return Err(format!("cannot resolve monitor device id for {}", m.gdi_name));
     };
     let device = wide(&device_id);
     unsafe {
@@ -280,25 +298,39 @@ pub fn associated(m: &Monitor, hdr: bool) -> Vec<String> {
             };
         e.pDeviceName = device.as_ptr();
         let mut size = 0u32;
-        if WcsEnumColorProfilesSize(SCOPE, &e, &mut size) == 0 || size < 4 {
-            return Vec::new();
+        if WcsEnumColorProfilesSize(SCOPE, &e, &mut size) == 0 {
+            return Err(format!(
+                "WcsEnumColorProfilesSize({device_id}) failed: {}",
+                std::io::Error::last_os_error()
+            ));
+        }
+        if size < 4 {
+            return Ok(Vec::new());
         }
         let mut buf = vec![0u8; size as usize];
         let mut count = 0u32;
         if WcsEnumColorProfiles(SCOPE, &e, buf.as_mut_ptr(), size, &mut count) == 0 {
-            return Vec::new();
+            return Err(format!(
+                "WcsEnumColorProfiles({device_id}) failed: {}",
+                std::io::Error::last_os_error()
+            ));
         }
-        let w: Vec<u16> = buf
-            .chunks(2)
-            .map(|c| u16::from_le_bytes([c[0], c.get(1).copied().unwrap_or(0)]))
-            .collect();
-        w.split(|&c| c == 0)
-            .filter(|s| !s.is_empty())
-            .map(String::from_utf16_lossy)
-            .map(|s| s.rsplit(['\\', '/']).next().unwrap_or("").to_string())
-            .filter(|s| !s.is_empty())
-            .collect()
+        Ok(parse_profile_list(&buf))
     }
+}
+
+/// Splits the double-NUL-terminated UTF-16 list `WcsEnumColorProfiles` fills in into file names.
+fn parse_profile_list(buf: &[u8]) -> Vec<String> {
+    let w: Vec<u16> = buf
+        .chunks(2)
+        .map(|c| u16::from_le_bytes([c[0], c.get(1).copied().unwrap_or(0)]))
+        .collect();
+    w.split(|&c| c == 0)
+        .filter(|s| !s.is_empty())
+        .map(String::from_utf16_lossy)
+        .map(|s| s.rsplit(['\\', '/']).next().unwrap_or("").to_string())
+        .filter(|s| !s.is_empty())
+        .collect()
 }
 
 /// "srgb" gives SRGB_INBOX; "display-p3" gives "Spectrum Display P3.icm"; "adobe-rgb" gives
@@ -335,6 +367,33 @@ mod tests {
         assert!(!valid_file_name("..\\evil.icm"));
         assert!(!valid_file_name("C:\\x.icm"));
         assert!(!valid_file_name("a/b.icm"));
+    }
+
+    fn utf16_list(items: &[&str]) -> Vec<u8> {
+        let mut out = Vec::new();
+        for s in items {
+            for c in s.encode_utf16().chain(std::iter::once(0)) {
+                out.extend_from_slice(&c.to_le_bytes());
+            }
+        }
+        out.extend_from_slice(&[0, 0]);
+        out
+    }
+
+    #[test]
+    fn profile_list_parsing() {
+        let buf = utf16_list(&["C:\\Windows\\a.icm", "b.icc"]);
+        assert_eq!(parse_profile_list(&buf), vec!["a.icm", "b.icc"]);
+        assert!(parse_profile_list(&utf16_list(&[])).is_empty());
+        assert!(parse_profile_list(&[]).is_empty());
+    }
+
+    #[test]
+    fn read_profile_guards() {
+        assert!(read_profile("..\\x.icm").is_none());
+        assert!(read_profile(SRGB_INBOX).is_some());
+        assert!(profile_stamp(SRGB_INBOX).is_some());
+        assert!(profile_stamp("no such file.icm").is_none());
     }
 
     #[test]

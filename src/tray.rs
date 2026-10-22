@@ -117,11 +117,6 @@ pub fn remove(hwnd: HWND) {
     swap_icon(std::ptr::null_mut());
 }
 
-/// Re-adds the icon after TaskbarCreated.
-pub fn readd(hwnd: HWND) {
-    add(hwnd);
-}
-
 /// Opt the process' popup menus into the system dark mode (undocumented uxtheme ordinals 135/136).
 fn allow_dark_menus() {
     static ONCE: std::sync::Once = std::sync::Once::new();
@@ -144,8 +139,13 @@ fn allow_dark_menus() {
     });
 }
 
+/// Menu text with `&` doubled, so names like "AT&T" show literally instead of as a mnemonic.
+fn menu_text(s: &str) -> String {
+    s.replace('&', "&&")
+}
+
 unsafe fn insert_item(menu: HMENU, id: u32, text: &str, state: u32, radio: bool, submenu: HMENU) {
-    let mut w = wide(text);
+    let mut w = wide(&menu_text(text));
     let mut mii: MENUITEMINFOW = std::mem::zeroed();
     mii.cbSize = std::mem::size_of::<MENUITEMINFOW>() as u32;
     mii.fMask = MIIM_FTYPE | MIIM_STATE | MIIM_STRING | MIIM_ID;
@@ -281,6 +281,14 @@ pub fn decode_cmd(id: u32) -> Option<TrayCmd> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn menu_labels_escape_ampersands() {
+        assert_eq!(menu_text("AT&T Display"), "AT&&T Display");
+        assert_eq!(menu_text("a && b"), "a &&&& b");
+        assert_eq!(menu_text("Open Spectrum"), "Open Spectrum");
+        assert_eq!(menu_text(""), "");
+    }
 
     #[test]
     fn decodes_fixed_ids() {

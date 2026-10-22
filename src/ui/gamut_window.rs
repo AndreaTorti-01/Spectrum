@@ -202,9 +202,6 @@ fn installed_profiles() -> Vec<(String, String, Option<Primaries>, String)> {
         let Some(bytes) = crate::wcs::read_profile(&file) else {
             continue;
         };
-        if bytes.len() > 8 << 20 {
-            continue;
-        }
         let Ok(info) = crate::icc_read::parse(&bytes) else {
             continue;
         };
@@ -950,6 +947,7 @@ fn on_dpi_changed(hwnd: HWND, dpi: u32, suggested: Option<RECT>) {
         g.horseshoe = None;
         g.clamp_scroll();
     });
+    refresh_icons(hwnd, dpi);
     // SAFETY: valid window; GAMUT is not borrowed here.
     unsafe {
         let r = match suggested {
@@ -994,7 +992,31 @@ fn hi(lp: LPARAM) -> i32 {
 }
 
 fn icon_for(hwnd: HWND, metric: i32) -> HICON {
-    let dpi = window_dpi(hwnd);
+    icon_at(window_dpi(hwnd), metric)
+}
+
+/// Rebuilds the title bar icons for a new DPI and frees the old ones.
+fn refresh_icons(hwnd: HWND, dpi: u32) {
+    if with(|_| ()).is_none() {
+        return;
+    }
+    let big = icon_at(dpi, SM_CXICON);
+    let small = icon_at(dpi, SM_CXSMICON);
+    // SAFETY: valid window; the old icons are released only after the window stops using them.
+    unsafe {
+        SendMessageW(hwnd, WM_SETICON, ICON_BIG as usize, big as LPARAM);
+        SendMessageW(hwnd, WM_SETICON, ICON_SMALL as usize, small as LPARAM);
+        if let Some(old) = with(|x| std::mem::replace(&mut x.icons, [big, small])) {
+            for i in old {
+                if !i.is_null() {
+                    DestroyIcon(i);
+                }
+            }
+        }
+    }
+}
+
+fn icon_at(dpi: u32, metric: i32) -> HICON {
     // SAFETY: plain query.
     let px = unsafe { windows_sys::Win32::UI::HiDpi::GetSystemMetricsForDpi(metric, dpi) };
     crate::icon::create_hicon(px.max(16) as u32)
@@ -1029,7 +1051,7 @@ unsafe extern "system" fn wnd_proc(hwnd: HWND, msg: u32, wp: WPARAM, lp: LPARAM)
             0
         }
         WM_SETTINGCHANGE => {
-            if lp != 0 {
+            if wp == 0 && lp != 0 {
                 let p = lp as *const u16;
                 let mut n = 0;
                 while n < 64 && *p.add(n) != 0 {
@@ -1122,7 +1144,7 @@ unsafe extern "system" fn wnd_proc(hwnd: HWND, msg: u32, wp: WPARAM, lp: LPARAM)
         }
         WM_DESTROY => {
             HWND_CELL.with(|c| c.set(0));
-            let g = GAMUT.with(|m| m.borrow_mut().take());
+            let g = GAMUT.with(|m| m.try_borrow_mut().ok().and_then(|mut b| b.take()));
             if let Some(g) = &g {
                 for i in g.icons {
                     if !i.is_null() {

@@ -204,6 +204,7 @@ unsafe fn paint(hwnd: HWND, hdc: windows_sys::Win32::Graphics::Gdi::HDC, d: &Dat
     let font = make_font_px(display_face(), -em, 700, NONANTIALIASED_QUALITY);
     let text = d.num.to_string();
     let Some(mut probe) = Canvas::new(8, 8) else {
+        DeleteObject(font as _);
         return;
     };
     let tw = probe.text_width(&text, font);
