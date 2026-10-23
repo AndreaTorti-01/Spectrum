@@ -512,7 +512,7 @@ pub fn dump(json: bool, out: Option<&Path>) {
     emit(out, &text);
 }
 
-/// `--debug-edid <num>`: the "Read profile from monitor" flow, headless.
+/// `--debug-edid <num>`: the "Read from monitor" flow, headless.
 pub fn read_edid(num: u32, out: Option<&Path>) {
     let r = app::execute(UiAction::ReadEdid {
         mon: num.saturating_sub(1) as usize,

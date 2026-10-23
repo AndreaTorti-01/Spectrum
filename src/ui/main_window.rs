@@ -7,9 +7,10 @@ use super::draw::{
     Canvas, Fonts, Theme, R, TA_CENTER, TA_LEFT, TA_RIGHT, WM_MOUSELEAVE,
 };
 use super::widgets::{
-    self, black_scale, draw_button, draw_checkbox, draw_dropdown, draw_slider, draw_slider_tick, draw_toggle,
-    full_scale, key_to_t, peak_scale, round_black, round_nits, round_sdr_white_nits, sat_scale, slider_t_at,
-    white_scale, BtnStyle, Ctx, Kind, WidgetList, DROPDOWN_DISMISSED,
+    self, black_scale, draw_button, draw_checkbox, draw_dropdown, draw_expander, draw_slider,
+    draw_slider_tick, draw_toggle, full_scale, key_to_t, peak_scale, round_black, round_nits,
+    round_sdr_white_nits, sat_scale, slider_t_at, white_scale, BtnStyle, Ctx, Kind, WidgetList,
+    DROPDOWN_DISMISSED,
 };
 use crate::app::{UiAction, UiMonitor, UiState};
 use crate::icc_write::HdrParams;
@@ -35,14 +36,19 @@ use windows_sys::Win32::UI::WindowsAndMessaging::{
     WM_SETTINGCHANGE, WM_TIMER, WNDCLASSEXW, WS_CAPTION, WS_MINIMIZEBOX, WS_OVERLAPPED, WS_SYSMENU,
 };
 
+use super::design::{
+    self, CAPTION_H, CHECK, CONTROL_H, HEADING_H, PAD, ROW_H, SPACE_L, SPACE_M, SPACE_S, SPACE_XS, TOGGLE_H,
+    TOGGLE_W,
+};
+
 const CLASS: &str = "SpectrumMainWindow";
 const CLIENT_W: i32 = 440;
-/// Client height with the HDR "Advanced" rows collapsed; expanded adds `ADV_H`.
-const CLIENT_H: i32 = 556;
-/// Height of one Advanced row: four sliders and the "Allow SDR content above the monitor peak" toggle.
-const ADV_ROW: i32 = 30;
-const ADV_H: i32 = 5 * ADV_ROW;
-const MARGIN: i32 = 20;
+const MARGIN: i32 = PAD;
+/// Width of the label and value columns of a slider row.
+const LABEL_W: i32 = 128;
+const VALUE_W: i32 = 80;
+const IDENTIFY_W: i32 = 96;
+const MAP_H: i32 = 80;
 const WM_DROPDOWN_DONE: u32 = WM_APP + 10;
 const TIMER_COMMIT: usize = 1;
 const COMMIT_DELAY_MS: u32 = 400;
@@ -122,7 +128,7 @@ struct Geo {
     map: R,
     identify: R,
     info: R,
-    sdr_label: R,
+    sdr_head: R,
     sdr: R,
     read: R,
     compare: R,
@@ -136,58 +142,99 @@ struct Geo {
     rows: [(R, R, R); 5],
     /// Advanced toggle row: (label, toggle)
     cap: (R, R),
+    /// Only laid out (non-empty) while HDR is on.
     reset: R,
     div2: i32,
     autostart: R,
     status: R,
+    /// Client height in physical pixels.
+    h: i32,
 }
 
-fn client_h(advanced: bool) -> i32 {
-    CLIENT_H + if advanced { ADV_H } else { 0 }
+/// Which optional groups take space: the Advanced rows and the HDR restore button.
+#[derive(Clone, Copy, PartialEq, Eq, Default)]
+struct Shape {
+    advanced: bool,
+    restore: bool,
 }
 
-fn geo(dpi: u32, advanced: bool) -> Geo {
+fn client_h(shape: Shape) -> i32 {
+    geo(96, shape).h
+}
+
+/// The whole window is one vertical flow built from the design tokens.
+fn geo(dpi: u32, shape: Shape) -> Geo {
     let s = |v: i32| sc(v, dpi);
-    let right = CLIENT_W - MARGIN;
-    let row = |y: i32| {
+    let (x0, x1) = (MARGIN, CLIENT_W - MARGIN);
+    let rect = |l: i32, t: i32, r: i32, b: i32| R::new(s(l), s(t), s(r), s(b));
+    let slider_row = |y: i32| {
         (
-            R::new(s(MARGIN), s(y), s(134), s(y + 34)),
-            R::new(s(138), s(y + 3), s(322), s(y + 31)),
-            R::new(s(326), s(y), s(right), s(y + 34)),
+            rect(x0, y, x0 + LABEL_W, y + CONTROL_H),
+            rect(x0 + LABEL_W + SPACE_XS, y, x1 - VALUE_W - SPACE_XS, y + CONTROL_H),
+            rect(x1 - VALUE_W, y, x1, y + CONTROL_H),
         )
     };
-    // SDR content first, then the Advanced row and its four sliders (Black, Peak, Full-frame, Saturation).
-    let mut rows = [row(0); 5];
-    rows[4] = row(384);
-    for (i, r) in rows.iter_mut().take(4).enumerate() {
-        *r = row(456 + i as i32 * ADV_ROW);
+    let mut g = Geo::default();
+    let mut y = PAD;
+
+    // Monitors: map on the left, Identify on the right.
+    g.map = rect(x0, y, x1 - IDENTIFY_W - SPACE_M, y + MAP_H);
+    g.identify = rect(x1 - IDENTIFY_W, y, x1, y + CONTROL_H);
+    y += MAP_H + SPACE_S;
+    g.info = rect(x0, y, x1, y + CAPTION_H + 2);
+    y += CAPTION_H + 2 + SPACE_L;
+
+    // SDR section: heading and profile dropdown on one row, then the three actions in one row.
+    g.sdr_head = rect(x0, y, x0 + LABEL_W, y + CONTROL_H);
+    g.sdr = rect(x0 + LABEL_W + SPACE_XS, y, x1, y + CONTROL_H);
+    y += CONTROL_H + SPACE_S;
+    let bw = (x1 - x0 - 2 * SPACE_S) / 3;
+    g.read = rect(x0, y, x0 + bw, y + CONTROL_H);
+    g.compare = rect(x0 + bw + SPACE_S, y, x0 + 2 * bw + SPACE_S, y + CONTROL_H);
+    g.manage = rect(x1 - bw, y, x1, y + CONTROL_H);
+    y += CONTROL_H + SPACE_L;
+    g.div1 = s(y);
+    y += 1 + SPACE_L;
+
+    // HDR section.
+    g.hdr_head = rect(x0, y, x0 + 80, y + HEADING_H);
+    g.hdr_hint = rect(x0 + 80, y, x1 - TOGGLE_W - SPACE_M, y + HEADING_H);
+    let ty = y + (HEADING_H - TOGGLE_H) / 2;
+    g.toggle = rect(x1 - TOGGLE_W, ty, x1, ty + TOGGLE_H);
+    y += HEADING_H + SPACE_S;
+    g.rows[4] = slider_row(y);
+    y += ROW_H;
+    g.advanced = rect(x0, y, x1, y + CONTROL_H);
+    y += CONTROL_H;
+    if shape.advanced {
+        y += SPACE_XS;
+        for i in 0..4 {
+            g.rows[i] = slider_row(y);
+            y += ROW_H;
+        }
+        let ty = y + (CONTROL_H - TOGGLE_H) / 2;
+        g.cap = (
+            rect(x0, y, x1 - TOGGLE_W - SPACE_M, y + CONTROL_H),
+            rect(x1 - TOGGLE_W, ty, x1, ty + TOGGLE_H),
+        );
+        y += ROW_H;
     }
-    let cap_y = 456 + 4 * ADV_ROW;
-    let y = 456 + if advanced { ADV_H } else { 0 };
-    Geo {
-        map: R::new(s(MARGIN), s(16), s(330), s(128)),
-        identify: R::new(s(right - 70), s(14), s(right), s(40)),
-        info: R::new(s(MARGIN), s(134), s(right), s(158)),
-        sdr_label: R::new(s(MARGIN), s(170), s(122), s(204)),
-        sdr: R::new(s(126), s(170), s(right), s(204)),
-        read: R::new(s(MARGIN), s(216), s(right), s(250)),
-        compare: R::new(s(MARGIN), s(256), s(right), s(290)),
-        manage: R::new(s(MARGIN), s(296), s(right), s(330)),
-        div1: s(340),
-        hdr_head: R::new(s(MARGIN), s(348), s(120), s(380)),
-        hdr_hint: R::new(s(120), s(348), s(right - 58), s(380)),
-        toggle: R::new(s(right - 44), s(353), s(right), s(375)),
-        advanced: R::new(s(MARGIN), s(424), s(MARGIN + 96), s(450)),
-        rows,
-        cap: (
-            R::new(s(MARGIN), s(cap_y), s(right - 56), s(cap_y + ADV_ROW)),
-            R::new(s(right - 44), s(cap_y + 6), s(right), s(cap_y + 28)),
-        ),
-        reset: R::new(s(MARGIN), s(y + 4), s(MARGIN + 160), s(y + 32)),
-        div2: s(y + 38),
-        autostart: R::new(s(MARGIN), s(y + 46), s(right), s(y + 70)),
-        status: R::new(s(MARGIN), s(y + 74), s(right), s(y + 94)),
+    if shape.restore {
+        y += SPACE_S;
+        g.reset = rect(x0, y, x1, y + CONTROL_H);
+        y += CONTROL_H;
     }
+    y += SPACE_L;
+    g.div2 = s(y);
+    y += 1 + SPACE_L;
+
+    // Footer.
+    g.autostart = rect(x0, y, x1, y + CHECK + 4);
+    y += CHECK + 4 + SPACE_S;
+    g.status = rect(x0, y, x1, y + CAPTION_H);
+    y += CAPTION_H + PAD;
+    g.h = s(y);
+    g
 }
 
 impl Main {
@@ -200,6 +247,13 @@ impl Main {
         match self.mon() {
             Some(m) => t.with_accent(m.accent),
             None => t,
+        }
+    }
+
+    fn shape(&self) -> Shape {
+        Shape {
+            advanced: self.st.advanced,
+            restore: self.hdr_enabled(),
         }
     }
 
@@ -322,7 +376,7 @@ impl Main {
 
     fn layout(&mut self) {
         let dpi = self.dpi;
-        let g = geo(dpi, self.st.advanced);
+        let g = geo(dpi, self.shape());
         self.geo = g;
         let mon = self.mon().cloned();
         let hdr_on = self.hdr_enabled();
@@ -335,7 +389,7 @@ impl Main {
         }
         self.ui.add(
             Id::Identify,
-            Kind::TextButton,
+            Kind::Button,
             g.identify,
             !self.st.monitors.is_empty(),
             true,
@@ -366,8 +420,7 @@ impl Main {
             hdr_on && white_live,
             true,
         );
-        self.ui
-            .add(Id::Advanced, Kind::TextButton, g.advanced, true, true);
+        self.ui.add(Id::Advanced, Kind::Button, g.advanced, true, true);
         if self.st.advanced {
             for (i, id) in SLIDERS.iter().take(4).enumerate() {
                 self.ui.add(*id, Kind::Slider, g.rows[i].1, hdr_on, true);
@@ -376,13 +429,9 @@ impl Main {
                 self.ui.add(Id::SdrCap, Kind::Toggle, g.cap.1, hdr_on, true);
             }
         }
-        self.ui.add(
-            Id::Reset,
-            Kind::TextButton,
-            g.reset,
-            mon.as_ref().map(|m| m.hdr_supported).unwrap_or(false),
-            true,
-        );
+        if hdr_on {
+            self.ui.add(Id::Reset, Kind::Button, g.reset, true, true);
+        }
         self.ui
             .add(Id::Autostart, Kind::Checkbox, g.autostart, true, true);
         // drop focus that points at something now disabled
@@ -558,9 +607,9 @@ impl Main {
                 mix(m.accent, 0x000000, 0.38)
             };
             let font = if r.h() < sc(46, dpi) {
-                self.fonts.heading
+                self.fonts.subtitle
             } else {
-                self.fonts.big
+                self.fonts.display
             };
             c.text(r, &m.num.to_string(), font, num, TA_CENTER);
         }
@@ -571,7 +620,7 @@ impl Main {
             g.identify,
             "Identify",
             ui.state(Id::Identify),
-            BtnStyle::Text,
+            BtnStyle::Secondary,
         );
 
         // info line
@@ -601,7 +650,7 @@ impl Main {
         }
 
         // SDR profile
-        c.text(g.sdr_label, "SDR profile", self.fonts.body, th.text, TA_LEFT);
+        c.text(g.sdr_head, "SDR profile", self.fonts.subtitle, th.text, TA_LEFT);
         let sdr_text = mon
             .and_then(|m| {
                 m.sdr_current
@@ -621,9 +670,9 @@ impl Main {
             c,
             &ctx,
             g.read,
-            "Read profile from monitor",
+            "Read from monitor",
             ui.state(Id::Read),
-            BtnStyle::Normal,
+            BtnStyle::Secondary,
         );
         draw_button(
             c,
@@ -631,7 +680,7 @@ impl Main {
             g.compare,
             "Compare gamuts\u{2026}",
             ui.state(Id::Compare),
-            BtnStyle::Normal,
+            BtnStyle::Secondary,
         );
         draw_button(
             c,
@@ -639,7 +688,7 @@ impl Main {
             g.manage,
             "Manage profiles\u{2026}",
             ui.state(Id::Manage),
-            BtnStyle::Normal,
+            BtnStyle::Secondary,
         );
 
         // HDR
@@ -647,19 +696,19 @@ impl Main {
             R::new(sc(MARGIN, dpi), g.div1, sc(CLIENT_W - MARGIN, dpi), g.div1 + 1),
             th.line,
         );
-        c.text(g.hdr_head, "HDR", self.fonts.heading, th.text, TA_LEFT);
+        c.text(g.hdr_head, "HDR", self.fonts.subtitle, th.text, TA_LEFT);
         let hint = match mon {
             Some(m) if !m.hdr_supported => Some("Not supported by this display".to_string()),
             Some(m) if !m.hdr_on => Some("Turn on HDR to tune it".to_string()),
             _ => None,
         };
         if let Some(h) = hint {
-            let col = match (self.hdr_enabled(), th.dark) {
-                (true, true) => 0xFFB347,
-                (true, false) => 0xB45309,
-                _ => th.text_dim,
+            let col = if self.hdr_enabled() {
+                design::warning(&th)
+            } else {
+                th.text_dim
             };
-            c.text(g.hdr_hint, &h, self.fonts.dim, col, TA_RIGHT);
+            c.text(g.hdr_hint, &h, self.fonts.caption, col, TA_RIGHT);
         }
         draw_toggle(
             c,
@@ -669,9 +718,9 @@ impl Main {
             ui.state(Id::HdrToggle),
         );
         let enabled = self.hdr_enabled();
-        let dim_text = mix(th.text, th.bg, 0.55);
+        let dim_text = design::disabled_text(&th);
         let dim_val = mix(th.text_dim, th.bg, 0.5);
-        let amber = if th.dark { 0xFFB347 } else { 0xB45309 };
+        let amber = design::warning(&th);
         let above = enabled && mon.is_some_and(|m| m.sdr_over_cap(self.white));
         let labels = [
             "Black level",
@@ -722,23 +771,24 @@ impl Main {
                 ui.state(Id::SdrCap),
             );
         }
-        let chevron = if self.st.advanced { "\u{25BE}" } else { "\u{25B8}" };
-        draw_button(
+        draw_expander(
             c,
             &ctx,
             g.advanced,
-            &format!("Advanced {chevron}"),
+            "Advanced",
+            self.st.advanced,
             ui.state(Id::Advanced),
-            BtnStyle::Text,
         );
-        draw_button(
-            c,
-            &ctx,
-            g.reset,
-            "Restore default values",
-            ui.state(Id::Reset),
-            BtnStyle::Text,
-        );
+        if self.shape().restore {
+            draw_button(
+                c,
+                &ctx,
+                g.reset,
+                "Restore recommended HDR settings",
+                ui.state(Id::Reset),
+                BtnStyle::Secondary,
+            );
+        }
 
         // footer
         c.fill_rect(
@@ -754,7 +804,7 @@ impl Main {
             ui.state(Id::Autostart),
         );
         if let Some(s) = &self.st.status {
-            c.text(g.status, s, self.fonts.dim, th.text_dim, TA_LEFT);
+            c.text(g.status, s, self.fonts.caption, th.text_dim, TA_LEFT);
         }
     }
 }
@@ -835,7 +885,7 @@ pub fn open() {
         tracking: false,
         dd_closed_at: None,
         icons: [std::ptr::null_mut(); 2],
-        geo: geo(dpi, false),
+        geo: geo(dpi, Shape::default()),
     };
     MAIN.with(|m| *m.borrow_mut() = Some(main));
     with(|m| {
@@ -844,8 +894,8 @@ pub fn open() {
     });
 
     let style = WS_OVERLAPPED | WS_CAPTION | WS_SYSMENU | WS_MINIMIZEBOX;
-    let adv = with(|m| m.st.advanced).unwrap_or(false);
-    let (cw, ch) = (sc(CLIENT_W, dpi), sc(client_h(adv), dpi));
+    let shape = with(|m| m.shape()).unwrap_or_default();
+    let (cw, ch) = (sc(CLIENT_W, dpi), sc(client_h(shape), dpi));
     let mut r = RECT {
         left: 0,
         top: 0,
@@ -918,13 +968,20 @@ pub fn request_close() {
 }
 
 pub fn refresh() {
-    with(|m| {
+    // HDR turning on or off adds or removes the restore button, so the window may need a new height.
+    let resize = with(|m| {
+        let before = m.geo.h;
         m.st = super::snapshot();
         m.fix_sel();
         m.sync_hdr();
         m.layout();
         m.invalidate();
-    });
+        (m.geo.h != before).then_some((m.hwnd, m.dpi))
+    })
+    .flatten();
+    if let Some((h, dpi)) = resize {
+        on_dpi_changed(h, dpi, None);
+    }
 }
 
 pub fn is_open() -> bool {
@@ -1089,14 +1146,14 @@ fn close_requested() {
 }
 
 fn on_dpi_changed(hwnd: HWND, dpi: u32, suggested: Option<RECT>) {
-    let adv = with(|m| {
+    let shape = with(|m| {
         m.dpi = dpi;
         m.fonts = Fonts::new(dpi);
         m.canvas = None;
         m.layout();
-        m.st.advanced
+        m.shape()
     })
-    .unwrap_or(false);
+    .unwrap_or_default();
     refresh_icons(hwnd, dpi);
     // SAFETY: valid window; nested messages are handled with MAIN unborrowed.
     unsafe {
@@ -1108,7 +1165,7 @@ fn on_dpi_changed(hwnd: HWND, dpi: u32, suggested: Option<RECT>) {
                     left: 0,
                     top: 0,
                     right: sc(CLIENT_W, dpi),
-                    bottom: sc(client_h(adv), dpi),
+                    bottom: sc(client_h(shape), dpi),
                 };
                 AdjustWindowRectExForDpi(&mut r, style, 0, 0, super::draw::frame_dpi(dpi));
                 let mut cur: RECT = std::mem::zeroed();

@@ -348,13 +348,16 @@ impl R {
 // Fonts
 // ---------------------------------------------------------------------------------------------
 
+/// The type ramp from `design.rs`: caption, body, body strong, subtitle and display.
 pub struct Fonts {
+    pub caption: HFONT,
     pub body: HFONT,
-    pub dim: HFONT,
-    pub heading: HFONT,
     /// Semibold body size, for a title line above `body` text.
-    pub title: HFONT,
-    pub big: HFONT,
+    pub strong: HFONT,
+    /// Section headings.
+    pub subtitle: HFONT,
+    /// Monitor numbers.
+    pub display: HFONT,
 }
 
 unsafe extern "system" fn enum_font_cb(
@@ -437,13 +440,17 @@ pub fn make_font_px(face: &str, height: i32, weight: i32, quality: u8) -> HFONT 
 
 impl Fonts {
     pub fn new(dpi: u32) -> Fonts {
+        use super::design::{FONT_BODY, FONT_CAPTION, FONT_DISPLAY, FONT_SUBTITLE};
         let (text, display) = *faces();
+        let px = |size: i32, face: &str, weight: i32| {
+            make_font_px(face, -sc(size, dpi), weight, CLEARTYPE_QUALITY)
+        };
         Fonts {
-            body: make_font(text, 10.0, 400, dpi, CLEARTYPE_QUALITY),
-            dim: make_font(text, 9.0, 400, dpi, CLEARTYPE_QUALITY),
-            heading: make_font(display, 13.0, 600, dpi, CLEARTYPE_QUALITY),
-            title: make_font(text, 10.0, 600, dpi, CLEARTYPE_QUALITY),
-            big: make_font(display, 28.0, 600, dpi, CLEARTYPE_QUALITY),
+            caption: px(FONT_CAPTION, text, 400),
+            body: px(FONT_BODY, text, 400),
+            strong: px(FONT_BODY, text, 600),
+            subtitle: px(FONT_SUBTITLE, display, 600),
+            display: px(FONT_DISPLAY, display, 600),
         }
     }
 }
@@ -452,7 +459,7 @@ impl Drop for Fonts {
     fn drop(&mut self) {
         // SAFETY: handles created by CreateFontW and owned here.
         unsafe {
-            for f in [self.body, self.dim, self.heading, self.title, self.big] {
+            for f in [self.caption, self.body, self.strong, self.subtitle, self.display] {
                 if !f.is_null() {
                     DeleteObject(f as HGDIOBJ);
                 }
