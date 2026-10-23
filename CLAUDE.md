@@ -1,6 +1,8 @@
 # Spectrum
 
-Rust Windows tray app that builds ICC and HDR (MHC2) profiles from a monitor's EDID and applies them per monitor. Library in `src/lib.rs`, thin CLI shell in `src/main.rs`.
+Rust Windows tray app that builds ICC and HDR (MHC2) profiles from a monitor's EDID and applies them per monitor. Library in `src/lib.rs`, thin CLI shell in `src/main.rs`. The showcase website is in `site/` (Vite + TypeScript).
+
+Owner: Andrea Torti (MIT). Repo `https://github.com/AndreaTorti-01/Spectrum`, site `https://andreatorti-01.github.io/Spectrum/`. Shipping a version or redeploying the site follows the `release` skill.
 
 ## Commands
 
@@ -48,7 +50,7 @@ Switches (each takes `--out <file>`; monitor numbers are the 1-based numbers in 
 - `--debug-open main|main-hdr|gamut|profiles|traymenu|gamut-showcase|profiles-showcase|traymenu-showcase`, `--debug-demo`, `--debug-stage`, `--debug-scale`: screenshots only. See the `screenshots` skill.
 - Showcase captures (`main-hdr`, `*-showcase`, `--debug-demo`) use `src/showcase.rs`: fixed data from the QD-OLED EDID fixture, so they look the same on any machine. Extend that module when the UI gains state.
 
-Before changing the owner's real color settings (default profile, associations, HDR state), take a `--debug-dump` and plan to restore it afterwards; ask first if the change isn't part of the task. HDR toggles flash the screen. `examples/sysprobe.rs` is a read-only probe.
+Before changing the owner's real color settings (default profile, associations, HDR state, SDR content brightness), take a `--debug-dump` and plan to restore it afterwards; ask first if the change isn't part of the task. The recipe that worked every time: dump, run the switch with `--out`, dump again and compare, put back whatever the test changed with the matching switch (for example `--debug-sdr-white 1 <original nits>`), and confirm a final dump matches the first. HDR toggles flash the screen. `examples/sysprobe.rs` is a read-only probe.
 
 ## Gotchas
 
@@ -65,7 +67,8 @@ Before changing the owner's real color settings (default profile, associations, 
 - Parallel agents work in git worktrees under `.claude/worktrees/` (gitignored).
 - Commit messages usually end with `Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>` after a blank line.
 - Human-readable text (UI strings, docs, commit messages, PR text, release notes) is easiest to keep consistent by following `.claude/rules/copy.md`. Code and comments are exempt.
-- UI changes are best reviewed with light and dark screenshots. The `screenshots` skill covers it.
-- Website guidance: `.claude/rules/site.md`.
+- UI changes are best reviewed with light and dark screenshots. The `screenshots` skill covers it, including what to update when the main window layout moves.
+- Website guidance: `.claude/rules/site.md`. Every visible site string is recorded in `site/copy.md`; update it with the page.
+- Not yet verified on real hardware: the Inno installer's install and `--cleanup` uninstall round trip. Everything else was exercised on the owner's QD-OLED HDR monitor (Windows 11 build 26300).
 - `SETUP-NOTES.txt` is the owner's private, gitignored file. Keep it out of commits and public text.
 - Prefer PowerShell or Node over `python3` for quick checks: on this PC `python3` is the Microsoft Store alias, and a heredoc run through it waited without exiting until it was stopped by hand. Give any command that can wait (interpreters, UI Automation reads, servers) a `timeout`, and stop helpers you start (`npm run shots` leaves `vite preview` on port 4173) before reporting.

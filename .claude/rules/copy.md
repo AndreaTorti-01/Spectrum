@@ -11,6 +11,8 @@ paths:
 
 These cover all human-readable text except code: UI strings (including the gamut-space descriptions in `color.rs`), README, website, issue and PR templates, `.claude/` docs, release notes, commit messages and PR descriptions. Identifiers and code comments are exempt.
 
+Text the owner wrote and asked for verbatim (the hero description that also opens the README, the tray headline "Monitor color profile switching, just one click away.") stays as written even where it breaks these rules. Fix only an obvious typo, and say so. `site/copy.md` notes which strings are the owner's.
+
 Visuals carry the message and text captions them. The giveaway of machine-written copy is volume: text that explains what the reader can already see, restates the headline or describes benefits in the abstract.
 
 ## App UI strings

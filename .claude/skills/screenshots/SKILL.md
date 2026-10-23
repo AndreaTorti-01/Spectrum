@@ -32,6 +32,15 @@ cargo build --release
 - Everything lands in `docs\screenshots`, then the script copies the same files to `site\src\shots`.
 - Which file goes where: the README uses the `*-1x.png` files and `traymenu-<t>.png` (GitHub shows images at pixel size). The site uses only the plain names, never the `-1x` files (`site/scripts/images.mjs` enforces this).
 
+## 2b. When the main window layout changes
+
+Two things measure the main window in logical pixels (440 wide, Advanced open, HDR on) and go stale when its rows move:
+
+- the HDR crop in `scripts/capture.ps1` (the client rows of the HDR section, searched as `HDR section: client rows`);
+- the callout targets in `site/src/data/hotspots.ts` (Identify button, SDR dropdown, Peak brightness value).
+
+Read the new y positions from `geo()` in `src/ui/main_window.rs` and update both, then check the `hdr-*` crops and the site's window section. The 2x main window has to fit the 1440p screen (about 690 logical px tall at most), or the capture fails.
+
 ## 3. Privacy guards (worth keeping)
 
 - `--debug-stage` covers the primary work area with a solid topmost backdrop, so the desktop, wallpaper and other windows cannot appear.
@@ -59,11 +68,11 @@ npm run shots -- --reduced | --nojs | --widths 320,360 | --longtasks
 ```
 
 - `site/scripts/shots.mjs` has no dependencies: it starts `vite preview` if needed, launches headless Edge with `--remote-debugging-port` and talks CDP over Node's WebSocket. It emulates the viewport (the plain `msedge --headless --screenshot --window-size=390,844` call is laid out at about 500 px and captures before the page is ready, so it's a poor fit), loads `?shot=<id>&theme=<t>`, waits for fonts and `window.__shotReady`, and writes `<id>-<width>-<theme>.png`. The default folder is `screenshots-raw/site` (gitignored).
-- `<id>` is a `<section id>` from `site/index.html` (hero, edid, window, hdr, gamut, tray, drivers, download) or `all`.
+- `<id>` is a `<section id>` from `site/index.html` (hero, window, hdr, gamut, tray) or `all`.
 - Prefer the scratchpad or a temp folder over the repo for these, unless the task is the social preview image.
 - `npm run shots` leaves the `vite preview` server it started running on port 4173. Stopping it afterwards (`Stop-Process` on the `node` that runs `vite.js preview`) avoids an orphan that outlives the session.
 - After changing `site/src/shots/`, run `npm run images` (or `npm run build`) to regenerate AVIF and WebP.
-- The tray menu is drawn by Windows: `--debug-scale` does not change it, so `traymenu-<theme>.png` stays a 1x capture (220x200). The site shows it at 220 CSS px and never larger.
+- The tray menu is drawn by Windows: `--debug-scale` does not change it, so `traymenu-<theme>.png` stays a 1x capture (about 200 px wide; its height grows with the profile list). The site shows it at its natural width and never larger.
 
 ## 6. Inspect before committing
 
