@@ -1,5 +1,5 @@
-//! Fixed data for the screenshot paths: `--debug-open main-hdr | gamut-showcase | profiles-showcase |
-//! traymenu-showcase` and `--debug-demo`. The builders here read nothing from the machine, so the pictures
+//! Fixed data for the screenshot paths: `--render` and `--debug-open main-hdr | gamut-showcase |
+//! profiles-showcase | traymenu-showcase`. The builders here read nothing from the machine, so the pictures
 //! look the same everywhere. The monitor is a QD-OLED 27: its EDID is `tests/fixtures/edid_qdoled.bin`, and the
 //! profile rows are made up to match it. Extend this module when the UI gains state.
 

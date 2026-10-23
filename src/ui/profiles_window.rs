@@ -116,6 +116,27 @@ fn geo(dpi: u32) -> Geo {
 }
 
 impl Profiles {
+    /// Window state at `dpi`. No window yet.
+    fn new(rows: Vec<ProfileRow>, mock: bool, dpi: u32) -> Profiles {
+        Profiles {
+            hwnd: std::ptr::null_mut(),
+            dpi,
+            fonts: Fonts::new(dpi),
+            canvas: None,
+            rows,
+            scroll: 0,
+            hover: None,
+            mouse: (-1, -1),
+            pressed: None,
+            confirm: None,
+            status: None,
+            tracking: false,
+            drag: None,
+            icons: [std::ptr::null_mut(); 2],
+            mock,
+        }
+    }
+
     fn content_h(&self) -> i32 {
         self.rows.len() as i32 * sc(ROW_H, self.dpi)
     }
@@ -396,23 +417,7 @@ fn open_rows(mock: Option<Vec<ProfileRow>>) {
     let dpi = system_dpi();
     let is_mock = mock.is_some();
     let rows = mock.unwrap_or_else(crate::app::list_profiles);
-    let p = Profiles {
-        hwnd: std::ptr::null_mut(),
-        dpi,
-        fonts: Fonts::new(dpi),
-        canvas: None,
-        rows,
-        scroll: 0,
-        hover: None,
-        mouse: (-1, -1),
-        pressed: None,
-        confirm: None,
-        status: None,
-        tracking: false,
-        drag: None,
-        icons: [std::ptr::null_mut(); 2],
-        mock: is_mock,
-    };
+    let p = Profiles::new(rows, is_mock, dpi);
     PROFILES.with(|m| *m.borrow_mut() = Some(p));
 
     let style = WS_OVERLAPPED | WS_CAPTION | WS_SYSMENU | WS_MINIMIZEBOX;
@@ -463,6 +468,14 @@ fn open_rows(mock: Option<Vec<ProfileRow>>) {
             on_dpi_changed(hwnd, actual, None);
         }
     }
+}
+
+/// Off-screen render of `rows` at `dpi` (`--render profiles`), without a window.
+pub fn render_showcase(rows: Vec<ProfileRow>, dpi: u32) -> Option<Canvas> {
+    let mut p = Profiles::new(rows, true, dpi);
+    let mut c = Canvas::new(sc(CLIENT_W, dpi), sc(CLIENT_H, dpi))?;
+    p.draw(&mut c);
+    Some(c)
 }
 
 pub fn close() {

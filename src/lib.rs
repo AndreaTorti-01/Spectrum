@@ -14,6 +14,7 @@ pub mod icon;
 pub mod icon_png;
 pub mod icon_render;
 pub mod monitors;
+pub mod render;
 pub mod showcase;
 pub mod tray;
 pub mod ui;

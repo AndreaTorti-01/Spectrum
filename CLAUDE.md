@@ -47,8 +47,9 @@ Switches (each takes `--out <file>`; monitor numbers are the 1-based numbers in 
 - `--debug-dxgi <n>`: min, max and full-frame luminance, primaries and color space that Windows reports for the monitor (also in `--debug-dump`). Read-only.
 - `--debug-wipe <n>` removes Spectrum's associations (simulates a driver update); `--debug-reconcile` runs reconcile once.
 - `--debug-tray-cmd <id>`: runs a tray menu command in the running instance.
-- `--debug-open main|main-hdr|gamut|profiles|traymenu|gamut-showcase|profiles-showcase|traymenu-showcase`, `--debug-demo`, `--debug-stage`, `--debug-scale`: screenshots only. See the `screenshots` skill.
-- Showcase captures (`main-hdr`, `*-showcase`, `--debug-demo`) use `src/showcase.rs`: fixed data from the QD-OLED EDID fixture, so they look the same on any machine. Extend that module when the UI gains state.
+- `--render main|gamut|profiles|hdr|traymenu|layout|demo --theme light|dark --scale <f> [--frame] --out <file>`: off-screen screenshots (`src/render.rs`). No window opens. See the `screenshots` skill.
+- `--debug-open main|main-hdr|gamut|profiles|traymenu|gamut-showcase|profiles-showcase|traymenu-showcase`, `--debug-scale`: open the real windows to look at them.
+- `--render`, `main-hdr` and `*-showcase` use `src/showcase.rs`: fixed data from the QD-OLED EDID fixture, so they look the same on any machine. Extend that module when the UI gains state.
 
 Before changing the owner's real color settings (default profile, associations, HDR state, SDR content brightness), take a `--debug-dump` and plan to restore it afterwards; ask first if the change isn't part of the task. The recipe that worked every time: dump, run the switch with `--out`, dump again and compare, put back whatever the test changed with the matching switch (for example `--debug-sdr-white 1 <original nits>`), and confirm a final dump matches the first. HDR toggles flash the screen. `examples/sysprobe.rs` is a read-only probe.
 

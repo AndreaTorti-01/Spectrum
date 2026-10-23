@@ -27,17 +27,7 @@ const ID_EXIT: u32 = 2;
 const ID_HDR_BASE: u32 = 900;
 const ID_SDR_BASE: u32 = 1000;
 /// Menu items per monitor are limited so ids stay decodable.
-const MAX_PER_MONITOR: usize = 99;
-
-thread_local! {
-    /// Screen point the next menu is anchored at, instead of the cursor (screenshots).
-    static ANCHOR: std::cell::Cell<Option<(i32, i32)>> = const { std::cell::Cell::new(None) };
-}
-
-/// Makes the next menus open with their bottom-left corner at `p` instead of at the cursor.
-pub fn set_menu_anchor(p: Option<(i32, i32)>) {
-    ANCHOR.with(|a| a.set(p));
-}
+pub const MAX_PER_MONITOR: usize = 99;
 
 /// The HICON currently owned by the tray entry (0 = none).
 static ICON: AtomicIsize = AtomicIsize::new(0);
@@ -51,6 +41,19 @@ pub struct MenuMonitor {
     pub current: Option<usize>,
     pub hdr_supported: bool,
     pub hdr_on: bool,
+}
+
+impl MenuMonitor {
+    /// The menu entry for a monitor of the UI state (mock state and screenshots).
+    pub fn from_ui(u: &crate::app::UiMonitor) -> MenuMonitor {
+        MenuMonitor {
+            label: format!("{} \u{b7} {}", u.num, u.name),
+            profiles: u.sdr_options.clone(),
+            current: u.sdr_current,
+            hdr_supported: u.hdr_supported,
+            hdr_on: u.hdr_on,
+        }
+    }
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -254,9 +257,6 @@ pub fn show_menu(hwnd: HWND, monitors: &[MenuMonitor]) -> Option<TrayCmd> {
 
         let mut pt = POINT { x: 0, y: 0 };
         GetCursorPos(&mut pt);
-        if let Some((x, y)) = ANCHOR.with(|a| a.get()) {
-            pt = POINT { x, y };
-        }
         SetForegroundWindow(hwnd);
         let id = TrackPopupMenu(
             menu,

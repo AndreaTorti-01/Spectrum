@@ -1,4 +1,4 @@
-// Joins screenshots-raw/demo-{light,dark}/frame-*.png (recorded at 10 fps by scripts/capture.ps1 -Demo) into
+// Joins screenshots-raw/demo-{light,dark}/frame-*.png (rendered at 10 fps by scripts/render.ps1 -Demo) into
 // docs/demo-light.webp and docs/demo-dark.webp: animated, looping forever, 100 ms per frame, with runs of
 // identical frames (the holds) merged into one frame with a longer delay. At most 2 MB each. Run: npm run demo
 import sharp from "sharp";

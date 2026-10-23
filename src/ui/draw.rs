@@ -371,7 +371,7 @@ unsafe extern "system" fn enum_font_cb(
     0
 }
 
-fn font_exists(face: &str) -> bool {
+pub fn font_exists(face: &str) -> bool {
     // SAFETY: LOGFONTW zero-init is valid; callback only writes the bool.
     unsafe {
         let hdc = GetDC(std::ptr::null_mut());
@@ -545,6 +545,15 @@ pub const TA_LEFT: u32 = 0;
 pub const TA_CENTER: u32 = 1;
 pub const TA_RIGHT: u32 = 2;
 
+/// Shadow falloff for [`Canvas::shadow`]: (alpha at the edge, length in px at 96 dpi) beside, below and
+/// above the rect.
+#[derive(Clone, Copy, Debug)]
+pub struct Shadow {
+    pub side: (f32, f32),
+    pub bottom: (f32, f32),
+    pub top: (f32, f32),
+}
+
 /// Back buffer: a memory DC with a DIB selected. All painting happens here, then `present` blits it.
 pub struct Canvas {
     pub dc: HDC,
@@ -597,6 +606,96 @@ impl Canvas {
         unsafe {
             BitBlt(dst, x, y, self.dib.w, self.dib.h, self.dc, 0, 0, SRCCOPY);
         }
+    }
+
+    /// The pixels (`0x00RRGGBB`, top-down), with any pending GDI text flushed in.
+    pub fn pixels(&mut self) -> &mut [u32] {
+        self.sync();
+        self.dib.pixels()
+    }
+
+    /// The canvas as an opaque PNG file (off-screen screenshots).
+    pub fn to_png(&mut self) -> Vec<u8> {
+        let (w, h) = (self.dib.w as u32, self.dib.h as u32);
+        let rgba: Vec<u8> = self
+            .pixels()
+            .iter()
+            .flat_map(|&p| [(p >> 16) as u8, (p >> 8) as u8, p as u8, 0xFF])
+            .collect();
+        crate::icon_png::encode_rgba_wh(w, h, &rgba)
+    }
+
+    /// Copies `src` with its top-left corner at (x, y).
+    pub fn draw_canvas(&mut self, x: i32, y: i32, src: &mut Canvas) {
+        let (sw, sh) = (src.width(), src.height());
+        let (cw, ch) = (self.dib.w, self.dib.h);
+        let sp = src.pixels().to_vec();
+        let px = self.pixels();
+        for j in 0..sh {
+            let dy = y + j;
+            if dy < 0 || dy >= ch {
+                continue;
+            }
+            for i in 0..sw {
+                let dx = x + i;
+                if dx >= 0 && dx < cw {
+                    px[(dy * cw + dx) as usize] = sp[(j * sw + i) as usize];
+                }
+            }
+        }
+    }
+
+    /// Soft shadow around `r`, like the one DWM draws under windows and menus: black whose alpha falls off
+    /// as `a * exp(-d / len)` with the distance `d` from the rect, `(a, len)` blended by direction between
+    /// the sides, the bottom (longer) and the top (shorter). Lengths are at 96 dpi. The rect is left alone.
+    pub fn shadow(&mut self, r: R, dpi: u32, s: &Shadow) {
+        let (l, t, rr, b) = (r.l as f32, r.t as f32, r.r as f32, r.b as f32);
+        let k = dpi as f32 / 96.0;
+        let reach = 6.0 * s.bottom.1.max(s.side.1).max(s.top.1) * k;
+        let s = *s;
+        self.paint_sdf(
+            (l - reach, t - reach, rr + reach, b + reach),
+            0,
+            1.0,
+            move |x, y| {
+                let dx = (l - x).max(x - rr).max(0.0);
+                let dy = (t - y).max(y - b).max(0.0);
+                let d = (dx * dx + dy * dy).sqrt();
+                if d <= 0.0 {
+                    return 0.0;
+                }
+                let v = dy / d;
+                let end = if y > b { s.bottom } else { s.top };
+                let a = s.side.0 + (end.0 - s.side.0) * v;
+                let len = (s.side.1 + (end.1 - s.side.1) * v) * k;
+                a * (-(d / len)).exp()
+            },
+        );
+    }
+
+    /// Anti-aliased filled polygon (even-odd).
+    pub fn fill_polygon(&mut self, pts: &[(f32, f32)], color: u32, alpha: f32) {
+        if pts.len() < 3 {
+            return;
+        }
+        let bbox = pts.iter().fold((f32::MAX, f32::MAX, f32::MIN, f32::MIN), |b, p| {
+            (b.0.min(p.0), b.1.min(p.1), b.2.max(p.0), b.3.max(p.1))
+        });
+        let pts = pts.to_vec();
+        self.paint_sdf(bbox, color, alpha, move |x, y| {
+            let mut d = f32::MAX;
+            let mut inside = false;
+            for i in 0..pts.len() {
+                let (a, b) = (pts[i], pts[(i + 1) % pts.len()]);
+                let (ex, ey) = (b.0 - a.0, b.1 - a.1);
+                let t = (((x - a.0) * ex + (y - a.1) * ey) / (ex * ex + ey * ey).max(1e-6)).clamp(0.0, 1.0);
+                d = d.min(((x - a.0 - t * ex).powi(2) + (y - a.1 - t * ey).powi(2)).sqrt());
+                if (a.1 > y) != (b.1 > y) && x < a.0 + (y - a.1) / (b.1 - a.1) * ex {
+                    inside = !inside;
+                }
+            }
+            (0.5 + if inside { d } else { -d }).clamp(0.0, 1.0)
+        });
     }
 
     pub fn clear(&mut self, color: u32) {
@@ -883,7 +982,7 @@ impl Drop for Canvas {
 }
 
 /// Signed distance to a rounded rect (negative inside).
-fn sd_rrect(x: f32, y: f32, l: f32, t: f32, r: f32, b: f32, radius: f32) -> f32 {
+pub fn sd_rrect(x: f32, y: f32, l: f32, t: f32, r: f32, b: f32, radius: f32) -> f32 {
     let radius = radius.min((r - l) / 2.0).min((b - t) / 2.0).max(0.0);
     let (cx, cy) = ((l + r) / 2.0, (t + b) / 2.0);
     let (hx, hy) = ((r - l) / 2.0 - radius, (b - t) / 2.0 - radius);

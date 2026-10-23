@@ -1,0 +1,14 @@
+{
+  "main": {
+    "width": 440,
+    "height": 680,
+    "callouts": [{ "x": 420, "y": 36 }, { "x": 420, "y": 160 }, { "x": 420, "y": 409 }],
+    "hdrRows": [232, 585]
+  },
+  "gamut": {
+    "width": 890,
+    "height": 610,
+    "plot": { "left": 56, "top": 40, "right": 566, "bottom": 580 },
+    "domain": { "xMin": -0.05, "xMax": 0.8, "yMax": 0.9 }
+  }
+}

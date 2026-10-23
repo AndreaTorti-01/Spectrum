@@ -2,10 +2,10 @@
 // src/generated/shots.json (logical size per shot) for the HTML template. Safe to re-run any time.
 //
 // Naming: {main,gamut,traymenu,hdr}-{light,dark}.png. If "<name>-1x.png" exists, "<name>.png" is the
-// 2x capture (client area only, the site draws the title strip in CSS) and is the ONLY file used on the
-// site (the 1x file keeps the OS title bar, so it must not be mixed in). If it does not exist, or the
-// main file is not clearly larger than the 1x file (not re-captured yet), "<name>.png" is used as a 1x image.
-// traymenu is always 1x: Windows draws that menu and --debug-scale does not change it, so the site shows it at its
+// 2x render (client area only, the site draws the title strip in CSS) and is the ONLY file used on the
+// site (the 1x file has a drawn title bar, so it must not be mixed in). If it does not exist, or the
+// main file is not clearly larger than the 1x file (not re-rendered yet), "<name>.png" is used as a 1x image.
+// traymenu is always 1x, like the real menu at 100%, so the site shows it at its
 // natural 220 px width and never above it (--menu-w in sections.css).
 import sharp from "sharp";
 import { existsSync, mkdirSync, rmSync, writeFileSync } from "node:fs";
@@ -50,7 +50,7 @@ for (const n of NAMES) {
     }
     await emit(main, join(out, key));
     manifest[key] = { pw: m.width, ph: m.height, scale, w: Math.round(m.width / scale), h: Math.round(m.height / scale) };
-    console.log(key, `${m.width}x${m.height}`, scale === 2 ? "2x client area" : n === "traymenu" ? "1x (system-drawn menu)" : "1x (not re-captured yet)");
+    console.log(key, `${m.width}x${m.height}`, scale === 2 ? "2x client area" : n === "traymenu" ? "1x (tray menu)" : "1x (not re-rendered yet)");
   }
 }
 writeFileSync(join(gen, "shots.json"), JSON.stringify(manifest, null, 2) + "\n");

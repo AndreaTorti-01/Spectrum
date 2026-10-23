@@ -261,10 +261,15 @@ fn chunk(out: &mut Vec<u8>, kind: &[u8; 4], data: &[u8]) {
 
 /// PNG file for a `size` x `size` image of straight-alpha RGBA bytes (top-down).
 pub fn encode_rgba(size: u32, rgba: &[u8]) -> Vec<u8> {
-    let w = size as usize;
-    assert_eq!(rgba.len(), w * w * 4);
+    encode_rgba_wh(size, size, rgba)
+}
+
+/// PNG file for a `width` x `height` image of straight-alpha RGBA bytes (top-down).
+pub fn encode_rgba_wh(width: u32, height: u32, rgba: &[u8]) -> Vec<u8> {
+    let (w, h) = (width as usize, height as usize);
+    assert_eq!(rgba.len(), w * h * 4);
     // Sub filter: each byte minus the byte 4 to its left. Long runs of equal pixels become runs of zeros.
-    let mut raw = Vec::with_capacity((w * 4 + 1) * w);
+    let mut raw = Vec::with_capacity((w * 4 + 1) * h);
     for row in rgba.chunks(w * 4) {
         raw.push(1);
         for (x, &v) in row.iter().enumerate() {
@@ -274,8 +279,8 @@ pub fn encode_rgba(size: u32, rgba: &[u8]) -> Vec<u8> {
     }
     let mut out = vec![0x89, b'P', b'N', b'G', 0x0D, 0x0A, 0x1A, 0x0A];
     let mut ihdr = Vec::new();
-    ihdr.extend_from_slice(&size.to_be_bytes());
-    ihdr.extend_from_slice(&size.to_be_bytes());
+    ihdr.extend_from_slice(&width.to_be_bytes());
+    ihdr.extend_from_slice(&height.to_be_bytes());
     ihdr.extend_from_slice(&[8, 6, 0, 0, 0]); // 8 bit, RGBA, deflate, adaptive filtering, no interlace
     chunk(&mut out, b"IHDR", &ihdr);
     chunk(&mut out, b"IDAT", &zlib_fixed(&raw));

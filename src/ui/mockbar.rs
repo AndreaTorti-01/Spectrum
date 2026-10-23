@@ -1,4 +1,4 @@
-//! Mock Windows 11 taskbar segment for the screenshot stage (`--debug-stage`, `--debug-demo`): a rounded
+//! Mock Windows 11 taskbar segment for the README demo (`--render demo`): a rounded
 //! strip in the app's theme colors with a few dim app placeholders, the Spectrum tray icon and clock-like
 //! bars. It draws no real content (no time, no real icons).
 

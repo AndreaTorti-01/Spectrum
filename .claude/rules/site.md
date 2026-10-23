@@ -42,8 +42,8 @@ Pictures pull the visitor in and text captions them. Copy follows `.claude/rules
 
 - Default follows the system (`prefers-color-scheme`). The nav has a 3-state icon toggle (monitor for System, sun for Light, moon for Dark; inline SVG, the aria-label names the state) stored in localStorage under `spectrum-theme`. The resolved theme is `data-theme` on `<html>`. `?theme=light|dark` overrides it for screenshots.
 - Every screenshot exists in both themes and each slab holds both pictures. CSS shows the one matching the resolved theme.
-- The tray menu is drawn by Windows and `--debug-scale` does not change it, so `traymenu-<theme>.png` is a 1x capture. The site shows it at its natural 220 px width (`--menu-w`) and no larger, since upscaling a 1x capture blurs it.
-- Screenshots are the 2× client-area captures (`<surface>-<theme>.png`). A CSS title strip draws the title bar, because the OS title bar does not scale. The `*-1x.png` files keep the OS title bar and are for the README only. Mixing them in puts a second title bar on the slab.
+- `traymenu-<theme>.png` is a 1x render of the tray menu replica, like the real menu at 100%. The site shows it at its natural 220 px width (`--menu-w`) and no larger, since upscaling a 1x image blurs it.
+- Screenshots are the 2× client-area renders (`<surface>-<theme>.png`). A CSS title strip draws the title bar. The `*-1x.png` files have a drawn Windows title bar and are for the README only. Mixing them in puts a second title bar on the slab.
 
 ## Anti-AI look
 

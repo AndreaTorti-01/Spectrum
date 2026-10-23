@@ -114,8 +114,6 @@ struct Main {
 thread_local! {
     static MAIN: RefCell<Option<Main>> = const { RefCell::new(None) };
     static HWND_CELL: Cell<isize> = const { Cell::new(0) };
-    /// Where the next `open` puts the window's top-left corner (screenshots); `None` centers it.
-    static OPEN_AT: Cell<Option<(i32, i32)>> = const { Cell::new(None) };
 }
 
 fn with<T>(f: impl FnOnce(&mut Main) -> T) -> Option<T> {
@@ -238,6 +236,35 @@ fn geo(dpi: u32, shape: Shape) -> Geo {
 }
 
 impl Main {
+    /// Window state for `st`, laid out at `dpi`. No window yet (`hwnd` is null until `WM_CREATE`).
+    fn new(st: UiState, dpi: u32) -> Main {
+        let mut m = Main {
+            hwnd: std::ptr::null_mut(),
+            dpi,
+            fonts: Fonts::new(dpi),
+            canvas: None,
+            ui: WidgetList::new(),
+            st,
+            sel: 0,
+            black: 0.0,
+            peak: 1000.0,
+            full: 400.0,
+            sat: 0.0,
+            white: 240.0,
+            white_dirty: false,
+            drag: None,
+            dirty: false,
+            pending: Vec::new(),
+            tracking: false,
+            dd_closed_at: None,
+            icons: [std::ptr::null_mut(); 2],
+            geo: geo(dpi, Shape::default()),
+        };
+        m.sync_hdr();
+        m.layout();
+        m
+    }
+
     fn mon(&self) -> Option<&UiMonitor> {
         self.st.monitors.get(self.sel)
     }
@@ -844,13 +871,6 @@ fn tile_rects(mons: &[UiMonitor], area: R, dpi: u32) -> Vec<R> {
 // Public API
 // ---------------------------------------------------------------------------------------------
 
-/// Opens the window with its top-left corner at (x, y) in screen pixels (screenshots).
-pub fn open_at(x: i32, y: i32) {
-    OPEN_AT.with(|c| c.set(Some((x, y))));
-    open();
-    OPEN_AT.with(|c| c.set(None));
-}
-
 pub fn open() {
     if is_open() {
         let hwnd = hwnd();
@@ -865,34 +885,8 @@ pub fn open() {
     }
     register_class();
     let dpi = system_dpi();
-    let st = super::snapshot();
-    let main = Main {
-        hwnd: std::ptr::null_mut(),
-        dpi,
-        fonts: Fonts::new(dpi),
-        canvas: None,
-        ui: WidgetList::new(),
-        st,
-        sel: 0,
-        black: 0.0,
-        peak: 1000.0,
-        full: 400.0,
-        sat: 0.0,
-        white: 240.0,
-        white_dirty: false,
-        drag: None,
-        dirty: false,
-        pending: Vec::new(),
-        tracking: false,
-        dd_closed_at: None,
-        icons: [std::ptr::null_mut(); 2],
-        geo: geo(dpi, Shape::default()),
-    };
+    let main = Main::new(super::snapshot(), dpi);
     MAIN.with(|m| *m.borrow_mut() = Some(main));
-    with(|m| {
-        m.sync_hdr();
-        m.layout();
-    });
 
     let style = WS_OVERLAPPED | WS_CAPTION | WS_SYSMENU | WS_MINIMIZEBOX;
     let shape = with(|m| m.shape()).unwrap_or_default();
@@ -914,10 +908,10 @@ pub fn open() {
         AdjustWindowRectExForDpi(&mut r, style, 0, 0, super::draw::frame_dpi(dpi));
         SystemParametersInfoW(SPI_GETWORKAREA, 0, &mut wa as *mut RECT as *mut _, 0);
         let (w, h) = (r.right - r.left, r.bottom - r.top);
-        let (x, y) = OPEN_AT.with(|c| c.get()).unwrap_or((
+        let (x, y) = (
             wa.left + ((wa.right - wa.left) - w) / 2,
             wa.top + ((wa.bottom - wa.top) - h) / 2,
-        ));
+        );
         let cls = wide(CLASS);
         let title = wide("Spectrum");
         let hwnd = CreateWindowExW(
@@ -994,34 +988,64 @@ pub fn selected() -> usize {
     with(|m| m.sel).unwrap_or(0)
 }
 
-/// Demo hook: shows `nits` on the peak slider (and lowers full-frame to fit) without applying anything.
-pub fn demo_set_peak(nits: f64) {
-    with(|m| {
-        m.peak = nits.clamp(widgets::PEAK_MIN_NITS, widgets::PEAK_MAX_NITS);
-        m.full = m.full.min(m.peak);
-        m.invalidate();
-    });
-}
-
-/// Demo hook: screen position of the peak slider's thumb when it shows `nits`.
-pub fn demo_peak_thumb(nits: f64) -> Option<(i32, i32)> {
-    with(|m| {
-        let r = m.ui.get(Id::Peak)?.rect;
-        let (a, b) = widgets::slider_span(r, m.dpi);
-        let x = a + (b - a) * peak_scale().to_t(nits) as f32;
-        let mut p = POINT {
-            x: x.round() as i32,
-            y: r.cy().round() as i32,
-        };
-        // SAFETY: valid window handle and POINT.
-        unsafe { windows_sys::Win32::Graphics::Gdi::ClientToScreen(m.hwnd, &mut p) };
-        Some((p.x, p.y))
-    })
-    .flatten()
-}
-
 pub fn hwnd() -> HWND {
     HWND_CELL.with(|c| c.get()) as HWND
+}
+
+/// The main window's state and drawing without a window, for off-screen screenshots (`--render`).
+pub struct Offscreen(Main);
+
+/// Places the screenshots and the site point at, in client pixels.
+pub struct Marks {
+    pub identify: R,
+    pub sdr: R,
+    /// Value text of the Peak brightness row.
+    pub peak_value: R,
+    /// Client rows of the HDR section (the `hdr` screenshot): from the divider above it to halfway between
+    /// the restore button and the divider below it.
+    pub hdr_rows: (i32, i32),
+}
+
+impl Offscreen {
+    pub fn new(st: UiState, dpi: u32) -> Offscreen {
+        Offscreen(Main::new(st, dpi))
+    }
+
+    /// Client size in physical pixels.
+    pub fn size(&self) -> (i32, i32) {
+        (sc(CLIENT_W, self.0.dpi), self.0.geo.h)
+    }
+
+    /// Shows `nits` on the Peak slider without applying anything, as the demo does.
+    pub fn set_peak(&mut self, nits: f64) {
+        let m = &mut self.0;
+        m.peak = nits.clamp(widgets::PEAK_MIN_NITS, widgets::PEAK_MAX_NITS);
+        m.full = m.full.min(m.peak);
+    }
+
+    /// Client position of the Peak slider's thumb when it shows `nits`.
+    pub fn peak_thumb(&self, nits: f64) -> (f32, f32) {
+        let r = self.0.geo.rows[1].1;
+        let (a, b) = widgets::slider_span(r, self.0.dpi);
+        (a + (b - a) * peak_scale().to_t(nits) as f32, r.cy())
+    }
+
+    pub fn marks(&self) -> Marks {
+        let g = &self.0.geo;
+        Marks {
+            identify: g.identify,
+            sdr: g.sdr,
+            peak_value: g.rows[1].2,
+            hdr_rows: (g.div1, (g.reset.b + g.div2) / 2),
+        }
+    }
+
+    pub fn render(&self) -> Option<Canvas> {
+        let (w, h) = self.size();
+        let mut c = Canvas::new(w, h)?;
+        self.0.draw(&mut c);
+        Some(c)
+    }
 }
 
 // ---------------------------------------------------------------------------------------------

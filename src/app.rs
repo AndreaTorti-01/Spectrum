@@ -45,8 +45,6 @@ const RECONCILE_DELAY_MS: u32 = 2000;
 const TIMER_TRAY_RETRY: usize = 2;
 const TRAY_RETRY_MS: u32 = 2000;
 const TRAY_RETRY_MAX: u32 = 15;
-/// Timer ids at or above this value belong to `debug` (the demo).
-pub const TIMER_DEBUG_BASE: usize = 100;
 /// NIN_KEYSELECT (NIN_SELECT | 1).
 const NIN_KEYSELECT: u32 = NIN_SELECT | 1;
 const WM_STARTUP: u32 = WM_APP + 2;
@@ -1281,17 +1279,7 @@ pub fn remove_all_profiles() -> Vec<String> {
 fn menu_monitors() -> Vec<MenuMonitor> {
     if ui::is_mock() {
         // Screenshots: the menu shows the mock state, like the windows do.
-        return ui::snapshot()
-            .monitors
-            .iter()
-            .map(|u| MenuMonitor {
-                label: format!("{} \u{b7} {}", u.num, u.name),
-                profiles: u.sdr_options.clone(),
-                current: u.sdr_current,
-                hdr_supported: u.hdr_supported,
-                hdr_on: u.hdr_on,
-            })
-            .collect();
+        return ui::snapshot().monitors.iter().map(MenuMonitor::from_ui).collect();
     }
     let cfg = Config::load();
     enumerate_cached()
@@ -1412,15 +1400,7 @@ pub fn raise(h: HWND) {
     unsafe {
         let flags = SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE;
         SetWindowPos(h, HWND_TOPMOST, 0, 0, 0, 0, flags);
-        // With a screenshot stage up (itself topmost), stay topmost so nothing can slip in between.
-        if windows_sys::Win32::UI::WindowsAndMessaging::FindWindowW(
-            wide("SpectrumStage").as_ptr(),
-            std::ptr::null(),
-        )
-        .is_null()
-        {
-            SetWindowPos(h, HWND_NOTOPMOST, 0, 0, 0, 0, flags);
-        }
+        SetWindowPos(h, HWND_NOTOPMOST, 0, 0, 0, 0, flags);
     }
 }
 
@@ -1431,7 +1411,7 @@ pub fn post_command(cmd: &str) {
     unsafe { PostMessageW(hwnd(), WM_RUN_CMD, 0, 0) };
 }
 
-/// Debug and IPC commands: `open main`, `open main-hdr`, `open gamut`, `open traymenu`, `tray-cmd <id>`, `demo`.
+/// Debug and IPC commands: `open main`, `open main-hdr`, `open gamut`, `open traymenu`, `tray-cmd <id>`.
 pub fn run_command(cmd: &str) {
     let mut parts = cmd.split_whitespace();
     match (parts.next(), parts.next()) {
@@ -1475,7 +1455,6 @@ pub fn run_command(cmd: &str) {
                 run_tray_cmd(c);
             }
         }
-        (Some("demo"), _) => crate::debug::start_demo(hwnd()),
         _ => log(&format!("unknown command {cmd:?}")),
     }
 }
@@ -1657,8 +1636,6 @@ unsafe extern "system" fn wnd_proc(hwnd: HWND, msg: u32, wp: WPARAM, lp: LPARAM)
                 draw::trim_working_set();
             } else if wp == TIMER_TRAY_RETRY {
                 add_tray_with_retry(hwnd);
-            } else if wp >= TIMER_DEBUG_BASE {
-                crate::debug::on_timer(hwnd, wp);
             }
             0
         }

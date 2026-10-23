@@ -387,6 +387,30 @@ fn mock_profiles() -> Vec<(String, String, Option<Primaries>, String)> {
 }
 
 impl Gamut {
+    /// Window state at `dpi`, entries built for `selected_file` and monitor `mon`. No window yet.
+    fn new(selected_file: Option<&str>, mon: usize, dpi: u32) -> Gamut {
+        let (entries, monitor_entry) = build_entries(selected_file, mon);
+        let mut g = Gamut {
+            hwnd: std::ptr::null_mut(),
+            dpi,
+            fonts: Fonts::new(dpi),
+            canvas: None,
+            horseshoe: None,
+            entries,
+            rows: Vec::new(),
+            scroll: 0,
+            selected: monitor_entry.or(Some(0)),
+            kbd: false,
+            hover: None,
+            tracking: false,
+            info_h: sc(110, dpi),
+            drag: None,
+            icons: [std::ptr::null_mut(); 2],
+        };
+        g.rebuild_rows();
+        g
+    }
+
     fn rebuild_rows(&mut self) {
         self.rows.clear();
         self.rows.push(Row::Header("Reference spaces"));
@@ -1111,26 +1135,7 @@ pub fn open(selected_monitor_profile: Option<String>, mon: usize) {
     }
     register_class();
     let dpi = system_dpi();
-    let (entries, monitor_entry) = build_entries(selected_monitor_profile.as_deref(), mon);
-    let selected = monitor_entry.or(Some(0));
-    let mut g = Gamut {
-        hwnd: std::ptr::null_mut(),
-        dpi,
-        fonts: Fonts::new(dpi),
-        canvas: None,
-        horseshoe: None,
-        entries,
-        rows: Vec::new(),
-        scroll: 0,
-        selected,
-        kbd: false,
-        hover: None,
-        tracking: false,
-        info_h: sc(110, dpi),
-        drag: None,
-        icons: [std::ptr::null_mut(); 2],
-    };
-    g.rebuild_rows();
+    let g = Gamut::new(selected_monitor_profile.as_deref(), mon, dpi);
     GAMUT.with(|m| *m.borrow_mut() = Some(g));
 
     let style = WS_OVERLAPPED | WS_CAPTION | WS_SYSMENU | WS_MINIMIZEBOX;
@@ -1181,6 +1186,42 @@ pub fn open(selected_monitor_profile: Option<String>, mon: usize) {
             on_dpi_changed(hwnd, actual, None);
         }
     }
+}
+
+/// Off-screen render of the showcase window (`--render gamut`): the same entries and `draw` as
+/// `open_showcase`, at `dpi`, without a window.
+pub fn render_showcase(
+    file: String,
+    label: String,
+    prims: Option<Primaries>,
+    mon: usize,
+    dpi: u32,
+) -> Option<Canvas> {
+    SHOWCASE.with(|s| {
+        *s.borrow_mut() = Some(Showcase {
+            file: file.clone(),
+            label,
+            prims,
+        })
+    });
+    let mut g = Gamut::new(Some(&file), mon, dpi);
+    SHOWCASE.with(|s| *s.borrow_mut() = None);
+    g.ensure_horseshoe();
+    let mut c = Canvas::new(sc(CLIENT_W, dpi), sc(CLIENT_H, dpi))?;
+    // The first pass measures the info block, as the window's first paint does.
+    g.draw(&mut c);
+    g.ensure_horseshoe();
+    g.draw(&mut c);
+    Some(c)
+}
+
+/// Plot rectangle and client size at `dpi`, and the data window it maps: (plot, (w, h), (x_min, x_max, y_max)).
+pub fn plot_geometry(dpi: u32) -> (R, (i32, i32), (f64, f64, f64)) {
+    (
+        geo(dpi, sc(110, dpi)).plot,
+        (sc(CLIENT_W, dpi), sc(CLIENT_H, dpi)),
+        (X_MIN, X_MAX, Y_MAX),
+    )
 }
 
 pub fn close() {

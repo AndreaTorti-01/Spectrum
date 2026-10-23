@@ -5,11 +5,13 @@
 
 pub mod design;
 pub mod draw;
+pub mod frame;
 pub mod gamut_window;
 pub mod main_window;
 pub mod mockbar;
 pub mod overlay;
 pub mod profiles_window;
+pub mod traymenu;
 pub mod widgets;
 
 use crate::app::{self, UiAction, UiState};

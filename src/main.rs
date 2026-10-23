@@ -36,8 +36,6 @@ enum Command {
     DebugReconcile,
     DebugOpen(String),
     DebugTrayCmd(u32),
-    DebugDemo,
-    DebugStage(String),
     DebugSdr(String, String),
     DebugHdr(String, String),
     DebugHdrReset(String),
@@ -47,6 +45,8 @@ enum Command {
     DebugDeleteProfile(String),
     DebugSdrWhite(String, Option<String>),
     DebugSdrCap(String, String),
+    /// `--render <surface>`: off-screen screenshot (`spectrum::render`).
+    Render(String),
 }
 
 #[derive(Debug)]
@@ -58,6 +58,10 @@ struct Args {
     scale: Option<f64>,
     /// `--out <file>`: debug output target (console otherwise).
     out: Option<PathBuf>,
+    /// `--scale <f>` of `--render`: 1 = 96 dpi.
+    render_scale: f64,
+    /// `--frame` of `--render`: draw a window frame around the client area.
+    frame: bool,
 }
 
 fn parse_args<I: Iterator<Item = String>>(it: I) -> Args {
@@ -67,6 +71,8 @@ fn parse_args<I: Iterator<Item = String>>(it: I) -> Args {
         dark: None,
         scale: None,
         out: None,
+        render_scale: 1.0,
+        frame: false,
     };
     let mut json = false;
     let mut dump = false;
@@ -79,14 +85,15 @@ fn parse_args<I: Iterator<Item = String>>(it: I) -> Args {
             "--out" => args.out = it.next().map(PathBuf::from),
             "--debug-scale" => args.scale = it.next().and_then(|v| v.parse().ok()),
             "--json" => json = true,
+            "--render" => args.command = Command::Render(it.next().unwrap_or_default()),
+            "--scale" => args.render_scale = it.next().and_then(|v| v.parse().ok()).unwrap_or(1.0),
+            "--frame" => args.frame = true,
             "--debug-dump" => dump = true,
             "--debug-edid" => args.command = Command::DebugEdid(num(it.next())),
             "--debug-wipe" => args.command = Command::DebugWipe(num(it.next())),
             "--debug-reconcile" => args.command = Command::DebugReconcile,
             "--debug-open" => args.command = Command::DebugOpen(it.next().unwrap_or_default()),
             "--debug-tray-cmd" => args.command = Command::DebugTrayCmd(num(it.next())),
-            "--debug-demo" => args.command = Command::DebugDemo,
-            "--debug-stage" => args.command = Command::DebugStage(it.next().unwrap_or_default()),
             "--debug-sdr" => {
                 args.command = Command::DebugSdr(it.next().unwrap_or_default(), it.next().unwrap_or_default())
             }
@@ -249,15 +256,13 @@ fn main() {
         Command::DebugSdrCap(n, v) => debug::sdr_cap(&n, &v, out),
         Command::DebugOpen(what) => debug_open(format!("open {what}")),
         Command::DebugTrayCmd(id) => debug_open(format!("tray-cmd {id}")),
-        Command::DebugStage(t) => debug::stage(&t),
-        Command::DebugDemo => {
-            debug::set_demo_out(out.map(|p| p.to_path_buf()));
-            app::run(RunOpts {
-                tray: false,
-                show_main: false,
-                command: Some("demo".into()),
-            })
-        }
+        Command::Render(s) => spectrum::render::run(
+            &s,
+            args.dark.unwrap_or_else(|| draw::theme().dark),
+            args.render_scale,
+            args.frame,
+            out,
+        ),
     };
     std::process::exit(code);
 }

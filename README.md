@@ -114,7 +114,7 @@ npm ci
 npm run dev
 ```
 
-The site is published by hand: Actions tab → Pages workflow → Run workflow. Set Settings → Pages → Source to GitHub Actions once, before the first run. `scripts/capture.ps1` retakes the screenshots.
+The site is published by hand: Actions tab → Pages workflow → Run workflow. Set Settings → Pages → Source to GitHub Actions once, before the first run. `scripts/render.ps1` renders the screenshots off-screen.
 
 ## License
 

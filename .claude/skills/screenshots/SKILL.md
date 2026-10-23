@@ -5,7 +5,7 @@ description: Take or refresh Spectrum's app screenshots, the README demo animati
 
 # Screenshots
 
-Every surface is shot in light and dark. Windows are opened to look at them; nothing here changes a color setting (the showcase variants run on a mock UI state).
+Every surface is rendered in light and dark, off-screen: no window opens, nothing takes focus or draws on the owner's screen, and a running Spectrum is left alone. Nothing here changes a color setting.
 
 ## 1. Build
 
@@ -13,48 +13,41 @@ Every surface is shot in light and dark. Windows are opened to look at them; not
 cargo build --release
 ```
 
-`scripts/capture.ps1` reads `target\release\Spectrum.exe` (override with `-Exe`) and throws if it is missing.
+`scripts/render.ps1` reads `target\release\Spectrum.exe` (override with `-Exe`) and throws if it is missing.
 
-## 2. Capture the app
+## 2. Render the app
 
 ```
-# from a PowerShell session at the repo root (so -Scale 1,2 binds as an array)
-.\scripts\capture.ps1 [-Theme light|dark|both] [-Scale 1,2] [-Demo] [-Out docs\screenshots] [-SiteOut site\src\shots] [-RawOut screenshots-raw] [-Exe <path>]
+# from a PowerShell session at the repo root
+.\scripts\render.ps1 [-Theme light|dark|both] [-Demo] [-Out docs\screenshots] [-SiteOut site\src\shots] [-RawOut screenshots-raw] [-Exe <path>]
 ```
 
-- Defaults: `-Theme both`, `-Scale 1,2`, no demo. A full run takes about a minute and owns the screen. It's polite to tell the user first.
-- It stops any running Spectrum (including the user's tray copy) at the start and end of each pass. The user restarts it afterwards.
-- Per theme and scale it starts `--debug-stage <theme>`, then `--tray --theme <theme>` (plus `--debug-scale <f>` for scales other than 1), then opens `gamut`, `profiles`, `traymenu` (1x pass only) and `main` through `--debug-open gamut-showcase|profiles-showcase|traymenu-showcase|main-hdr`. The showcase paths (`main-hdr`, `*-showcase`, the demo) read `src/showcase.rs`: fixed data from the QD-OLED EDID fixture, so the shots look the same on any machine. Extend that module when the UI gains state.
+- Defaults: `-Theme both`, no demo. A full run with `-Demo` takes about 30 s.
+- Each picture is one `Spectrum.exe --render <surface> --theme <t> --scale <f> [--frame] --out <file>` call (`src/render.rs`). It builds the window state from `src/showcase.rs` (fixed data from the QD-OLED EDID fixture), runs the window's own layout and `draw` into an off-screen `Canvas` and writes a PNG. The output is the same on any machine and at any display scale. Extend `showcase.rs` when the UI gains state.
+- Surfaces: `main` (Advanced open, HDR on), `gamut`, `profiles`, `hdr` (the HDR section of the main window), `traymenu`, `layout` (JSON), `demo` (a folder of frames).
 - Files, per theme `<t>`:
-  - Scale 1: `main-<t>-1x.png`, `gamut-<t>-1x.png`, `profiles-<t>-1x.png`, `hdr-<t>-1x.png` (full window with the OS title bar), plus `traymenu-<t>.png` and `traymenu-<t>-1x.png`.
-  - Other scales (the 2x pass): `main-<t>.png`, `gamut-<t>.png`, `profiles-<t>.png`, `hdr-<t>.png`, client area only, because the OS title bar does not scale. The site draws a CSS title strip over them.
-  - `hdr-<t>*.png` is the HDR section cropped out of the main window.
+  - `main-<t>.png`, `gamut-<t>.png`, `profiles-<t>.png`, `hdr-<t>.png`: 2x client area. The site draws a CSS title strip over them.
+  - `main-<t>-1x.png`, `gamut-<t>-1x.png`, `profiles-<t>-1x.png`: 1x with `--frame`, a Windows 11 frame drawn by `src/ui/frame.rs` (border, rounded corners, icon, title, caption glyphs, measured colors). `hdr-<t>-1x.png` is the 1x crop.
+  - `traymenu-<t>.png` (and a copy as `traymenu-<t>-1x.png`): the 1x tray menu. The real menu is a Windows popup menu, so `src/ui/traymenu.rs` draws a replica from the same `MenuMonitor` list (spacing, radio dot, check mark, separators, bold default item, measured on the real menu).
+  - `site/src/data/layout.json`: main window size, callout targets and HDR crop rows, gamut plot rectangle and data window. `site/src/data/hotspots.ts` computes the site's fractions from it.
 - Everything lands in `docs\screenshots`, then the script copies the same files to `site\src\shots`.
 - Which file goes where: the README uses the `*-1x.png` files and `traymenu-<t>.png` (GitHub shows images at pixel size). The site uses only the plain names, never the `-1x` files (`site/scripts/images.mjs` enforces this).
 
 ## 2b. When the main window layout changes
 
-Two things measure the main window in logical pixels (440 wide, Advanced open, HDR on) and go stale when its rows move:
+Nothing to update by hand: the HDR crop (`Offscreen::marks` in `src/ui/main_window.rs`, from the divider above the HDR section to halfway between the restore button and the divider below) and the site callouts (Identify button, SDR dropdown, Peak brightness value) come from `geo()`. Re-run the script, then check the `hdr-*` crops and the site's window section. If a callout should point at a different control, change `marks()` and `layout_json()` in `src/render.rs`.
 
-- the HDR crop in `scripts/capture.ps1` (the client rows of the HDR section, searched as `HDR section: client rows`);
-- the callout targets in `site/src/data/hotspots.ts` (Identify button, SDR dropdown, Peak brightness value).
+## 3. Checks worth keeping
 
-Read the new y positions from `geo()` in `src/ui/main_window.rs` and update both, then check the `hdr-*` crops and the site's window section. The 2x main window has to fit the 1440p screen (about 690 logical px tall at most), or the capture fails.
-
-## 3. Privacy guards (worth keeping)
-
-- `--debug-stage` covers the primary work area with a solid topmost backdrop, so the desktop, wallpaper and other windows cannot appear.
-- The script refuses to capture a surface that is not topmost over the backdrop (the tray menu is exempt: Windows draws it).
-- Captures use the exact window rectangle (DWM frame bounds, no shadow); the 1 px border ring is repainted gray so no wallpaper shows through.
-- Demo frames are clipped above the taskbar, and every frame is scanned: any pixel outside the window and menu rectangles that is not the backdrop color aborts the run and writes `screenshots-raw\failed-frame.png`.
-- Avoid screenshotting the whole desktop, since it can capture personal content. New capture code should go through the stage and keep these checks.
+- `--render` never creates a window. New screenshot code should draw into a `Canvas` the same way, so nothing from the desktop can end up in a picture.
+- Hover, pressed and focus states are off in the renders (no mouse is involved), so a picture can't pick up a stray highlight.
 
 ## 4. Demo frames and banners
 
-- `-Demo` records the scripted `--debug-demo` (idle window, tray icon hover, tray menu, Display P3 picked, peak slider 400 to 1000 nits; mock state, about 8 s) at 10 fps into `screenshots-raw\demo-<t>\frame-NNNN.png`. The demo draws a mock taskbar on the stage, writes a layout file (`screenshots-raw\demo-<t>.layout.txt`: capture region, rectangles, start time, cursor path); the script crops to that region (about 736x783: window, menu and taskbar plus a 32 px margin) and draws the arrow cursor itself. It aborts on a blank frame or any stray pixel. `screenshots-raw` is gitignored. It only records during the 1x pass, so keep `1` in `-Scale`. To leave the committed screenshots alone, pass `-Out` and `-SiteOut` folders outside the repo.
+- `-Demo` renders the scripted README demo (idle window, tray icon hover, tray menu, the pointer walking down to Display P3 and picking it, peak slider 400 to 1000 nits; 7.8 s) at 10 fps into `screenshots-raw\demo-<t>\frame-NNNN.png`: 78 frames of 716x843 at 1x. Each frame is composed in `src/render.rs`: the stage color, DWM-like shadows, the main window with its drawn frame (inactive while the menu is open), the mock taskbar (`src/ui/mockbar.rs`), the tray menu replica and an arrow cursor. The timeline is the `T_*` constants there. `screenshots-raw` is gitignored.
 - `cd site; npm run demo` joins the frames into the animated WebP the README embeds (`docs/demo-light.webp`, `docs/demo-dark.webp`, 2 MB or less each; runs of identical frames become one frame with a longer delay).
 - `cd site; npm run banner` renders the README banners with headless Edge (`docs/banner-light.png`, `docs/banner-dark.png`, 1280×400).
-- If `site/scripts/demo.mjs` or `banner.mjs` is missing, they have not been written yet; ask before inventing a different pipeline.
+- To look at a real window instead (layout work, hover states), `--debug-open main-hdr|gamut-showcase|profiles-showcase|traymenu-showcase` opens it on the same showcase data.
 
 ## 5. Site pages
 
@@ -72,8 +65,8 @@ npm run shots -- --reduced | --nojs | --widths 320,360 | --longtasks
 - Prefer the scratchpad or a temp folder over the repo for these, unless the task is the social preview image.
 - `npm run shots` leaves the `vite preview` server it started running on port 4173. Stopping it afterwards (`Stop-Process` on the `node` that runs `vite.js preview`) avoids an orphan that outlives the session.
 - After changing `site/src/shots/`, run `npm run images` (or `npm run build`) to regenerate AVIF and WebP.
-- The tray menu is drawn by Windows: `--debug-scale` does not change it, so `traymenu-<theme>.png` stays a 1x capture (about 200 px wide; its height grows with the profile list). The site shows it at its natural width and never larger.
+- `traymenu-<theme>.png` is 1x (about 200 px wide; its height grows with the profile list), like the real menu at 100%. The site shows it at its natural width and never larger.
 
 ## 6. Inspect before committing
 
-Open each new PNG with the Read tool and look at it, checking for correct theme, nothing cut off, no desktop or taskbar content, no personal data, text not clipped, the 1x and 2x pairs match. Re-run the capture for any bad file. Commit inspected files, and mention the theme and scale in the commit message.
+Open each new PNG with the Read tool and look at it, checking for correct theme, nothing cut off, text not clipped, the 1x and 2x pairs match. Re-run the script for any bad file. Commit inspected files, and mention the theme and scale in the commit message.
