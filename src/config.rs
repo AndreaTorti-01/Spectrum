@@ -15,7 +15,7 @@ pub struct MonitorCfg {
     pub sdr: Option<String>,
     pub hdr: Option<HdrParams>,
     pub hdr_file: Option<String>,
-    /// "Allow SDR content above the monitor peak"; `None` means off.
+    /// "Allow clipping above the monitor peak brightness"; `None` means off.
     pub sdr_above_peak: Option<bool>,
 }
 

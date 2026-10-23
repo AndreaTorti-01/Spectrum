@@ -6,7 +6,7 @@
 </p>
 
 <p align="center">
-  Spectrum is a Windows tray utility that builds ICC profiles from your monitor's EDID and keeps them applied, for SDR and HDR.
+  Your monitor can already report to Windows which colors it can show. Spectrum turns that into a color profile and keeps it applied. If you use your monitor's color space emulation modes, Spectrum allows you to change your color profile with just one click, from your system tray. Easily enable, disable and manage HDR, too! All this, open source and for free, today.
 </p>
 
 <p align="center">

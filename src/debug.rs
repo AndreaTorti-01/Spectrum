@@ -667,7 +667,7 @@ fn target(num: &str) -> Result<(u32, usize), String> {
     Ok((n, ui_index(n)?))
 }
 
-/// `--debug-sdr-cap <num> on|off`: the "Allow SDR content above the monitor peak" toggle, through the
+/// `--debug-sdr-cap <num> on|off`: the "Allow clipping above the monitor peak brightness" toggle, through the
 /// same action the window sends (turning it off snaps SDR content down to the cap).
 pub fn sdr_cap(num: &str, state: &str, out: Option<&Path>) -> i32 {
     let on = match parse_on_off(state) {

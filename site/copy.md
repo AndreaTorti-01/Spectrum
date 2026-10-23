@@ -1,6 +1,6 @@
 # Spectrum website copy
 
-Total prose words: 101 (budget 380; counts Headline, Hero text, Body, Caption, Callout, noscript and the footer line; excludes kickers, button and label lines, numbers, axis ticks, alt text and the gamut descriptions, which are the app's own strings)
+Total prose words: 144 (budget 380; counts Headline, Hero text, Body, Caption, Callout, noscript and the footer line; excludes kickers, button and label lines, numbers, axis ticks, alt text and the gamut descriptions, which are the app's own strings)
 
 Line types: Headline, Hero text, Body, Caption, Callout and Noscript count as prose and carry a word count. Kicker, Button, Label, Alt, Aria and Description are UI text and are not counted. Placeholders in braces ({rx}, {area}) are filled by the builder from the measurement report and monitor.json. Coverage percentages are computed from monitor.json (checked by hand: 100, 98.4, 94.9 and 78.1).
 
@@ -29,7 +29,7 @@ UI labels quoted here match the app verbatim: "Read from monitor", "Compare gamu
 
 - Kicker: "Windows 11 · MIT"
 - Headline: "Your monitor already knows its colors." (6 words)
-- Hero text: "Spectrum decodes the EDID your monitor reports, writes an ICC profile from it and keeps your SDR and HDR profiles applied." (21 words)
+- Hero text: "Your monitor can already report to Windows which colors it can show. Spectrum turns that into a color profile and keeps it applied. If you use your monitor's color space emulation modes, Spectrum allows you to change your color profile with just one click, from your system tray. Easily enable, disable and manage HDR, too! All this, open source and for free, today." (64 words; the owner's official description, also at the top of the README, used verbatim)
 - Button: "Download for Windows"
 - Button (ghost): "View on GitHub"
 - Canvas labels (mono): "sRGB" · "Display P3" · "Adobe RGB (1998)" · "QD-OLED 27" · "{area}% of CIE 1931 xy" (area computed live)

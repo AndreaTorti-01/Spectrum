@@ -486,6 +486,7 @@ impl Main {
             }
             Id::Reset => {
                 self.dirty = false;
+                self.white_dirty = false;
                 self.pending
                     .push(Pending::Dispatch(UiAction::ResetHdr { mon: sel }));
             }
@@ -758,7 +759,7 @@ impl Main {
             let lcol = if enabled { th.text } else { dim_text };
             c.text(
                 lab,
-                "Allow SDR content above the monitor peak",
+                "Allow clipping above the monitor peak brightness",
                 self.fonts.body,
                 lcol,
                 TA_LEFT,
