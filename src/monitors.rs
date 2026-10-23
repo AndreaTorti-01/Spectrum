@@ -515,7 +515,7 @@ pub fn round_sdr_white_nits(nits: f64) -> f64 {
     (SDR_WHITE_MIN_NITS + steps * SDR_WHITE_STEP_NITS).clamp(SDR_WHITE_MIN_NITS, SDR_WHITE_MAX_NITS)
 }
 
-/// The highest SDR content value the slider offers while "Allow SDR content above the monitor peak" is
+/// The highest SDR content value the slider offers while "Allow clipping above the monitor peak brightness" is
 /// off: the EDID HDR max luminance rounded down to the 4-nit grid, clamped to 80..=480. `None` without an
 /// EDID max, which means no cap.
 pub fn sdr_white_cap(edid_max: Option<f64>) -> Option<u32> {

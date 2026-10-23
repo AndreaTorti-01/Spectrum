@@ -87,7 +87,7 @@ pub struct UiMonitor {
     pub hdr_custom_active: bool,
     /// Windows "SDR content brightness" in nits; `None` when the driver does not report it.
     pub sdr_white_nits: Option<f64>,
-    /// "Allow SDR content above the monitor peak" is on (the slider may go past the EDID cap).
+    /// "Allow clipping above the monitor peak brightness" is on (the slider may go past the EDID cap).
     pub sdr_above_peak: bool,
     pub hdr_profile: HdrProfile,
     /// Luminance Windows reports for the output (read through DXGI); `None` with HDR off or when DXGI fails.
@@ -116,7 +116,7 @@ impl UiMonitor {
         monitors::sdr_white_cap(self.edid_hdr.as_ref().and_then(|h| h.max_nits))
     }
 
-    /// Top of the SDR content slider: the cap unless "Allow SDR content above the monitor peak" is on.
+    /// Top of the SDR content slider: the cap unless "Allow clipping above the monitor peak brightness" is on.
     pub fn sdr_max(&self) -> f64 {
         match self.sdr_cap() {
             Some(cap) if !self.sdr_above_peak => cap as f64,
@@ -733,15 +733,21 @@ fn set_sdr_white(idx_mon: usize, nits: f64) -> Result<String, String> {
     Ok(format!("Set SDR content to {nits} nits"))
 }
 
-/// The "Allow SDR content above the monitor peak" toggle. Turning it off snaps SDR content down to the cap
-/// through the same path as the slider.
-fn set_sdr_above_peak(idx_mon: usize, on: bool) -> Result<String, String> {
-    let m = monitor_at(idx_mon)?;
-    let edid_max = m
-        .edid
+/// SDR content brightness that "Restore recommended HDR settings" sets (capped at the monitor's peak).
+const RECOMMENDED_SDR_WHITE_NITS: f64 = 240.0;
+
+fn edid_peak_nits(m: &Monitor) -> Option<f64> {
+    m.edid
         .as_ref()
         .and_then(|e| e.hdr.as_ref())
-        .and_then(|h| h.max_nits);
+        .and_then(|h| h.max_nits)
+}
+
+/// The "Allow clipping above the monitor peak brightness" toggle (off by default). Turning it off snaps SDR
+/// content down to the cap through the same path as the slider.
+fn set_sdr_above_peak(idx_mon: usize, on: bool) -> Result<String, String> {
+    let m = monitor_at(idx_mon)?;
+    let edid_max = edid_peak_nits(&m);
     let cap = monitors::sdr_white_cap(edid_max)
         .ok_or_else(|| format!("Monitor {} reports no peak brightness to cap at.", m.num))?;
     save_cfg(&m, |e| e.sdr_above_peak = Some(on));
@@ -760,11 +766,15 @@ fn set_sdr_above_peak(idx_mon: usize, on: bool) -> Result<String, String> {
 }
 
 /// "Restore recommended HDR settings": writes the Spectrum HDR profile again with the EDID values and keeps it as
-/// the HDR default (same A/B alternation as `apply_hdr`). SDR content brightness is left alone.
+/// the HDR default (same A/B alternation as `apply_hdr`), turns "Allow clipping above the monitor peak
+/// brightness" off and sets SDR content to 240 nits (or the monitor's peak, if that is lower).
 fn reset_hdr(idx_mon: usize) -> Result<String, String> {
     let m = monitor_at(idx_mon)?;
     let params = edid_hdr_defaults(&m);
     apply_hdr(idx_mon, params)?;
+    save_cfg(&m, |e| e.sdr_above_peak = Some(false));
+    let cap = monitors::sdr_white_cap(edid_peak_nits(&m)).map_or(f64::INFINITY, |c| c as f64);
+    set_sdr_white(idx_mon, RECOMMENDED_SDR_WHITE_NITS.min(cap))?;
     log(&format!("HDR defaults restored on monitor {}", m.num));
     Ok(format!("Restored HDR defaults on monitor {}", m.num))
 }
