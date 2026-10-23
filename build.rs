@@ -23,7 +23,7 @@ const RT_MANIFEST: u16 = 24;
 /// en-US; the version info translation below says the same.
 const LANG: u16 = 0x0409;
 
-const COMPANY: &str = "Spectrum contributors";
+const COMPANY: &str = "Andrea Torti";
 const DESCRIPTION: &str = "Spectrum: monitor color profiles";
 const PRODUCT: &str = "Spectrum";
 const EXE_NAME: &str = "Spectrum.exe";

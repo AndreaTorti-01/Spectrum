@@ -9,13 +9,13 @@ paths:
 
 # Copy rules
 
-These cover all human-readable text except code: UI strings (including the gamut-space descriptions in `color.rs`), README, website, CONTRIBUTING, issue and PR templates, `.claude/` docs, release notes, commit messages and PR descriptions. Identifiers and code comments are exempt.
+These cover all human-readable text except code: UI strings (including the gamut-space descriptions in `color.rs`), README, website, issue and PR templates, `.claude/` docs, release notes, commit messages and PR descriptions. Identifiers and code comments are exempt.
 
 Visuals carry the message and text captions them. The giveaway of machine-written copy is volume: text that explains what the reader can already see, restates the headline or describes benefits in the abstract.
 
 ## App UI strings
 
-- Prefer sentence case and no period on labels or buttons. Buttons are usually verbs ("Read profile from monitor", "Restore default values"). Avoid "please", exclamation marks and "Oops": they add tone but no information.
+- Prefer sentence case and no period on labels or buttons. Buttons are usually verbs ("Read from monitor", "Restore recommended HDR settings"). Avoid "please", exclamation marks and "Oops": they add tone but no information.
 - Status messages work best as a past-tense fact in about 6 words or fewer that names the thing: "Applied Display P3 to monitor 1". "Successfully" adds nothing.
 - Errors usually say what failed and what to do, in 2 short sentences or fewer: "Couldn't read EDID from monitor 2. Reconnect the cable and try again."
 - Hints fit best on a disabled or non-obvious control, about 8 words or fewer: "Turn on HDR to tune it".
