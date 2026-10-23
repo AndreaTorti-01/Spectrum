@@ -75,7 +75,7 @@ function callouts(): string {
   const texts = [
     "Identify shows each monitor's number on its screen",
     "The SDR profile applies on selection",
-    "HDR sliders write an MHC2 profile on release",
+    "HDR changes apply when you let go of a slider",
   ];
   return (
     `<ul class="callouts">` +

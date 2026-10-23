@@ -1,10 +1,10 @@
 # Spectrum website copy
 
-Total prose words: 106 (budget 380; counts Headline, Hero text, Body, Caption, Callout, noscript and the footer line; excludes kickers, button and label lines, numbers, axis ticks, alt text and the gamut descriptions, which are the app's own strings)
+Total prose words: 101 (budget 380; counts Headline, Hero text, Body, Caption, Callout, noscript and the footer line; excludes kickers, button and label lines, numbers, axis ticks, alt text and the gamut descriptions, which are the app's own strings)
 
 Line types: Headline, Hero text, Body, Caption, Callout and Noscript count as prose and carry a word count. Kicker, Button, Label, Alt, Aria and Description are UI text and are not counted. Placeholders in braces ({rx}, {area}) are filled by the builder from the measurement report and monitor.json. Coverage percentages are computed from monitor.json (checked by hand: 100, 98.4, 94.9 and 78.1).
 
-UI labels quoted here match the app verbatim: "Read profile from monitor", "Compare gamuts…", "Start with Windows", "Black level", "Peak brightness", "Full-frame", "Saturation", "SDR content", "Advanced", "Restore default values", "Open Spectrum". Gamut space names and descriptions are copied from `STANDARD_SPACES` in `src/color.rs`; if that file changes, change the strings here.
+UI labels quoted here match the app verbatim: "Read from monitor", "Compare gamuts…", "Start with Windows", "Black level", "Peak brightness", "Full-frame", "Saturation", "SDR content", "Advanced", "Restore recommended HDR settings", "Open Spectrum". Gamut space names and descriptions are copied from `STANDARD_SPACES` in `src/color.rs`; if that file changes, change the strings here.
 
 ## Meta
 
@@ -38,23 +38,23 @@ UI labels quoted here match the app verbatim: "Read profile from monitor", "Comp
 
 ## 3. Main window
 
-- Headline: "One window, every monitor." (4 words)
+- Headline: none (the screenshot and callouts carry the section)
 - Body: none
 - Callout 1: "Identify shows each monitor's number on its screen" (8 words)
 - Callout 2: "The SDR profile applies on selection" (6 words)
-- Callout 3: "HDR sliders write an MHC2 profile on release" (8 words)
-- Alt (light): "Spectrum main window, light theme. A map of the connected monitors, an SDR profile dropdown, Read profile from monitor and Compare gamuts… buttons, an HDR toggle with four sliders, and a Start with Windows checkbox."
-- Alt (dark): "Spectrum main window, dark theme. A map of the connected monitors, an SDR profile dropdown, Read profile from monitor and Compare gamuts… buttons, an HDR toggle with four sliders, and a Start with Windows checkbox."
+- Callout 3: "HDR changes apply when you let go of a slider" (10 words)
+- Alt (light): "Spectrum main window, light theme. A map of the connected monitors, an SDR profile dropdown, Read from monitor and Compare gamuts… buttons, an HDR toggle with four sliders, and a Start with Windows checkbox."
+- Alt (dark): "Spectrum main window, dark theme. A map of the connected monitors, an SDR profile dropdown, Read from monitor and Compare gamuts… buttons, an HDR toggle with four sliders, and a Start with Windows checkbox."
 
 ## 4. HDR lab
 
-- Kicker: "HDR · MHC2"
-- Headline: "Tune HDR with four sliders." (5 words)
+- Kicker: none
+- Headline: "HDR tuning, done right." (4 words)
 - Body: none
-- Caption: "Same MHC2 layout as the Windows HDR Calibration app." (9 words)
+- Caption: none. The gamut chart sits to the right of the PQ chart.
 - Label: "Black level" (unit "nits", range 0–0.5)
 - Label: "Peak brightness" (unit "nits", range 100–4000)
-- Label: "Full-frame" (unit "nits", range 100�4000, independent of peak)
+- Label: "Full-frame" (unit "nits", range 100–4000, stops at peak)
 - Label: "Saturation" (unit "%", range 0–100)
 - Label (chart 1 title): "PQ (ST 2084) response"
 - Label (chart 1 legend): "Reference" · "Your display" · "Full-frame"
@@ -67,7 +67,7 @@ UI labels quoted here match the app verbatim: "Read profile from monitor", "Comp
 
 ## 5. Gamut
 
-- Kicker: "Gamut · CIE 1931 xy"
+- Kicker: "Gamut"
 - Headline: "Compare gamuts against reference spaces." (5 words)
 - Body: none
 - Caption: "Computed from a QD-OLED monitor's EDID." (6 words)
@@ -84,15 +84,16 @@ UI labels quoted here match the app verbatim: "Read profile from monitor", "Comp
 
 ## 6. Tray
 
-- Headline: "Switch profiles from the tray." (5 words)
+- Headline: "Monitor color profile switching, just one click away." (8 words; the owner's wording)
 - Body: none
-- Caption: "Left-click toggles the main window." (5 words)
+- Caption: "Spectrum lives in your system tray." (6 words)
 - Label (taskbar mock): "Spectrum" (tray icon tooltip)
 - Alt (light): "Spectrum tray menu, light theme. For each monitor, a radio list of SDR profiles (QD-OLED 27 (EDID), sRGB, Display P3, Adobe RGB, ProPhoto RGB, Rec. 2020, DCI-P3), an HDR check item, then Open Spectrum and Exit."
 - Alt (dark): "Spectrum tray menu, dark theme. For each monitor, a radio list of SDR profiles (QD-OLED 27 (EDID), sRGB, Display P3, Adobe RGB, ProPhoto RGB, Rec. 2020, DCI-P3), an HDR check item, then Open Spectrum and Exit."
 
 ## 7. Footer
 
+- Text: "© 2026 Andrea Torti"
 - Link: "MIT license"
 - Link: "GitHub"
 - Footer line: "Built with Win32, GDI and a stubborn refusal to ship Electron." (11 words)

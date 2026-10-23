@@ -5,6 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <title>Spectrum: monitor color profiles for Windows</title>
   <meta name="description" content="Windows tray utility that builds an ICC profile from your monitor's EDID, writes MHC2 profiles for HDR and re-applies them after driver updates." />
+  <meta name="author" content="Andrea Torti" />
   <meta name="color-scheme" content="dark light" />
   <meta name="theme-color" content="#121110" media="(prefers-color-scheme: dark)" />
   <meta name="theme-color" content="#F2EEE7" media="(prefers-color-scheme: light)" />
@@ -82,15 +83,14 @@
     </section>
 
     <!-- 4. Main window -->
-    <section id="window" class="section win" aria-labelledby="h-window">
+    <section id="window" class="section win" aria-label="Main window">
       <spectral></spectral>
       <div class="wrap">
-        <h2 id="h-window" data-reveal>One window, every monitor.</h2>
         <div class="win-stage">
           <figure class="slab slab-main" data-slab data-max-tilt="9">
             <div class="slab-sway">
               <div class="slab-tilt">
-                <shot name="main" strip="Spectrum" alt-light="Spectrum main window, light theme. A map of the connected monitors, an SDR profile dropdown, Read profile from monitor, Compare gamuts… and Manage profiles… buttons, an HDR toggle with five sliders, and a Start with Windows checkbox." alt-dark="Spectrum main window, dark theme. A map of the connected monitors, an SDR profile dropdown, Read profile from monitor, Compare gamuts… and Manage profiles… buttons, an HDR toggle with five sliders, and a Start with Windows checkbox." sizes="(min-width: 900px) 480px, 92vw"></shot>
+                <shot name="main" strip="Spectrum" alt-light="Spectrum main window, light theme. A map of the connected monitors, an SDR profile dropdown, Read from monitor, Compare gamuts… and Manage profiles… buttons, an HDR toggle with five sliders, and a Start with Windows checkbox." alt-dark="Spectrum main window, dark theme. A map of the connected monitors, an SDR profile dropdown, Read from monitor, Compare gamuts… and Manage profiles… buttons, an HDR toggle with five sliders, and a Start with Windows checkbox." sizes="(min-width: 900px) 480px, 92vw"></shot>
                 <i class="slab-spec"></i>
                 <i class="slab-edge"></i>
                 <!--callouts-->
@@ -101,7 +101,7 @@
           <ol class="callout-list">
             <li><span class="callout-n">1</span>Identify shows each monitor's number on its screen</li>
             <li><span class="callout-n">2</span>The SDR profile applies on selection</li>
-            <li><span class="callout-n">3</span>HDR sliders write an MHC2 profile on release</li>
+            <li><span class="callout-n">3</span>HDR changes apply when you let go of a slider</li>
           </ol>
         </div>
       </div>
@@ -111,8 +111,7 @@
     <section id="hdr" class="section hdr" aria-labelledby="h-hdr">
       <spectral></spectral>
       <div class="wrap">
-        <p class="kicker">HDR · MHC2</p>
-        <h2 id="h-hdr" data-reveal>Tune HDR with four sliders.</h2>
+        <h2 id="h-hdr" data-reveal>HDR tuning, done right.</h2>
         <div class="hdr-grid needs-js">
           <div class="hdr-controls" role="group" aria-label="HDR sliders">
             <div class="ctl" data-ctl="black">
@@ -139,18 +138,15 @@
               </div>
               <canvas id="hdr-pq" role="img" aria-label="Line chart of the PQ response from 0 to 10,000 nits, with the reference curve dashed and your display's curve clipped at peak brightness."></canvas>
             </figure>
-            <div class="chart-row">
-              <figure class="chart chart-gamut">
+            <figure class="chart chart-gamut">
                 <div class="chart-head"><span class="label">Gamut</span>
                   <ul class="legend"><li><i class="lg lg-709"></i>BT.709</li><li><i class="lg lg-2020"></i>BT.2020</li><li><i class="lg lg-res"></i>Result</li></ul>
                 </div>
                 <canvas id="hdr-gamut" role="img" aria-label="CIE 1931 xy diagram with the BT.709 triangle growing toward BT.2020 as saturation rises."></canvas>
-              </figure>
-              <p class="caption">Same MHC2 layout as the Windows HDR Calibration app.</p>
-            </div>
+            </figure>
           </div>
         </div>
-        <noscript><shot name="hdr" alt-light="Spectrum main window, light theme, HDR section: a toggle and five sliders for black level, peak brightness, full-frame, saturation and SDR content." alt-dark="Spectrum main window, dark theme, HDR section: a toggle and five sliders for black level, peak brightness, full-frame, saturation and SDR content." sizes="440px"></shot><p class="caption">Same MHC2 layout as the Windows HDR Calibration app.</p></noscript>
+        <noscript><shot name="hdr" alt-light="Spectrum main window, light theme, HDR section: a toggle and five sliders for black level, peak brightness, full-frame, saturation and SDR content." alt-dark="Spectrum main window, dark theme, HDR section: a toggle and five sliders for black level, peak brightness, full-frame, saturation and SDR content." sizes="440px"></shot></noscript>
       </div>
     </section>
 
@@ -158,7 +154,7 @@
     <section id="gamut" class="section gamut" aria-labelledby="h-gamut">
       <spectral></spectral>
       <div class="wrap">
-        <p class="kicker">Gamut · CIE 1931 xy</p>
+        <p class="kicker">Gamut</p>
         <h2 id="h-gamut" data-reveal>Compare gamuts against reference spaces.</h2>
         <div class="gamut-grid">
           <ul class="spec-list" aria-label="Reference spaces">
@@ -184,8 +180,8 @@
     <section id="tray" class="section tray" aria-labelledby="h-tray">
       <spectral></spectral>
       <div class="wrap">
-        <h2 id="h-tray" data-reveal>Switch profiles from the tray.</h2>
-        <p class="caption">Left-click toggles the main window.</p>
+        <h2 id="h-tray" data-reveal>Monitor color profile switching, just one click away.</h2>
+        <p class="caption">Spectrum lives in your system tray.</p>
       </div>
       <div class="taskbar" data-tray>
         <div class="taskbar-inner">
@@ -212,6 +208,7 @@
   <footer class="footer" id="footer">
     <spectral></spectral>
     <div class="wrap footer-inner">
+      <span>© 2026 Andrea Torti</span>
       <a href="%LICENSE%">MIT license</a>
       <a href="%REPO%">GitHub</a>
       <p>Built with Win32, GDI and a stubborn refusal to ship Electron.</p>
