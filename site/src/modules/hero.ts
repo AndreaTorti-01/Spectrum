@@ -33,7 +33,8 @@ export function initHero() {
     diagram.tris = [{ prims: lerpPrims(states[i]!.prims, states[(i + 1) % n]!.prims, e), color: "ink", width: 1.5, white: true }];
     diagram.labels = states.map((s, j) => {
       const d = Math.abs(pos - j);
-      return { title: s.name, sub: sub[j]!, alpha: Math.max(0, 1 - Math.min(d, n - d)) };
+      // Fade out fully before the next label fades in, so two labels never overlap mid-morph.
+      return { title: s.name, sub: sub[j]!, alpha: Math.max(0, 1 - 2 * Math.min(d, n - d)) };
     });
     diagram.requestDraw();
   };
@@ -44,10 +45,10 @@ export function initHero() {
   }
   render(0);
 
-  // Autoplay, same on every screen size: hold each gamut 2.4 s, morph 0.9 s; the last morph returns to the first
+  // Autoplay, same on every screen size: hold each gamut 1.6 s, morph 0.7 s; the last morph returns to the first
   // gamut. Plays only while the diagram is in view and the tab is visible. No scroll pin, no scrub.
-  const HOLD = 2.4;
-  const MORPH = 0.9;
+  const HOLD = 1.6;
+  const MORPH = 0.7;
   const c = { t: 0 };
   const tl = gsap.timeline({ repeat: -1, paused: true, onUpdate: () => render(c.t) });
   states.forEach((_s, i) => tl.to(c, { t: i + 1, duration: MORPH, ease: "none" }, i * (HOLD + MORPH) + HOLD));

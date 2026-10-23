@@ -324,18 +324,32 @@ export class CieDiagram {
     const { ctx } = this;
     ctx.save();
     ctx.textAlign = "right";
-    const x = this.visibleW - 10;
     const narrow = this.visibleW < 560;
-    const y = (narrow ? this.Y(0.84) : this.Y(0.115));
+    // Narrow screens: keep the label inside the plot's empty top-right corner, on a plate so gridlines don't
+    // run through the text. Wide screens: below the locus, past the plot's right edge.
+    const x = narrow ? Math.min(this.visibleW - 10, this.X(XMAX) - 8) : this.visibleW - 10;
+    const y = narrow ? this.Y(0.86) : this.Y(0.115);
+    const titleFont = `500 ${narrow ? 13 : 15}px "IBM Plex Mono", ui-monospace, Consolas, monospace`;
+    const subFont = `400 ${narrow ? 11 : 12}px "IBM Plex Mono", ui-monospace, Consolas, monospace`;
+    const gap = narrow ? 17 : 20;
     for (const l of this.labels) {
       if (l.alpha <= 0.01) continue;
+      if (narrow) {
+        ctx.font = titleFont;
+        let w = ctx.measureText(l.title).width;
+        ctx.font = subFont;
+        w = Math.max(w, ctx.measureText(l.sub).width);
+        ctx.globalAlpha = 1;
+        ctx.fillStyle = p.bg;
+        ctx.fillRect(x - w - 6, y - 15, w + 12, gap + 21);
+      }
       ctx.globalAlpha = l.alpha;
       ctx.fillStyle = p.ink;
-      ctx.font = `500 ${narrow ? 13 : 15}px "IBM Plex Mono", ui-monospace, Consolas, monospace`;
+      ctx.font = titleFont;
       ctx.fillText(l.title, x, y);
       ctx.fillStyle = p.dim;
-      ctx.font = `400 ${narrow ? 11 : 12}px "IBM Plex Mono", ui-monospace, Consolas, monospace`;
-      ctx.fillText(l.sub, x, y + (narrow ? 17 : 20));
+      ctx.font = subFont;
+      ctx.fillText(l.sub, x, y + gap);
     }
     ctx.restore();
   }

@@ -1,11 +1,12 @@
 // Measured positions on the screenshots, as fractions of the image (0..1), so they survive a re-capture at
 // a different scale as long as the window layout is the same.
 
-/** Targets of the three callouts on the main window screenshot: Identify link, SDR dropdown, HDR slider. */
+/** Targets of the three callouts on the main window screenshot (440 x 680 logical, Advanced open, HDR on):
+ * Identify button, SDR dropdown, Peak brightness value. */
 export const MAIN_CALLOUTS: ReadonlyArray<{ x: number; y: number }> = [
-  { x: 0.945, y: 0.038 },
-  { x: 0.953, y: 0.265 },
-  { x: 0.976, y: 0.713 },
+  { x: 420 / 440, y: 36 / 680 },
+  { x: 420 / 440, y: 160 / 680 },
+  { x: 420 / 440, y: 409 / 680 },
 ];
 
 /** Plot area of the gamut window screenshot: data (x, y) to fractions of the image. */
