@@ -3,6 +3,7 @@
 
 #![allow(clippy::too_many_arguments, clippy::not_unsafe_ptr_arg_deref)]
 
+use super::design;
 use super::draw::{
     apply_window_theme, colorref, mix, sc, scf, window_dpi, Canvas, Fonts, Theme, R, TA_CENTER, TA_LEFT,
 };
@@ -312,11 +313,18 @@ pub struct Ctx<'a> {
     pub dpi: u32,
 }
 
+/// Button variants from the design language (`design.rs`). There is no text-only variant: every action
+/// looks like a button.
 #[derive(Clone, Copy, PartialEq, Eq)]
 pub enum BtnStyle {
-    Normal,
+    /// The single most important action of a view.
     Primary,
-    Text,
+    /// Every other action.
+    Secondary,
+    /// A destructive action, first click.
+    Danger,
+    /// A destructive action waiting for its confirming click.
+    DangerConfirm,
 }
 
 fn dis(ctx: &Ctx, c: u32) -> u32 {
@@ -336,61 +344,57 @@ pub fn focus_ring(c: &mut Canvas, ctx: &Ctx, r: R, radius: f32) {
 
 pub fn draw_button(c: &mut Canvas, ctx: &Ctx, r: R, label: &str, st: WState, style: BtnStyle) {
     let th = &ctx.th;
-    let rad = scf(4.0, ctx.dpi);
-    let (fill, border, txt) = match style {
-        BtnStyle::Normal => {
-            let f = if !st.enabled {
-                mix(th.surface, th.bg, 0.5)
-            } else if st.pressed && st.hover {
-                th.pressed_fill()
-            } else if st.hover {
-                th.hover_fill()
-            } else {
-                th.surface
-            };
-            let b = if st.hover && st.enabled {
-                mix(th.line, th.text, 0.18)
-            } else {
-                th.line
-            };
-            (
-                Some(f),
-                Some(b),
-                if st.enabled { th.text } else { dis(ctx, th.text) },
-            )
-        }
-        BtnStyle::Primary => {
-            let f = if !st.enabled {
-                mix(th.accent, th.bg, 0.6)
-            } else if st.pressed && st.hover {
-                mix(th.accent, 0x000000, 0.2)
-            } else if st.hover {
-                mix(th.accent, 0xFFFFFF, 0.14)
-            } else {
-                th.accent
-            };
-            (Some(f), None, th.on_accent())
-        }
-        BtnStyle::Text => {
-            let f = if !st.enabled {
-                None
-            } else if st.pressed && st.hover {
-                Some(th.pressed_fill())
-            } else if st.hover {
-                Some(th.hover_fill())
-            } else {
-                None
-            };
-            let t = if !st.enabled {
-                dis(ctx, th.text_dim)
-            } else if st.hover {
-                th.text
-            } else {
-                th.accent_text()
-            };
-            (f, None, t)
+    let rad = scf(design::RADIUS_CONTROL, ctx.dpi);
+    let filled = |base: u32| -> u32 {
+        if !st.enabled {
+            mix(base, th.bg, 0.6)
+        } else if st.pressed && st.hover {
+            mix(base, 0x000000, 0.2)
+        } else if st.hover {
+            mix(base, 0xFFFFFF, 0.14)
+        } else {
+            base
         }
     };
+    let outlined_fill = if !st.enabled {
+        mix(th.surface, th.bg, 0.5)
+    } else if st.pressed && st.hover {
+        th.pressed_fill()
+    } else if st.hover {
+        th.hover_fill()
+    } else {
+        th.surface
+    };
+    let outlined_border = if st.hover && st.enabled {
+        mix(th.line, th.text, 0.18)
+    } else {
+        th.line
+    };
+    let (fill, border, txt) = match style {
+        BtnStyle::Secondary => (
+            outlined_fill,
+            Some(outlined_border),
+            if st.enabled { th.text } else { dis(ctx, th.text) },
+        ),
+        BtnStyle::Danger => {
+            let d = design::danger(th);
+            (
+                outlined_fill,
+                Some(if st.hover && st.enabled {
+                    mix(th.line, d, 0.6)
+                } else {
+                    outlined_border
+                }),
+                if st.enabled { d } else { dis(ctx, th.text) },
+            )
+        }
+        BtnStyle::Primary => (filled(th.accent), None, th.on_accent()),
+        BtnStyle::DangerConfirm => {
+            let d = if th.dark { 0xC42B1C } else { design::danger(th) };
+            (filled(d), None, 0xFFFFFF)
+        }
+    };
+    let fill = Some(fill);
     if let Some(f) = fill {
         c.fill_rrect(r, rad, f, 1.0);
     }
@@ -398,6 +402,34 @@ pub fn draw_button(c: &mut Canvas, ctx: &Ctx, r: R, label: &str, st: WState, sty
         c.stroke_rrect(r, rad, 1.0_f32.max(scf(1.0, ctx.dpi).floor()), b, 1.0);
     }
     c.text(r, label, ctx.f.body, txt, TA_CENTER);
+    if st.focus {
+        focus_ring(c, ctx, r, rad);
+    }
+}
+
+/// A full-width disclosure row: chevron, label, hover fill. Opens and closes a group of advanced controls.
+pub fn draw_expander(c: &mut Canvas, ctx: &Ctx, r: R, label: &str, open: bool, st: WState) {
+    let th = &ctx.th;
+    let rad = scf(design::RADIUS_CONTROL, ctx.dpi);
+    if st.enabled && (st.hover || st.pressed) {
+        let f = if st.pressed {
+            th.pressed_fill()
+        } else {
+            th.hover_fill()
+        };
+        c.fill_rrect(r, rad, f, 1.0);
+    }
+    let col = if st.enabled { th.text } else { dis(ctx, th.text) };
+    let s = scf(5.0, ctx.dpi);
+    let (cx, cy) = (r.l as f32 + scf(12.0, ctx.dpi), r.cy());
+    let pts = if open {
+        [(cx - s, cy - s * 0.5), (cx, cy + s * 0.5), (cx + s, cy - s * 0.5)]
+    } else {
+        [(cx - s * 0.5, cy - s), (cx + s * 0.5, cy), (cx - s * 0.5, cy + s)]
+    };
+    c.polyline(&pts, false, scf(1.6, ctx.dpi), col, 1.0);
+    let tr = R::new(r.l + sc(28, ctx.dpi), r.t, r.r, r.b);
+    c.text(tr, label, ctx.f.strong, col, TA_LEFT);
     if st.focus {
         focus_ring(c, ctx, r, rad);
     }
@@ -442,9 +474,9 @@ pub fn draw_toggle(c: &mut Canvas, ctx: &Ctx, r: R, on: bool, st: WState) {
 
 pub fn draw_checkbox(c: &mut Canvas, ctx: &Ctx, r: R, label: &str, checked: bool, st: WState) {
     let th = &ctx.th;
-    let b = sc(18, ctx.dpi);
+    let b = sc(design::CHECK, ctx.dpi);
     let bx = R::xywh(r.l, r.t + (r.h() - b) / 2, b, b);
-    let rad = scf(4.0, ctx.dpi);
+    let rad = scf(design::RADIUS_CONTROL, ctx.dpi);
     let txt = if st.enabled { th.text } else { dis(ctx, th.text) };
     if checked {
         let fill = if !st.enabled {
@@ -584,7 +616,7 @@ pub fn draw_slider(c: &mut Canvas, ctx: &Ctx, r: R, t: f64, st: WState, dragging
 
 pub fn draw_dropdown(c: &mut Canvas, ctx: &Ctx, r: R, text: &str, st: WState, open: bool) {
     let th = &ctx.th;
-    let rad = scf(4.0, ctx.dpi);
+    let rad = scf(design::RADIUS_CONTROL, ctx.dpi);
     let fill = if !st.enabled {
         mix(th.surface, th.bg, 0.5)
     } else if st.pressed || open {

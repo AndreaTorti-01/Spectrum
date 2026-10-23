@@ -3,6 +3,7 @@
 
 #![allow(clippy::too_many_arguments)]
 
+use super::design;
 use super::draw::{
     apply_window_theme, invalidate_theme, mix, sc, scf, system_dpi, theme, trim_working_set, window_dpi,
     Canvas, Fonts, R, TA_CENTER, TA_LEFT, WM_MOUSELEAVE,
@@ -30,8 +31,8 @@ use windows_sys::Win32::UI::WindowsAndMessaging::{
 
 const CLASS: &str = "SpectrumProfilesWindow";
 const CLIENT_W: i32 = 780;
-const MARGIN: i32 = 20;
-const TOP: i32 = 40;
+const MARGIN: i32 = design::PAD;
+const TOP: i32 = design::PAD + design::HEADING_H + design::SPACE_M;
 const PAD: i32 = 4;
 const ROW_H: i32 = 62;
 const VISIBLE_ROWS: i32 = 6;
@@ -39,7 +40,7 @@ const STATUS_H: i32 = 20;
 const CLIENT_H: i32 = TOP + 2 * PAD + VISIBLE_ROWS * ROW_H + 12 + STATUS_H + 20;
 const SCROLLBAR_W: i32 = 12;
 const BTN_W: i32 = 132;
-const BTN_H: i32 = 30;
+const BTN_H: i32 = design::CONTROL_H;
 const TIMER_CONFIRM: usize = 1;
 /// How long the button stays on "Click to confirm".
 const CONFIRM_MS: u32 = 3000;
@@ -105,7 +106,12 @@ fn geo(dpi: u32) -> Geo {
             s(CLIENT_W - MARGIN),
             panel.b + s(12 + STATUS_H),
         ),
-        head: R::new(s(MARGIN), s(10), s(CLIENT_W - MARGIN), s(34)),
+        head: R::new(
+            s(MARGIN),
+            s(design::PAD),
+            s(CLIENT_W - MARGIN),
+            s(design::PAD + design::HEADING_H),
+        ),
     }
 }
 
@@ -251,8 +257,8 @@ impl Profiles {
         let dpi = self.dpi;
         let g = geo(dpi);
         c.clear(th.bg);
-        c.text(g.head, "Manage profiles", self.fonts.heading, th.text, TA_LEFT);
-        let radius = scf(6.0, dpi);
+        c.text(g.head, "Manage profiles", self.fonts.subtitle, th.text, TA_LEFT);
+        let radius = scf(design::RADIUS_CARD, dpi);
         c.fill_rrect(g.panel, radius, th.surface, 1.0);
         let overflow = self.overflow();
         if self.rows.is_empty() {
@@ -284,7 +290,7 @@ impl Profiles {
         }
         c.stroke_rrect(g.panel, radius, scf(1.0, dpi).floor().max(1.0), th.line, 1.0);
         if let Some(s) = &self.status {
-            c.text(g.status, s, self.fonts.dim, th.text_dim, TA_LEFT);
+            c.text(g.status, s, self.fonts.caption, th.text_dim, TA_LEFT);
         }
     }
 
@@ -302,7 +308,7 @@ impl Profiles {
         // line 1: name and type tag
         let name_w = c.text_width(&row.name, self.fonts.body);
         let tag = row.kind.label();
-        let tag_w = c.text_width(tag, self.fonts.dim) + sc(12, dpi);
+        let tag_w = c.text_width(tag, self.fonts.caption) + sc(12, dpi);
         let name_max = (right - left - tag_w - sc(8, dpi)).max(sc(40, dpi));
         let name_w = name_w.min(name_max);
         c.text(
@@ -319,20 +325,20 @@ impl Profiles {
             r.t + sc(25, dpi),
         );
         c.stroke_rrect(pill, scf(8.0, dpi), scf(1.0, dpi).floor().max(1.0), th.line, 1.0);
-        c.text(pill, tag, self.fonts.dim, th.text_dim, TA_CENTER);
+        c.text(pill, tag, self.fonts.caption, th.text_dim, TA_CENTER);
         // line 2: file name; line 3: usage and, for a locked row, why
-        c.text(line(27), &row.file, self.fonts.dim, th.text_dim, TA_LEFT);
+        c.text(line(27), &row.file, self.fonts.caption, th.text_dim, TA_LEFT);
         let third = match row.deletable {
             Err(why) => format!("{} \u{b7} {}", row.used, why.hint()),
             Ok(()) => row.used.clone(),
         };
-        c.text(line(42), &third, self.fonts.dim, th.text_dim, TA_LEFT);
+        c.text(line(42), &third, self.fonts.caption, th.text_dim, TA_LEFT);
         // button
         let confirming = self.confirm == Some(i);
         let (label, style) = if confirming {
-            ("Click to confirm", BtnStyle::Primary)
+            ("Click to confirm", BtnStyle::DangerConfirm)
         } else {
-            ("Delete", BtnStyle::Normal)
+            ("Delete", BtnStyle::Danger)
         };
         let enabled = row.deletable.is_ok();
         let over =

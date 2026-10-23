@@ -529,7 +529,7 @@ fn set_sdr(idx_mon: usize, idx: usize) -> Result<String, String> {
         && !wcs::profile_exists(&file)
         && !backup_has(&file)
     {
-        // The EDID profile is not built yet: same flow as "Read profile from monitor".
+        // The EDID profile is not built yet: same flow as "Read from monitor".
         return read_edid(idx_mon);
     }
     ensure_file(&file).map_err(fail)?;
@@ -759,7 +759,7 @@ fn set_sdr_above_peak(idx_mon: usize, on: bool) -> Result<String, String> {
     }
 }
 
-/// "Restore default values": writes the Spectrum HDR profile again with the EDID values and keeps it as
+/// "Restore recommended HDR settings": writes the Spectrum HDR profile again with the EDID values and keeps it as
 /// the HDR default (same A/B alternation as `apply_hdr`). SDR content brightness is left alone.
 fn reset_hdr(idx_mon: usize) -> Result<String, String> {
     let m = monitor_at(idx_mon)?;

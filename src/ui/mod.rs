@@ -3,6 +3,7 @@
 //! The UI reads state only through [`snapshot`] and sends intents only through [`dispatch`]. Both forward to
 //! `crate::app` unless a mock state is installed with [`set_mock`] (used by `examples/uipreview.rs`).
 
+pub mod design;
 pub mod draw;
 pub mod gamut_window;
 pub mod main_window;

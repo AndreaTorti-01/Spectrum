@@ -133,8 +133,8 @@ fn geo(dpi: u32, info_h: i32) -> Geo {
     );
     Geo {
         plot: R::new(s(56), s(40), s(566), s(580)),
-        head_l: R::new(s(56), s(10), s(566), s(34)),
-        head_r: R::new(s(PANEL_L), s(10), s(CLIENT_W - 20), s(34)),
+        head_l: R::new(s(56), s(6), s(566), s(38)),
+        head_r: R::new(s(PANEL_L), s(6), s(CLIENT_W - 20), s(38)),
         panel,
         list: R::new(
             panel.l + pad,
@@ -428,7 +428,7 @@ impl Gamut {
     /// Height of the info block: the tallest text it can show, so the list does not resize on hover.
     fn info_height(&self, c: &mut Canvas, width: i32) -> i32 {
         let dpi = self.dpi;
-        let dim = self.fonts.dim;
+        let dim = self.fonts.caption;
         let block = |c: &mut Canvas, body: &str| c.measure_wrapped(width, body, dim) + sc(18, dpi);
         let mut tallest = 0;
         for i in 0..self.entries.len() {
@@ -689,7 +689,7 @@ impl Gamut {
         c.text(
             g.head_l,
             "CIE 1931 xy chromaticity",
-            self.fonts.heading,
+            self.fonts.subtitle,
             th.text,
             TA_LEFT,
         );
@@ -712,7 +712,7 @@ impl Gamut {
                     g.plot.b + sc(19, dpi),
                 ),
                 &lab,
-                self.fonts.dim,
+                self.fonts.caption,
                 th.text_dim,
                 TA_CENTER,
             );
@@ -730,7 +730,7 @@ impl Gamut {
                     py as i32 + sc(9, dpi),
                 ),
                 &lab,
-                self.fonts.dim,
+                self.fonts.caption,
                 th.text_dim,
                 TA_RIGHT,
             );
@@ -768,7 +768,7 @@ impl Gamut {
             );
             let lr = scf(17.0, dpi);
             let label = nm.to_string();
-            let (tw, thh) = (c.text_width(&label, self.fonts.dim), sc(14, dpi));
+            let (tw, thh) = (c.text_width(&label, self.fonts.caption), sc(14, dpi));
             let (hw, hh) = (tw / 2, thh / 2);
             let margin = sc(4, dpi);
             // On the outward normal, then clamped inside the plot so it never reaches the axis labels.
@@ -794,9 +794,9 @@ impl Gamut {
                 (-d, d),
                 (d, d),
             ] {
-                c.text(at(dx, dy), &label, self.fonts.dim, th.surface, TA_CENTER);
+                c.text(at(dx, dy), &label, self.fonts.caption, th.surface, TA_CENTER);
             }
-            c.text(at(0, 0), &label, self.fonts.dim, th.text_dim, TA_CENTER);
+            c.text(at(0, 0), &label, self.fonts.caption, th.text_dim, TA_CENTER);
         }
         c.text(
             R::new(
@@ -806,7 +806,7 @@ impl Gamut {
                 g.plot.t + sc(18, dpi),
             ),
             "nm",
-            self.fonts.dim,
+            self.fonts.caption,
             th.text_dim,
             TA_RIGHT,
         );
@@ -853,7 +853,7 @@ impl Gamut {
                         c.text(
                             R::new(g.list.l + sc(8, dpi), top, rows_r, top + h),
                             t,
-                            self.fonts.dim,
+                            self.fonts.caption,
                             th.text_dim,
                             TA_LEFT,
                         );
@@ -895,7 +895,7 @@ impl Gamut {
                 }
                 if more > 0 {
                     let label = format!("{more} more");
-                    let w = c.text_width(&label, self.fonts.dim) + sc(14, dpi);
+                    let w = c.text_width(&label, self.fonts.caption) + sc(14, dpi);
                     let pill = R::new(
                         rows_r - sc(6, dpi) - w,
                         g.list.b - sc(22, dpi),
@@ -903,7 +903,7 @@ impl Gamut {
                         g.list.b - sc(4, dpi),
                     );
                     c.fill_rrect(pill, scf(9.0, dpi), th.surface, 1.0);
-                    c.text(pill, &label, self.fonts.dim, th.text_dim, TA_CENTER);
+                    c.text(pill, &label, self.fonts.caption, th.text_dim, TA_CENTER);
                 }
             }
             // scrollbar: the track stays visible while the list overflows
@@ -919,25 +919,25 @@ impl Gamut {
             }
         }
         c.stroke_rrect(g.panel, radius, scf(1.0, dpi).floor().max(1.0), th.line, 1.0);
-        c.text(g.head_r, "Compare gamuts", self.fonts.heading, th.text, TA_LEFT);
+        c.text(g.head_r, "Compare gamuts", self.fonts.subtitle, th.text, TA_LEFT);
 
         // --- right: one info block anchored to the bottom, under a divider ---
         let width = g.info.w();
         let mut y = g.info.b;
         if let Some((title, body)) = self.info() {
-            let h = c.measure_wrapped(width, &body, self.fonts.dim);
+            let h = c.measure_wrapped(width, &body, self.fonts.caption);
             y -= h;
             c.text_wrapped(
                 R::new(g.info.l, y, g.info.r, y + h),
                 &body,
-                self.fonts.dim,
+                self.fonts.caption,
                 th.text_dim,
             );
             y -= sc(18, dpi);
             c.text(
                 R::new(g.info.l, y, g.info.r, y + sc(18, dpi)),
                 &title,
-                self.fonts.title,
+                self.fonts.strong,
                 th.text,
                 TA_LEFT,
             );
@@ -982,7 +982,7 @@ impl Gamut {
         let tag_w = if e.tag.is_empty() {
             0
         } else {
-            c.text_width(&e.tag, ctx.f.dim) + sc(10, dpi)
+            c.text_width(&e.tag, ctx.f.caption) + sc(10, dpi)
         };
         let name_col = if plottable {
             th.text
@@ -1000,7 +1000,7 @@ impl Gamut {
             c.text(
                 R::new(r.r - tag_w - sc(8, dpi), r.t, r.r - sc(10, dpi), r.b),
                 &e.tag,
-                ctx.f.dim,
+                ctx.f.caption,
                 mix(th.text_dim, th.bg, if plottable { 0.0 } else { 0.3 }),
                 TA_RIGHT,
             );
