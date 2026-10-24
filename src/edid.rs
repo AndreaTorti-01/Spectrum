@@ -304,6 +304,45 @@ mod tests {
     }
 
     #[test]
+    fn descriptor_text_stops_at_newline_and_drops_control_bytes() {
+        assert_eq!(
+            descriptor_text(b"DELL U2720Q\n  ").as_deref(),
+            Some("DELL U2720Q")
+        );
+        assert_eq!(descriptor_text(b"A\x01B   ").as_deref(), Some("A B"));
+        assert_eq!(descriptor_text(b"\n           "), None);
+        assert_eq!(descriptor_text(b"      "), None);
+    }
+
+    #[test]
+    fn names_and_keys_fall_back_without_descriptors() {
+        let mut e = parse(&synthetic()).unwrap();
+        e.name = None;
+        e.serial_text = Some("--".into());
+        assert_eq!(e.display_name(), "DEL 1234");
+        assert_eq!(
+            e.key(),
+            "DEL-1234-DEADBEEF",
+            "a serial text without letters or digits adds nothing"
+        );
+        e.serial_text = None;
+        assert_eq!(e.key(), "DEL-1234-DEADBEEF");
+    }
+
+    #[test]
+    fn cta_blocks_without_hdr_metadata() {
+        let mut block = [0u8; 128];
+        block[0] = 0x02;
+        block[2] = 4; // DTDs start right after the header: no data blocks
+        assert!(parse_cta_hdr(&block).is_none());
+        block[2] = 8;
+        block[4] = (2 << 5) | 3; // a video data block, no HDR block
+        assert!(parse_cta_hdr(&block).is_none());
+        block[4] = (7 << 5) | 31; // an extended block with another tag
+        assert!(parse_cta_hdr(&block).is_none());
+    }
+
+    #[test]
     fn gamma_undefined() {
         let mut b = synthetic();
         b[23] = 0xFF;

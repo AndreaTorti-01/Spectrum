@@ -1,5 +1,5 @@
 //! Spectrum's design language. Every window builds its layout from these tokens and draws with the
-//! components in `widgets.rs`, so spacing, sizes and states stay the same everywhere.
+//! components in `widgets`, so spacing, sizes and states stay the same everywhere.
 //!
 //! The rules, adapted from Fluent 2 (the Windows 11 design system) and Nielsen's usability heuristics:
 //!
@@ -9,7 +9,7 @@
 //! - Corners: `RADIUS_CONTROL` on buttons, inputs and checkboxes; `RADIUS_CARD` on containers and tiles.
 //! - Type ramp (Fluent): caption 12, body 14, body strong 14 semibold, subtitle 20 semibold, display 28.
 //!   Section headings are subtitles. Secondary information is caption in `text_dim`.
-//! - Every clickable action is a button (`widgets::Button`), never bare colored text. Variants:
+//! - Every clickable action is a button (`widgets::draw_button`), never bare colored text. Variants:
 //!   `Primary` for the single most important action of a view (at most one), `Secondary` for everything
 //!   else, `Danger` for destructive actions, which always ask for a second click. Disclosures use the
 //!   expander row, toggles switch a setting on and off immediately, checkboxes are for preferences.
@@ -72,4 +72,39 @@ pub fn warning(th: &Theme) -> u32 {
 /// Text color for a disabled label.
 pub fn disabled_text(th: &Theme) -> u32 {
     mix(th.text, th.bg, 0.55)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn spacing_and_sizes_sit_on_the_4px_grid() {
+        for v in [
+            PAD, SPACE_XS, SPACE_S, SPACE_M, SPACE_L, SPACE_XL, CONTROL_H, ROW_H, HEADING_H, TOGGLE_W,
+            TOGGLE_H, CHECK,
+        ] {
+            assert_eq!(v % 4, 0, "{v}");
+        }
+        const { assert!(ROW_H > CONTROL_H, "rows leave a gap between controls") };
+        const { assert!(SPACE_XS < SPACE_S && SPACE_S < SPACE_M && SPACE_M < SPACE_L && SPACE_L < SPACE_XL) };
+        const { assert!(FONT_CAPTION < FONT_BODY && FONT_BODY < FONT_SUBTITLE && FONT_SUBTITLE < FONT_DISPLAY) };
+    }
+
+    #[test]
+    fn state_colors_differ_per_theme() {
+        let light = Theme {
+            dark: false,
+            bg: 0xF7F5F2,
+            surface: 0xFFFFFF,
+            text: 0x1A1917,
+            text_dim: 0x6B655D,
+            line: 0xE2DDD5,
+            accent: 0xFF5A3C,
+        };
+        let dark = Theme { dark: true, ..light };
+        assert_ne!(danger(&light), danger(&dark));
+        assert_ne!(warning(&light), warning(&dark));
+        assert_eq!(disabled_text(&light), mix(light.text, light.bg, 0.55));
+    }
 }

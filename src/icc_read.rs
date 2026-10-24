@@ -296,6 +296,60 @@ fn parse_mhc2(t: &[u8]) -> Option<Mhc2> {
 mod tests {
     use super::*;
 
+    /// An `mluc` tag with (language, text) records; the strings follow the record table.
+    fn mluc(records: &[(&[u8; 4], &str)]) -> Vec<u8> {
+        let mut t = b"mluc\0\0\0\0".to_vec();
+        t.extend_from_slice(&(records.len() as u32).to_be_bytes());
+        t.extend_from_slice(&12u32.to_be_bytes());
+        let mut strings = Vec::new();
+        let base = 16 + 12 * records.len();
+        for (lang, text) in records {
+            let units: Vec<u8> = text.encode_utf16().flat_map(|u| u.to_be_bytes()).collect();
+            t.extend_from_slice(*lang);
+            t.extend_from_slice(&(units.len() as u32).to_be_bytes());
+            t.extend_from_slice(&((base + strings.len()) as u32).to_be_bytes());
+            strings.extend(units);
+        }
+        t.extend(strings);
+        t
+    }
+
+    #[test]
+    fn text_tags_of_both_versions() {
+        let mut desc = b"desc\0\0\0\0".to_vec();
+        desc.extend_from_slice(&6u32.to_be_bytes());
+        desc.extend_from_slice(b"Hello\0junk");
+        assert_eq!(parse_text(&desc).as_deref(), Some("Hello"));
+        assert_eq!(parse_text(b"text\0\0\0\0caf\xe9\0").as_deref(), Some("caf?"));
+        let both = mluc(&[(b"deDE", "Farbe"), (b"enUS", "Color")]);
+        assert_eq!(parse_text(&both).as_deref(), Some("Color"));
+        let german = mluc(&[(b"deDE", "Farbe")]);
+        assert_eq!(parse_text(&german).as_deref(), Some("Farbe"));
+        assert_eq!(parse_text(b"XYZ \0\0\0\0"), None);
+        assert_eq!(parse_text(b"mlu"), None);
+        let mut empty = mluc(&[]);
+        empty.truncate(16);
+        assert_eq!(parse_text(&empty), None);
+    }
+
+    #[test]
+    fn mhc2_header_without_a_matrix() {
+        let mut t = b"MHC2\0\0\0\0".to_vec();
+        t.extend_from_slice(&2u32.to_be_bytes());
+        t.extend_from_slice(&crate::color::to_s15f16(0.05).to_be_bytes());
+        t.extend_from_slice(&crate::color::to_s15f16(1000.0).to_be_bytes());
+        t.extend_from_slice(&0u32.to_be_bytes());
+        let m = parse_mhc2(&t).unwrap();
+        assert_eq!((m.lut_count, m.matrix), (2, None));
+        assert!((m.min_nits - 0.05).abs() < 1e-4 && (m.peak_nits - 1000.0).abs() < 1e-9);
+        // A matrix offset past the end drops the matrix, not the tag.
+        let mut bad = t.clone();
+        bad[20..24].copy_from_slice(&1000u32.to_be_bytes());
+        assert_eq!(parse_mhc2(&bad).unwrap().matrix, None);
+        assert_eq!(parse_mhc2(&t[..12]), None);
+        assert_eq!(parse_mhc2(b"mhc2\0\0\0\0"), None);
+    }
+
     #[test]
     fn rejects_short_and_garbage() {
         assert!(parse(&[]).is_err());

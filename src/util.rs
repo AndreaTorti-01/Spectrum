@@ -2,6 +2,7 @@
 
 use std::io::Write;
 use std::path::PathBuf;
+use windows_sys::core::GUID;
 use windows_sys::Win32::System::Com::CoTaskMemFree;
 use windows_sys::Win32::UI::Shell::{FOLDERID_RoamingAppData, SHGetKnownFolderPath};
 
@@ -18,10 +19,13 @@ pub fn from_wide(w: &[u16]) -> String {
     String::from_utf16_lossy(&w[..end])
 }
 
-fn roaming_app_data() -> Option<PathBuf> {
+/// The path of a shell known folder (`FOLDERID_*`), `None` when the shell can't say.
+pub(crate) fn known_folder(id: &GUID) -> Option<PathBuf> {
+    // SAFETY: the out pointer is a local; the returned string is read up to its NUL, then freed with
+    // CoTaskMemFree as the API requires (also on failure, when it may be set).
     unsafe {
         let mut p: *mut u16 = std::ptr::null_mut();
-        let hr = SHGetKnownFolderPath(&FOLDERID_RoamingAppData, 0, std::ptr::null_mut(), &mut p);
+        let hr = SHGetKnownFolderPath(id, 0, std::ptr::null_mut(), &mut p);
         let out = if hr >= 0 && !p.is_null() {
             let mut len = 0usize;
             while *p.add(len) != 0 {
@@ -40,7 +44,7 @@ fn roaming_app_data() -> Option<PathBuf> {
 
 /// `%APPDATA%\Spectrum`, created on demand.
 pub fn app_data_dir() -> PathBuf {
-    let base = roaming_app_data()
+    let base = known_folder(&FOLDERID_RoamingAppData)
         .or_else(|| std::env::var_os("APPDATA").map(PathBuf::from))
         .unwrap_or_else(std::env::temp_dir);
     let dir = base.join("Spectrum");

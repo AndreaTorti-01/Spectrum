@@ -109,6 +109,7 @@ fn header(
 }
 
 fn query_color_info_2(adapter: LUID, target_id: u32) -> Option<AdvancedColorInfo2> {
+    // SAFETY: zeroed plain-data request with its header set; the pointer is to a local that outlives the call.
     unsafe {
         let mut info: AdvancedColorInfo2 = std::mem::zeroed();
         info.header = header(
@@ -126,6 +127,7 @@ fn query_color_info_2(adapter: LUID, target_id: u32) -> Option<AdvancedColorInfo
 }
 
 fn query_color_info_1(adapter: LUID, target_id: u32) -> Option<u32> {
+    // SAFETY: zeroed plain-data request with its header set; the pointer is to a local that outlives the call.
     unsafe {
         let mut info: DISPLAYCONFIG_GET_ADVANCED_COLOR_INFO = std::mem::zeroed();
         info.header = header(
@@ -227,6 +229,7 @@ fn edid_registry_path(device_path: &str) -> Option<String> {
 /// Raw EDID bytes for a monitor device path from `HKLM\...\Enum\DISPLAY\...\Device Parameters\EDID`.
 pub fn read_edid_registry(device_path: &str) -> Option<Vec<u8>> {
     let sub = edid_registry_path(device_path)?;
+    // SAFETY: the key is closed below; buffers are sized from the first query and live through the second.
     unsafe {
         let mut key: HKEY = std::ptr::null_mut();
         if RegOpenKeyExW(HKEY_LOCAL_MACHINE, wide(&sub).as_ptr(), 0, KEY_READ, &mut key) != 0 {
@@ -266,6 +269,7 @@ pub fn read_edid_registry(device_path: &str) -> Option<Vec<u8>> {
 }
 
 fn query_paths() -> Vec<DISPLAYCONFIG_PATH_INFO> {
+    // SAFETY: the path and mode buffers are sized by GetDisplayConfigBufferSizes and the counts are updated by the call.
     unsafe {
         for _ in 0..5 {
             let (mut np, mut nm) = (0u32, 0u32);
@@ -296,6 +300,7 @@ fn query_paths() -> Vec<DISPLAYCONFIG_PATH_INFO> {
 }
 
 fn source_gdi_name(adapter: LUID, source_id: u32) -> Option<String> {
+    // SAFETY: zeroed plain-data request with its header set; the pointer is to a local that outlives the call.
     unsafe {
         let mut s: DISPLAYCONFIG_SOURCE_DEVICE_NAME = std::mem::zeroed();
         s.header = header(
@@ -312,6 +317,7 @@ fn source_gdi_name(adapter: LUID, source_id: u32) -> Option<String> {
 }
 
 fn target_names(adapter: LUID, target_id: u32) -> (String, String) {
+    // SAFETY: zeroed plain-data request with its header set; the pointer is to a local that outlives the call.
     unsafe {
         let mut t: DISPLAYCONFIG_TARGET_DEVICE_NAME = std::mem::zeroed();
         t.header = header(
@@ -332,6 +338,7 @@ fn target_names(adapter: LUID, target_id: u32) -> (String, String) {
 
 /// Desktop rectangle in physical pixels for a GDI device name (`\\.\DISPLAY1`).
 fn gdi_rect(gdi_name: &str) -> Rect {
+    // SAFETY: zeroed DEVMODEW with dmSize set and a NUL-terminated device name.
     unsafe {
         let mut dm: DEVMODEW = std::mem::zeroed();
         dm.dmSize = std::mem::size_of::<DEVMODEW>() as u16;
@@ -423,6 +430,7 @@ fn dedupe_keys(mons: &mut [Monitor]) {
 pub fn set_hdr(m: &Monitor, on: bool) -> Result<(), String> {
     let adapter = m.adapter.to_win();
     // 24H2+: DISPLAYCONFIG_SET_HDR_STATE.
+    // SAFETY: plain-data request with its header set; the pointer is to a local that outlives the call.
     let rc = unsafe {
         let s = SetHdrState {
             header: header(
@@ -439,6 +447,7 @@ pub fn set_hdr(m: &Monitor, on: bool) -> Result<(), String> {
         return Ok(());
     }
     // Older builds: DISPLAYCONFIG_SET_ADVANCED_COLOR_STATE (bit 0 = enableAdvancedColor).
+    // SAFETY: zeroed plain-data request with its header set; the pointer is to a local that outlives the call.
     let rc2 = unsafe {
         let mut s: windows_sys::Win32::Devices::Display::DISPLAYCONFIG_SET_ADVANCED_COLOR_STATE =
             std::mem::zeroed();
@@ -532,6 +541,7 @@ pub fn snap_back(current: u32, cap: u32) -> Option<u32> {
 
 /// Raw SDR white level of a monitor (1000 = 80 nits), `None` when Windows does not answer.
 pub fn sdr_white_raw(m: &Monitor) -> Option<u32> {
+    // SAFETY: zeroed plain-data request with its header set; the pointer is to a local that outlives the call.
     unsafe {
         let mut s: SdrWhiteLevel = std::mem::zeroed();
         s.header = header(

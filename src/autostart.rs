@@ -2,41 +2,19 @@
 //! The Inno Setup installer creates the same shortcut (see `installer/spectrum.iss`), so toggling the
 //! checkbox in the app and the installer task agree on one file.
 
-use crate::util::from_wide;
-use crate::util::wide;
+use crate::util::{known_folder, wide};
 use std::ffi::c_void;
 use std::path::{Path, PathBuf};
 use windows_sys::core::GUID;
 use windows_sys::Win32::System::Com::{
-    CoCreateInstance, CoInitializeEx, CoTaskMemFree, CoUninitialize, CLSCTX_INPROC_SERVER,
-    COINIT_APARTMENTTHREADED,
+    CoCreateInstance, CoInitializeEx, CoUninitialize, CLSCTX_INPROC_SERVER, COINIT_APARTMENTTHREADED,
 };
-use windows_sys::Win32::UI::Shell::{FOLDERID_Startup, SHGetKnownFolderPath};
+use windows_sys::Win32::UI::Shell::FOLDERID_Startup;
 
 /// File name of the Startup shortcut.
 pub const SHORTCUT_NAME: &str = "Spectrum.lnk";
 /// Argument the shortcut passes: start in the tray without opening the window.
 pub const TRAY_ARG: &str = "--tray";
-
-fn known_folder(id: &GUID) -> Option<PathBuf> {
-    unsafe {
-        let mut p: *mut u16 = std::ptr::null_mut();
-        let hr = SHGetKnownFolderPath(id, 0, std::ptr::null_mut(), &mut p);
-        let out = if hr >= 0 && !p.is_null() {
-            let mut len = 0usize;
-            while *p.add(len) != 0 {
-                len += 1;
-            }
-            Some(PathBuf::from(from_wide(std::slice::from_raw_parts(p, len))))
-        } else {
-            None
-        };
-        if !p.is_null() {
-            CoTaskMemFree(p as *const _);
-        }
-        out
-    }
-}
 
 /// `%APPDATA%\Microsoft\Windows\Start Menu\Programs\Startup`, the fallback when the shell won't say.
 fn fallback_startup_dir() -> PathBuf {
@@ -118,6 +96,7 @@ struct ShortcutSpec<'a> {
 }
 
 fn create_shortcut(s: &ShortcutSpec) -> Result<(), String> {
+    // SAFETY: COM is initialized for this thread and released again only when this call initialized it.
     unsafe {
         let init = CoInitializeEx(std::ptr::null(), COINIT_APARTMENTTHREADED as u32);
         // S_OK / S_FALSE need a matching CoUninitialize; RPC_E_CHANGED_MODE does not (COM still usable).

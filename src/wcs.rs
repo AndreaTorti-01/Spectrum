@@ -25,6 +25,7 @@ const CLASS_MONITOR: u32 = 0x6d6e_7472;
 /// The system color folder (`...\spool\drivers\color`).
 pub fn color_dir() -> PathBuf {
     static DIR: OnceLock<PathBuf> = OnceLock::new();
+    // SAFETY: the buffer and its byte size describe a local array.
     DIR.get_or_init(|| unsafe {
         let mut buf = [0u16; 520];
         let mut size = (buf.len() * 2) as u32;
@@ -72,6 +73,7 @@ pub fn install_profile(file_name: &str, bytes: &[u8]) -> Result<(), String> {
             crate::util::log(&format!("wcs: backup copy of {file_name} failed: {e}"));
         }
     }
+    // SAFETY: NUL-terminated wide path that lives through the call.
     unsafe {
         let ok = InstallColorProfileW(std::ptr::null(), wide(&target.to_string_lossy()).as_ptr());
         if ok == 0 {
@@ -217,6 +219,7 @@ fn hr(what: &str, code: i32) -> String {
 
 fn user_scope(m: &Monitor) -> Option<WCS_PROFILE_MANAGEMENT_SCOPE> {
     let mut scope: WCS_PROFILE_MANAGEMENT_SCOPE = 0;
+    // SAFETY: the out pointer is to a local.
     let rc = unsafe { ColorProfileGetDisplayUserScope(m.adapter.to_win(), m.source_id, &mut scope) };
     (rc >= 0).then_some(scope)
 }
@@ -234,6 +237,7 @@ pub fn ensure_user_scope(m: &Monitor) -> Result<(), String> {
     }
     let device_id =
         monitor_device_id(m).ok_or_else(|| format!("cannot resolve monitor device id for {}", m.gdi_name))?;
+    // SAFETY: NUL-terminated wide device id that lives through the call.
     if unsafe { WcsSetUsePerUserProfiles(wide(&device_id).as_ptr(), CLASS_MONITOR, TRUE) } == 0 {
         return Err(format!(
             "WcsSetUsePerUserProfiles({device_id}) failed: {}",
@@ -245,6 +249,7 @@ pub fn ensure_user_scope(m: &Monitor) -> Result<(), String> {
 
 /// `MONITOR\SPC0001\{4d36e96e-...}\0003`: the device name the legacy WCS calls want.
 fn monitor_device_id(m: &Monitor) -> Option<String> {
+    // SAFETY: zeroed DISPLAY_DEVICEW with cb set and a NUL-terminated device name.
     unsafe {
         let mut dd: DISPLAY_DEVICEW = std::mem::zeroed();
         dd.cb = std::mem::size_of::<DISPLAY_DEVICEW>() as u32;
@@ -267,6 +272,7 @@ fn subtype(hdr: bool) -> COLORPROFILESUBTYPE {
 /// ignores that flag when the profile is already associated, so use [`set_default`] to change defaults.
 pub fn associate(m: &Monitor, file_name: &str, set_default: bool, hdr: bool) -> Result<(), String> {
     checked(file_name)?;
+    // SAFETY: NUL-terminated wide file name that lives through the call.
     let rc = unsafe {
         ColorProfileAddDisplayAssociation(
             SCOPE,
@@ -286,6 +292,7 @@ pub fn associate(m: &Monitor, file_name: &str, set_default: bool, hdr: bool) -> 
 
 /// Makes an already associated profile the default.
 fn set_default_association(m: &Monitor, file_name: &str, hdr: bool) -> Result<(), String> {
+    // SAFETY: NUL-terminated wide file name that lives through the call.
     let rc = unsafe {
         ColorProfileSetDisplayDefaultAssociation(
             SCOPE,
@@ -345,6 +352,7 @@ pub fn set_default(m: &Monitor, file_name: &str, hdr: bool) -> Result<(), String
 
 pub fn disassociate(m: &Monitor, file_name: &str, hdr: bool) -> Result<(), String> {
     checked(file_name)?;
+    // SAFETY: NUL-terminated wide file name that lives through the call.
     let rc = unsafe {
         ColorProfileRemoveDisplayAssociation(
             SCOPE,
@@ -376,6 +384,7 @@ unsafe fn read_pwstr(p: *const u16) -> String {
 /// File name (no directory) of the default profile; `None` when none is set.
 pub fn default_profile(m: &Monitor, hdr: bool) -> Option<String> {
     let subtype = subtype(hdr);
+    // SAFETY: the returned string is read, then released with LocalFree as the API requires.
     unsafe {
         let mut name: PWSTR = std::ptr::null_mut();
         let rc = ColorProfileGetDisplayDefault(
@@ -406,6 +415,7 @@ pub fn associated(m: &Monitor, hdr: bool) -> Result<Vec<String>, String> {
         return Err(format!("cannot resolve monitor device id for {}", m.gdi_name));
     };
     let device = wide(&device_id);
+    // SAFETY: the device name outlives both calls; the buffer has the size the first call asked for.
     unsafe {
         let mut e: ENUMTYPEW = std::mem::zeroed();
         e.dwSize = std::mem::size_of::<ENUMTYPEW>() as u32;

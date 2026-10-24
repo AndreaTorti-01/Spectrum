@@ -425,6 +425,28 @@ mod tests {
     }
 
     #[test]
+    fn tag_blobs_have_the_icc_layouts() {
+        let t = mluc("Hi");
+        assert_eq!(t.len(), 28 + 4);
+        assert_eq!(&t[..4], b"mluc");
+        assert_eq!(&t[16..20], b"enUS");
+        assert_eq!(&t[28..], [0, b'H', 0, b'i']);
+        let x = xyz_tag(Xyz {
+            x: 1.0,
+            y: 0.5,
+            z: -1.0,
+        });
+        assert_eq!(x.len(), 20);
+        assert_eq!(&x[8..12], 0x0001_0000u32.to_be_bytes());
+        assert_eq!(&x[16..20], (-0x0001_0000i32).to_be_bytes());
+        assert_eq!(sf32_matrix(&crate::color::IDENTITY).len(), 8 + 9 * 4);
+        assert_eq!(para_tag(Trc::Srgb).len(), 12 + 5 * 4);
+        let gamma = para_tag(Trc::Gamma(2.2));
+        assert_eq!(gamma.len(), 16);
+        assert_eq!(&gamma[8..10], [0, 0], "function type 0: pure gamma");
+    }
+
+    #[test]
     fn md5_rfc1321_vectors() {
         assert_eq!(hex(&md5(b"")), "d41d8cd98f00b204e9800998ecf8427e");
         assert_eq!(hex(&md5(b"a")), "0cc175b9c0f1b6a831c399e269772661");

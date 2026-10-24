@@ -3,7 +3,7 @@
 //! `MenuMonitor` list; metrics and colors were measured on captures of the real menu at 100% (Windows 11,
 //! build 26300).
 
-use super::draw::{make_font_px, sc, scf, sd_rrect, Canvas, R, TA_LEFT};
+use super::draw::{make_font_px, sc, scf, Canvas, R, TA_LEFT};
 use crate::tray::MenuMonitor;
 use windows_sys::Win32::Graphics::Gdi::{DeleteObject, CLEARTYPE_QUALITY, HFONT, HGDIOBJ};
 
@@ -72,12 +72,7 @@ pub fn items(monitors: &[MenuMonitor]) -> Vec<Item> {
         out.push(Item::Separator);
     } else if monitors.len() > 1 {
         for (i, m) in monitors.iter().enumerate().take(crate::tray::MAX_PER_MONITOR) {
-            let label = if m.label.starts_with(|c: char| c.is_ascii_digit()) {
-                m.label.clone()
-            } else {
-                format!("{} \u{b7} {}", i + 1, m.label)
-            };
-            out.push(text(&label, Mark::None, false, false, true));
+            out.push(text(&m.submenu_label(i), Mark::None, false, false, true));
         }
         out.push(Item::Separator);
     }
@@ -257,21 +252,7 @@ pub fn render(
         }
     }
 
-    // Rounded corners and the border.
-    let (wf, hf, rad) = (w as f32, h as f32, scf(RADIUS, dpi));
-    let edge = rad.ceil() as i32 + 1;
-    let px = c.pixels();
-    for y in 0..h {
-        for x in 0..w {
-            if x >= edge && y >= edge && x < w - edge && y < h - edge {
-                continue;
-            }
-            let d = sd_rrect(x as f32 + 0.5, y as f32 + 0.5, 0.0, 0.0, wf, hf, rad);
-            let p = &mut px[(y * w + x) as usize];
-            super::draw::blend_px(p, col.border, 1.0 - (-0.5 - d).clamp(0.0, 1.0));
-            super::draw::blend_px(p, backdrop, 1.0 - (0.5 - d).clamp(0.0, 1.0));
-        }
-    }
+    c.round_corners(scf(RADIUS, dpi), col.border, backdrop);
     Some(c)
 }
 
@@ -307,6 +288,63 @@ mod tests {
                 ..
             }
         ));
+    }
+
+    #[test]
+    fn several_monitors_get_numbered_submenus() {
+        let st = crate::showcase::state();
+        let mut second = MenuMonitor::from_ui(&st.monitors[0]);
+        second.label = "DELL U2720Q".into();
+        let items = items(&[MenuMonitor::from_ui(&st.monitors[0]), second]);
+        assert_eq!(items.len(), 5);
+        assert!(
+            matches!(&items[0], Item::Text { label, submenu: true, .. } if label == "1 \u{b7} QD-OLED 27")
+        );
+        assert!(
+            matches!(&items[1], Item::Text { label, submenu: true, .. } if label == "2 \u{b7} DELL U2720Q")
+        );
+        assert_eq!(items[2], Item::Separator);
+        assert_eq!(super::items(&[]).len(), 2, "no monitors: Open Spectrum and Exit");
+    }
+
+    #[test]
+    fn disabled_hdr_item_without_hdr() {
+        let st = crate::showcase::state();
+        let mut m = MenuMonitor::from_ui(&st.monitors[0]);
+        m.hdr_supported = false;
+        m.hdr_on = false;
+        let items = items(&[m]);
+        let hdr = items
+            .iter()
+            .find(|i| matches!(i, Item::Text { label, .. } if label == "HDR"));
+        assert!(matches!(
+            hdr,
+            Some(Item::Text {
+                disabled: true,
+                mark: Mark::None,
+                ..
+            })
+        ));
+    }
+
+    #[test]
+    fn layout_stacks_items_and_render_matches_it() {
+        let items = items(&showcase_menu());
+        let (w, h, rects) = layout(&items, 96);
+        assert_eq!(rects.len(), items.len());
+        for pair in rects.windows(2) {
+            assert_eq!(pair[0].b, pair[1].t);
+        }
+        for (it, r) in items.iter().zip(&rects) {
+            let want = if *it == Item::Separator { SEP_H } else { ITEM_H };
+            assert_eq!(r.h(), want);
+            assert_eq!((r.l, r.r), (BORDER, w - BORDER));
+        }
+        assert_eq!(h, rects.last().unwrap().b + PAD + BORDER);
+        let c = render(&items, true, 96, Some(0), 0x202020).unwrap();
+        assert_eq!((c.width(), c.height()), (w, h));
+        let (w2, h2, _) = layout(&items, 192);
+        assert!(w2 > w && h2 == 2 * h);
     }
 
     #[test]

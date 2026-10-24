@@ -1,4 +1,4 @@
-﻿//! Off-screen screenshots: `--render <surface> --theme light|dark --scale <f> [--frame] --out <file>`.
+//! Off-screen screenshots: `--render <surface> --theme light|dark --scale <f> [--frame] --out <file>`.
 //!
 //! Every window paints into an off-screen `Canvas` and only blits it to the screen at the end, so the same
 //! `draw` code renders straight into a PNG here: no window is created, nothing takes focus or appears on
@@ -443,6 +443,48 @@ mod tests {
         assert_eq!(size("main", 96, true), (442, 681));
         assert_eq!(size("hdr", 96, false), (440, 353));
         assert_eq!(size("traymenu", 96, false), (200, 244));
+    }
+
+    #[test]
+    fn every_surface_renders() {
+        for name in ["main", "hdr", "gamut", "profiles", "traymenu"] {
+            // `dark` picks the stage, frame and menu colors; the window theme is global (`--theme`).
+            for dark in [false, true] {
+                let c = surface(name, dark, 96, false).unwrap_or_else(|e| panic!("{name}: {e}"));
+                assert!(c.width() > 0 && c.height() > 0, "{name}");
+            }
+        }
+        let (gamut, framed) = (
+            surface("gamut", true, 96, false).unwrap(),
+            surface("gamut", true, 96, true).unwrap(),
+        );
+        assert!(framed.width() > gamut.width() && framed.height() > gamut.height());
+        assert!(surface("nope", false, 96, false).is_err());
+    }
+
+    #[test]
+    fn scale_maps_to_a_clamped_dpi() {
+        assert_eq!(dpi_for(1.0), 96);
+        assert_eq!(dpi_for(1.5), 144);
+        assert_eq!(dpi_for(100.0), 384);
+        assert_eq!(dpi_for(0.0), 24);
+    }
+
+    #[test]
+    fn crop_takes_the_rect() {
+        let mut src = Canvas::new(4, 4).unwrap();
+        src.clear(0);
+        src.fill_rect(R::new(1, 1, 3, 3), 0xFFFFFF);
+        let mut c = crop(&mut src, R::new(1, 1, 3, 3)).unwrap();
+        assert_eq!((c.width(), c.height()), (2, 2));
+        assert!(c.pixels().iter().all(|&p| p == 0xFFFFFF));
+    }
+
+    #[test]
+    fn demo_frames_draw_at_each_phase() {
+        for t in [0, T_OPEN_MENU, T_RADIO, T_CLOSE_MENU, T_SLIDE.1] {
+            assert!(demo_frame(t, false, 96).is_some(), "t={t}");
+        }
     }
 
     #[test]

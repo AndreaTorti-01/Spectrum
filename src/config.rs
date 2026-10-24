@@ -85,7 +85,8 @@ pub fn config_path() -> PathBuf {
     app_data_dir().join("spectrum.ini")
 }
 
-fn parse_hdr(v: &str) -> Option<HdrParams> {
+/// `min,peak,full,sat` as four finite numbers.
+pub(crate) fn parse_hdr(v: &str) -> Option<HdrParams> {
     let nums: Vec<f64> = v
         .split(',')
         .map(|s| s.trim().parse::<f64>())
@@ -144,6 +145,7 @@ impl Config {
             return;
         }
         let replaced = retry_io(|| {
+            // SAFETY: both paths are NUL-terminated wide strings that live through the call.
             let ok = unsafe {
                 MoveFileExW(
                     wide(&tmp.to_string_lossy()).as_ptr(),
@@ -387,6 +389,63 @@ name=x
         assert_eq!(c.monitors["SPC-0001-0000012A"].sdr, None);
         assert_eq!(c.monitors["DEL-1234-0"].sdr.as_deref(), Some("Other.icm"));
         assert!(!c.forget_profile("nothing.icm"));
+    }
+
+    #[test]
+    fn ui_section_round_trips() {
+        let mut c = sample();
+        c.advanced = true;
+        let text = c.serialize();
+        assert!(text.starts_with("[ui]\nadvanced=1\n\n[monitor:"), "{text}");
+        let back = Config::parse(&text);
+        assert!(back.advanced);
+        assert_eq!(back.serialize(), text);
+        assert!(!Config::parse("[UI]\nadvanced=0\n").advanced);
+        assert!(Config::parse("[ UI ]\nAdvanced = 1\n").advanced);
+        // Keys of the ui section never leak into a monitor.
+        let c = Config::parse("[monitor:A]\nname=x\n[ui]\nsdr=evil.icm\n");
+        assert_eq!(c.monitors["A"].sdr, None);
+    }
+
+    #[test]
+    fn clipping_toggle_reads_both_states() {
+        let c = Config::parse("[monitor:A]\nsdr_above_peak=0\n[monitor:B]\nsdr_above_peak=1\n[monitor:C]\n");
+        assert_eq!(c.monitors["A"].sdr_above_peak, Some(false));
+        assert_eq!(c.monitors["B"].sdr_above_peak, Some(true));
+        assert_eq!(c.monitors["C"].sdr_above_peak, None);
+        assert!(Config::parse(&c.serialize()).monitors["A"].sdr_above_peak == Some(false));
+    }
+
+    #[test]
+    fn values_are_single_line_and_trimmed() {
+        assert_eq!(clean("  a\r\nb  "), "a  b");
+        assert_eq!(clean("plain"), "plain");
+        assert_eq!(
+            parse_hdr(" 0 , 450 , 250 , 0.25 ").map(|h| h.peak_nits),
+            Some(450.0)
+        );
+        assert_eq!(parse_hdr("0,450,250"), None);
+        assert_eq!(parse_hdr("0,NaN,250,0"), None);
+    }
+
+    #[test]
+    fn monitor_mut_creates_entries_once() {
+        let mut c = Config::default();
+        c.monitor_mut("K").name = "first".into();
+        c.monitor_mut("K").sdr = Some("x.icm".into());
+        assert_eq!(c.monitors.len(), 1);
+        assert_eq!(c.monitors["K"].name, "first");
+    }
+
+    #[test]
+    fn transient_errors_are_sharing_and_access_violations() {
+        use std::io::{Error, ErrorKind};
+        assert!(is_transient(&Error::from(ErrorKind::PermissionDenied)));
+        for code in [5, 32, 33] {
+            assert!(is_transient(&Error::from_raw_os_error(code)), "{code}");
+        }
+        assert!(!is_transient(&Error::from(ErrorKind::NotFound)));
+        assert!(!is_transient(&Error::from_raw_os_error(2)));
     }
 
     #[test]

@@ -3,7 +3,7 @@
 //! windows are not resizable) and close glyphs. Colors and positions were measured on captures of the real
 //! frame at 100% (Windows 11, build 26300).
 
-use super::draw::{make_font_px, sc, scf, sd_rrect, Canvas, R, TA_LEFT};
+use super::draw::{make_font_px, sc, scf, Canvas, R, TA_LEFT};
 use crate::icon_render::render_bgra;
 use windows_sys::Win32::Graphics::Gdi::{DeleteObject, ANTIALIASED_QUALITY, HGDIOBJ};
 
@@ -64,9 +64,15 @@ pub fn framed(
     let mut c = Canvas::new(w, h)?;
     c.clear(col.caption);
     c.draw_canvas(cx, cy, client);
+    let caption = R::new(1, 1, w - 1, cy);
+    draw_title(&mut c, caption, title, &col, dpi);
+    draw_caption_buttons(&mut c, caption, &col, dpi);
+    c.round_corners(scf(CORNER, dpi), col.border, backdrop);
+    Some(c)
+}
 
-    // Icon, title.
-    let cap = R::new(1, 1, w - 1, cy);
+/// App icon and title at the left of the caption.
+fn draw_title(c: &mut Canvas, cap: R, title: &str, col: &Colors, dpi: u32) {
     let isz = sc(16, dpi);
     let ix = sc(4, dpi);
     c.blit_premul_bgra(
@@ -86,8 +92,10 @@ pub fn framed(
     );
     // SAFETY: font created above and no longer selected.
     unsafe { DeleteObject(font as HGDIOBJ) };
+}
 
-    // Caption buttons, right to left: close, maximize (disabled), minimize.
+/// Caption buttons, right to left: close, maximize (disabled), minimize.
+fn draw_caption_buttons(c: &mut Canvas, cap: R, col: &Colors, dpi: u32) {
     let bw = sc(BUTTON_W, dpi);
     let g = scf(GLYPH, dpi);
     let mid = |i: i32| ((cap.r - bw * i - bw / 2) as f32, (cap.t + cap.h() / 2) as f32);
@@ -118,27 +126,22 @@ pub fn framed(
     let (x, y) = mid(2);
     let x0 = (x - g / 2.0).round() + scf(1.0, dpi).round();
     c.fill_rrect_f(x0, y.round(), x0 + g, y.round() + lw, 0.0, col.text, 1.0);
+}
 
-    // Rounded corners and the border.
-    let (wf, hf, rad) = (w as f32, h as f32, scf(CORNER, dpi));
-    let r = rad.ceil() as i32 + 1;
-    let px = c.pixels();
-    for y in 0..h {
-        for x in 0..w {
-            let edge = x < r || y < r || x >= w - r || y >= h - r;
-            if !edge {
-                continue;
-            }
-            // Coverage of the outer shape and of the shape inside the 1 px border.
-            let d = sd_rrect(x as f32 + 0.5, y as f32 + 0.5, 0.0, 0.0, wf, hf, rad);
-            let outer = (0.5 - d).clamp(0.0, 1.0);
-            let inner = (-0.5 - d).clamp(0.0, 1.0);
-            let p = &mut px[(y * w + x) as usize];
-            let mut v = *p;
-            super::draw::blend_px(&mut v, col.border, 1.0 - inner);
-            super::draw::blend_px(&mut v, backdrop, 1.0 - outer);
-            *p = v;
-        }
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn the_frame_adds_a_border_and_the_caption() {
+        assert_eq!(outer(440, 654, 96), (442, 681, 1, 26));
+        assert_eq!(outer(880, 1308, 192), (882, 1360, 1, 51));
+        let mut client = Canvas::new(100, 50).unwrap();
+        client.clear(0x123456);
+        let mut c = framed(&mut client, "Spectrum", true, true, 0x202020, 96).unwrap();
+        assert_eq!((c.width(), c.height()), (102, 50 + 25 + 2));
+        let px = c.pixels().to_vec();
+        assert_eq!(px[0], 0x202020, "the corner shows the backdrop");
+        assert_eq!(px[40 * 102 + 50], 0x123456, "the client is copied in");
     }
-    Some(c)
 }

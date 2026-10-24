@@ -54,6 +54,15 @@ impl MenuMonitor {
             hdr_on: u.hdr_on,
         }
     }
+
+    /// The submenu title of the `i`-th (0-based) monitor: `label`, numbered when it is not already.
+    pub fn submenu_label(&self, i: usize) -> String {
+        if self.label.starts_with(|c: char| c.is_ascii_digit()) {
+            self.label.clone()
+        } else {
+            format!("{} \u{b7} {}", i + 1, self.label)
+        }
+    }
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -235,19 +244,8 @@ pub fn show_menu(hwnd: HWND, monitors: &[MenuMonitor]) -> Option<TrayCmd> {
             for (i, m) in monitors.iter().enumerate().take(MAX_PER_MONITOR) {
                 let sub = CreatePopupMenu();
                 fill_monitor_menu(sub, i, m);
-                let label = if m
-                    .label
-                    .chars()
-                    .next()
-                    .map(|c| c.is_ascii_digit())
-                    .unwrap_or(false)
-                {
-                    m.label.clone()
-                } else {
-                    format!("{} \u{b7} {}", i + 1, m.label)
-                };
                 // the submenu handle is owned (and destroyed) by the parent menu
-                insert_item(menu, 0, &label, 0, false, sub);
+                insert_item(menu, 0, &m.submenu_label(i), 0, false, sub);
             }
             insert_separator(menu);
         }
@@ -306,6 +304,33 @@ mod tests {
         assert_eq!(menu_text("a && b"), "a &&&& b");
         assert_eq!(menu_text("Open Spectrum"), "Open Spectrum");
         assert_eq!(menu_text(""), "");
+    }
+
+    fn monitor(label: &str) -> MenuMonitor {
+        MenuMonitor {
+            label: label.into(),
+            profiles: Vec::new(),
+            current: None,
+            hdr_supported: false,
+            hdr_on: false,
+        }
+    }
+
+    #[test]
+    fn submenus_are_numbered_once() {
+        assert_eq!(monitor("2 \u{b7} DELL").submenu_label(0), "2 \u{b7} DELL");
+        assert_eq!(monitor("DELL").submenu_label(2), "3 \u{b7} DELL");
+        assert_eq!(monitor("").submenu_label(0), "1 \u{b7} ");
+    }
+
+    #[test]
+    fn menu_entries_come_from_the_ui_state() {
+        let st = crate::showcase::state();
+        let m = MenuMonitor::from_ui(&st.monitors[0]);
+        assert_eq!(m.label, "1 \u{b7} QD-OLED 27");
+        assert_eq!(m.profiles.len(), 7);
+        assert_eq!(m.current, Some(0));
+        assert!(m.hdr_supported && m.hdr_on);
     }
 
     #[test]

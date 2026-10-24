@@ -64,62 +64,90 @@ struct Args {
     frame: bool,
 }
 
+impl Default for Args {
+    fn default() -> Args {
+        Args {
+            command: Command::Default,
+            dark: None,
+            scale: None,
+            out: None,
+            render_scale: 1.0,
+            frame: false,
+        }
+    }
+}
+
+type ArgIter<I> = std::iter::Peekable<I>;
+
+/// The next argument, or an empty string when the command line ends.
+fn value<I: Iterator<Item = String>>(it: &mut ArgIter<I>) -> String {
+    it.next().unwrap_or_default()
+}
+
+/// The next argument as a number, 0 when missing or not a number.
+fn num<I: Iterator<Item = String>>(it: &mut ArgIter<I>) -> u32 {
+    it.next().and_then(|v| v.parse().ok()).unwrap_or(0)
+}
+
+/// Applies an option switch (`--theme`, `--out`, ...) to `args`. False when `arg` is not one.
+fn parse_option<I: Iterator<Item = String>>(arg: &str, it: &mut ArgIter<I>, args: &mut Args) -> bool {
+    match arg {
+        "--theme" => args.dark = it.next().map(|v| v.eq_ignore_ascii_case("dark")),
+        "--out" => args.out = it.next().map(PathBuf::from),
+        "--debug-scale" => args.scale = it.next().and_then(|v| v.parse().ok()),
+        "--scale" => args.render_scale = it.next().and_then(|v| v.parse().ok()).unwrap_or(1.0),
+        "--frame" => args.frame = true,
+        _ => return false,
+    }
+    true
+}
+
+/// The command a switch selects, reading its arguments. `None` for anything else (unknown switches are
+/// ignored, so a removed one falls back to the default run).
+fn parse_command<I: Iterator<Item = String>>(arg: &str, it: &mut ArgIter<I>) -> Option<Command> {
+    Some(match arg {
+        "--tray" => Command::Tray,
+        "--cleanup" => Command::Cleanup,
+        "--quit" => Command::Quit,
+        "--render" => Command::Render(value(it)),
+        "--debug-edid" => Command::DebugEdid(num(it)),
+        "--debug-wipe" => Command::DebugWipe(num(it)),
+        "--debug-reconcile" => Command::DebugReconcile,
+        "--debug-open" => Command::DebugOpen(value(it)),
+        "--debug-tray-cmd" => Command::DebugTrayCmd(num(it)),
+        "--debug-sdr" => Command::DebugSdr(value(it), value(it)),
+        "--debug-hdr" => Command::DebugHdr(value(it), value(it)),
+        "--debug-hdr-reset" => Command::DebugHdrReset(value(it)),
+        "--debug-hdr-toggle" => Command::DebugHdrToggle(value(it), value(it)),
+        "--debug-dxgi" => Command::DebugDxgi(value(it)),
+        "--debug-autostart" => Command::DebugAutostart(value(it)),
+        "--debug-sdr-white" => {
+            let n = value(it);
+            // The nits value is optional: without it the switch only reads.
+            Command::DebugSdrWhite(n, it.next_if(|v| !v.starts_with("--")))
+        }
+        "--debug-sdr-cap" => Command::DebugSdrCap(value(it), value(it)),
+        "--debug-delete-profile" => Command::DebugDeleteProfile(value(it)),
+        _ => return None,
+    })
+}
+
+/// The last command switch wins, except that `--debug-dump` (with `--json`) wins over all of them.
 fn parse_args<I: Iterator<Item = String>>(it: I) -> Args {
     let mut it = it.peekable();
-    let mut args = Args {
-        command: Command::Default,
-        dark: None,
-        scale: None,
-        out: None,
-        render_scale: 1.0,
-        frame: false,
-    };
-    let mut json = false;
-    let mut dump = false;
-    while let Some(a) = it.next() {
-        match a.as_str() {
-            "--tray" => args.command = Command::Tray,
-            "--cleanup" => args.command = Command::Cleanup,
-            "--quit" => args.command = Command::Quit,
-            "--theme" => args.dark = it.next().map(|v| v.eq_ignore_ascii_case("dark")),
-            "--out" => args.out = it.next().map(PathBuf::from),
-            "--debug-scale" => args.scale = it.next().and_then(|v| v.parse().ok()),
+    let mut args = Args::default();
+    let (mut json, mut dump) = (false, false);
+    while let Some(arg) = it.next() {
+        match arg.as_str() {
             "--json" => json = true,
-            "--render" => args.command = Command::Render(it.next().unwrap_or_default()),
-            "--scale" => args.render_scale = it.next().and_then(|v| v.parse().ok()).unwrap_or(1.0),
-            "--frame" => args.frame = true,
             "--debug-dump" => dump = true,
-            "--debug-edid" => args.command = Command::DebugEdid(num(it.next())),
-            "--debug-wipe" => args.command = Command::DebugWipe(num(it.next())),
-            "--debug-reconcile" => args.command = Command::DebugReconcile,
-            "--debug-open" => args.command = Command::DebugOpen(it.next().unwrap_or_default()),
-            "--debug-tray-cmd" => args.command = Command::DebugTrayCmd(num(it.next())),
-            "--debug-sdr" => {
-                args.command = Command::DebugSdr(it.next().unwrap_or_default(), it.next().unwrap_or_default())
+            other => {
+                if !parse_option(other, &mut it, &mut args) {
+                    if let Some(c) = parse_command(other, &mut it) {
+                        args.command = c;
+                    }
+                }
             }
-            "--debug-hdr" => {
-                args.command = Command::DebugHdr(it.next().unwrap_or_default(), it.next().unwrap_or_default())
-            }
-            "--debug-hdr-reset" => args.command = Command::DebugHdrReset(it.next().unwrap_or_default()),
-            "--debug-hdr-toggle" => {
-                args.command =
-                    Command::DebugHdrToggle(it.next().unwrap_or_default(), it.next().unwrap_or_default())
-            }
-            "--debug-dxgi" => args.command = Command::DebugDxgi(it.next().unwrap_or_default()),
-            "--debug-autostart" => args.command = Command::DebugAutostart(it.next().unwrap_or_default()),
-            "--debug-sdr-white" => {
-                let n = it.next().unwrap_or_default();
-                let v = it.next_if(|v| !v.starts_with("--"));
-                args.command = Command::DebugSdrWhite(n, v)
-            }
-            "--debug-sdr-cap" => {
-                args.command =
-                    Command::DebugSdrCap(it.next().unwrap_or_default(), it.next().unwrap_or_default())
-            }
-            "--debug-delete-profile" => {
-                args.command = Command::DebugDeleteProfile(it.next().unwrap_or_default())
-            }
-            _ => {}
         }
     }
     if dump {
@@ -127,11 +155,6 @@ fn parse_args<I: Iterator<Item = String>>(it: I) -> Args {
     }
     args
 }
-
-fn num(s: Option<String>) -> u32 {
-    s.and_then(|v| v.parse().ok()).unwrap_or(0)
-}
-
 /// Takes the single-instance mutex. `None` when another instance already holds it.
 fn acquire_instance() -> Option<HANDLE> {
     // SAFETY: plain mutex creation; the handle is kept for the life of the process.
@@ -297,6 +320,104 @@ mod tests {
         ] {
             assert_eq!(parse(&[sw]).command, Command::Default, "{sw}");
         }
+    }
+
+    #[test]
+    fn options_parse_with_defaults() {
+        let a = parse(&[]);
+        assert_eq!(
+            (a.dark, a.scale, a.out.clone(), a.render_scale, a.frame),
+            (None, None, None, 1.0, false)
+        );
+        let a = parse(&[
+            "--render",
+            "main",
+            "--theme",
+            "Dark",
+            "--scale",
+            "1.5",
+            "--frame",
+            "--out",
+            "x.png",
+            "--debug-scale",
+            "2",
+        ]);
+        assert_eq!(a.command, Command::Render("main".into()));
+        assert_eq!(a.dark, Some(true));
+        assert_eq!((a.render_scale, a.frame, a.scale), (1.5, true, Some(2.0)));
+        assert_eq!(a.out, Some(PathBuf::from("x.png")));
+        let a = parse(&["--theme", "light", "--scale", "big", "--debug-scale", "x"]);
+        assert_eq!((a.dark, a.render_scale, a.scale), (Some(false), 1.0, None));
+    }
+
+    #[test]
+    fn debug_switches_take_their_arguments() {
+        let s = |v: &str| v.to_string();
+        let cases: Vec<(Vec<&str>, Command)> = vec![
+            (vec!["--debug-edid", "2"], Command::DebugEdid(2)),
+            (vec!["--debug-wipe", "x"], Command::DebugWipe(0)),
+            (vec!["--debug-reconcile"], Command::DebugReconcile),
+            (vec!["--debug-open", "gamut"], Command::DebugOpen(s("gamut"))),
+            (vec!["--debug-tray-cmd", "1003"], Command::DebugTrayCmd(1003)),
+            (vec!["--debug-sdr", "1", "3"], Command::DebugSdr(s("1"), s("3"))),
+            (
+                vec!["--debug-hdr", "1", "0,1000,400,0"],
+                Command::DebugHdr(s("1"), s("0,1000,400,0")),
+            ),
+            (vec!["--debug-hdr-reset", "1"], Command::DebugHdrReset(s("1"))),
+            (
+                vec!["--debug-hdr-toggle", "1", "on"],
+                Command::DebugHdrToggle(s("1"), s("on")),
+            ),
+            (vec!["--debug-dxgi", "1"], Command::DebugDxgi(s("1"))),
+            (
+                vec!["--debug-autostart", "off"],
+                Command::DebugAutostart(s("off")),
+            ),
+            (
+                vec!["--debug-sdr-cap", "1", "on"],
+                Command::DebugSdrCap(s("1"), s("on")),
+            ),
+            (
+                vec!["--debug-delete-profile", "a b.icm"],
+                Command::DebugDeleteProfile(s("a b.icm")),
+            ),
+            (
+                vec!["--debug-sdr"],
+                Command::DebugSdr(String::new(), String::new()),
+            ),
+        ];
+        for (argv, want) in cases {
+            assert_eq!(parse(&argv).command, want, "{argv:?}");
+        }
+    }
+
+    #[test]
+    fn sdr_white_value_is_optional() {
+        assert_eq!(
+            parse(&["--debug-sdr-white", "1"]).command,
+            Command::DebugSdrWhite("1".into(), None)
+        );
+        let a = parse(&["--debug-sdr-white", "1", "--out", "f.txt"]);
+        assert_eq!(a.command, Command::DebugSdrWhite("1".into(), None));
+        assert_eq!(a.out, Some(PathBuf::from("f.txt")));
+        assert_eq!(
+            parse(&["--debug-sdr-white", "1", "240"]).command,
+            Command::DebugSdrWhite("1".into(), Some("240".into()))
+        );
+    }
+
+    #[test]
+    fn the_last_command_wins() {
+        assert_eq!(parse(&["--tray", "--quit"]).command, Command::Quit);
+        assert_eq!(
+            parse(&["--json", "--debug-dump"]).command,
+            Command::DebugDump { json: true }
+        );
+        assert_eq!(
+            parse(&["--debug-dump"]).command,
+            Command::DebugDump { json: false }
+        );
     }
 
     #[test]

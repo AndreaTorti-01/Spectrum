@@ -1,6 +1,6 @@
 //! Click-through topmost per-monitor overlay for Identify: a colored border plus a big number on each screen.
 
-use super::draw::{colorref, display_face, make_font_px, window_dpi, Canvas};
+use super::draw::{colorref, display_face, make_font_px, window_dpi, Canvas, R, TA_CENTER};
 use crate::monitors::Rect;
 use crate::util::wide;
 use std::cell::RefCell;
@@ -10,11 +10,10 @@ use windows_sys::Win32::Graphics::Gdi::{
 };
 use windows_sys::Win32::System::LibraryLoader::GetModuleHandleW;
 use windows_sys::Win32::UI::WindowsAndMessaging::{
-    CreateWindowExW, DefWindowProcW, DestroyWindow, GetClientRect, GetWindowLongPtrW, LoadCursorW,
-    RegisterClassExW, SetLayeredWindowAttributes, SetTimer, SetWindowLongPtrW, ShowWindow, GWLP_USERDATA,
-    IDC_ARROW, LWA_COLORKEY, SW_SHOWNOACTIVATE, WM_ERASEBKGND, WM_NCDESTROY, WM_NCHITTEST, WM_PAINT,
-    WM_TIMER, WNDCLASSEXW, WS_EX_LAYERED, WS_EX_NOACTIVATE, WS_EX_TOOLWINDOW, WS_EX_TOPMOST,
-    WS_EX_TRANSPARENT, WS_POPUP,
+    CreateWindowExW, DefWindowProcW, DestroyWindow, GetClientRect, GetWindowLongPtrW,
+    SetLayeredWindowAttributes, SetTimer, SetWindowLongPtrW, ShowWindow, GWLP_USERDATA, LWA_COLORKEY,
+    SW_SHOWNOACTIVATE, WM_ERASEBKGND, WM_NCDESTROY, WM_NCHITTEST, WM_PAINT, WM_TIMER, WS_EX_LAYERED,
+    WS_EX_NOACTIVATE, WS_EX_TOOLWINDOW, WS_EX_TOPMOST, WS_EX_TRANSPARENT, WS_POPUP,
 };
 
 const CLASS: &str = "SpectrumOverlay";
@@ -63,19 +62,7 @@ pub fn identify_all(mons: &[(Rect, u32, u32)]) {
 
 fn register_class() {
     static ONCE: std::sync::Once = std::sync::Once::new();
-    ONCE.call_once(|| {
-        let cls = wide(CLASS);
-        // SAFETY: class data outlives the call.
-        unsafe {
-            let mut wc: WNDCLASSEXW = std::mem::zeroed();
-            wc.cbSize = std::mem::size_of::<WNDCLASSEXW>() as u32;
-            wc.lpfnWndProc = Some(wnd_proc);
-            wc.hInstance = GetModuleHandleW(std::ptr::null());
-            wc.hCursor = LoadCursorW(std::ptr::null_mut(), IDC_ARROW);
-            wc.lpszClassName = cls.as_ptr();
-            RegisterClassExW(&wc);
-        }
-    });
+    super::window::register_class(&ONCE, CLASS, 0, Some(wnd_proc));
 }
 
 fn create(rect: Rect, num: Option<u32>, accent: u32) -> Option<HWND> {
@@ -143,6 +130,10 @@ unsafe extern "system" fn wnd_proc(hwnd: HWND, msg: u32, wp: WPARAM, lp: LPARAM)
     }
 }
 
+/// The key color everywhere, the accent border, then the number with a dark outline.
+///
+/// # Safety
+/// `hwnd` is an overlay window and `hdc` its paint DC from `BeginPaint`.
 unsafe fn paint(hwnd: HWND, hdc: windows_sys::Win32::Graphics::Gdi::HDC, d: &Data) {
     let mut rc: RECT = std::mem::zeroed();
     GetClientRect(hwnd, &mut rc);
@@ -152,37 +143,37 @@ unsafe fn paint(hwnd: HWND, hdc: windows_sys::Win32::Graphics::Gdi::HDC, d: &Dat
     let key = CreateSolidBrush(colorref(KEY));
     FillRect(hdc, &rc, key);
     DeleteObject(key as _);
-    let bw = ((8.0 * dpi as f32 / 96.0).round() as i32).max(4);
-    let acc = CreateSolidBrush(colorref(d.accent));
+    let border = ((8.0 * dpi as f32 / 96.0).round() as i32).max(4);
+    let accent = CreateSolidBrush(colorref(d.accent));
     for r in [
         RECT {
             left: 0,
             top: 0,
             right: w,
-            bottom: bw,
+            bottom: border,
         },
         RECT {
             left: 0,
-            top: h - bw,
+            top: h - border,
             right: w,
             bottom: h,
         },
         RECT {
             left: 0,
-            top: bw,
-            right: bw,
-            bottom: h - bw,
+            top: border,
+            right: border,
+            bottom: h - border,
         },
         RECT {
-            left: w - bw,
-            top: bw,
+            left: w - border,
+            top: border,
             right: w,
-            bottom: h - bw,
+            bottom: h - border,
         },
     ] {
-        FillRect(hdc, &r, acc);
+        FillRect(hdc, &r, accent);
     }
-    DeleteObject(acc as _);
+    DeleteObject(accent as _);
     let Some(num) = d.num else { return };
 
     // the number, in an off-screen canvas (no flicker), non-antialiased so no pink fringes on the key color
@@ -197,20 +188,21 @@ unsafe fn paint(hwnd: HWND, hdc: windows_sys::Win32::Graphics::Gdi::HDC, d: &Dat
     drop(probe);
     let pad = em / 4;
     let (cw, ch) = (tw + pad * 2, em * 3 / 2 + pad);
-    if let Some(mut cv) = Canvas::new(cw, ch) {
-        cv.clear(KEY);
-        let r = super::draw::R::new(0, 0, cw, ch);
-        let o = ((2.0 * dpi as f32 / 96.0).round() as i32).max(2);
+    if let Some(mut canvas) = Canvas::new(cw, ch) {
+        canvas.clear(KEY);
+        let r = R::new(0, 0, cw, ch);
+        // A dark outline: the number drawn 16 times around a circle of `outline` px.
+        let outline = ((2.0 * dpi as f32 / 96.0).round() as i32).max(2);
         for k in 0..16 {
             let a = k as f32 * std::f32::consts::TAU / 16.0;
             let (dx, dy) = (
-                (a.cos() * o as f32).round() as i32,
-                (a.sin() * o as f32).round() as i32,
+                (a.cos() * outline as f32).round() as i32,
+                (a.sin() * outline as f32).round() as i32,
             );
-            cv.text(r.offset(dx, dy), &text, font, 0x14110F, super::draw::TA_CENTER);
+            canvas.text(r.offset(dx, dy), &text, font, 0x14110F, TA_CENTER);
         }
-        cv.text(r, &text, font, d.accent, super::draw::TA_CENTER);
-        cv.present(hdc, (w - cw) / 2, (h - ch) / 2);
+        canvas.text(r, &text, font, d.accent, TA_CENTER);
+        canvas.present(hdc, (w - cw) / 2, (h - ch) / 2);
     }
     DeleteObject(font as _);
 }

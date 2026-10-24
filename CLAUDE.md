@@ -23,7 +23,7 @@ CI (`.github/workflows/ci.yml`) runs the same four cargo commands, then builds t
 ## Hard rules
 
 - The only dependency is `windows-sys`, and `build.rs` is dependency-free too (it writes the `.rsrc` COFF object itself, so there is no windres or .rc file). Keep it that way unless there's a strong reason: it keeps builds small and the GNU toolchain enough.
-- UI is custom-drawn GDI in `src/ui/`. Prefer extending that over comctl controls, which would not match the theme. The design language (spacing grid, control height, type ramp, button variants, when to hide or disable) is written down and tokenized in `src/ui/design.rs`; build layouts from its tokens and draw with the `widgets.rs` components, so the windows stay consistent.
+- UI is custom-drawn GDI in `src/ui/`. Prefer extending that over comctl controls, which would not match the theme. The design language (spacing grid, control height, type ramp, button variants, when to hide or disable) is written down and tokenized in `src/ui/design.rs`; build layouts from its tokens and draw with the `src/ui/widgets/` components, so the windows stay consistent.
 - Everything is per-user. Avoid anything that needs admin; it would break the zero-prompt install.
 - The app theme follows the Windows setting. `--theme light|dark` is for screenshots.
 - Install and autostart belong to the Inno installer and a Startup-folder shortcut (`Spectrum.lnk --tray`), not the exe. That is the reason to keep self-copy, Run keys, an Uninstall key and cmd self-delete out: Defender ML quarantined a self-installing exe (`Program:Win32/Contebrew.A!ml`). The exe only has `--cleanup` and `--quit` for the uninstaller.

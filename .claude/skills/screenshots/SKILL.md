@@ -35,7 +35,7 @@ cargo build --release
 
 ## 2b. When the main window layout changes
 
-Nothing to update by hand: the HDR crop (`Offscreen::marks` in `src/ui/main_window.rs`, from the divider above the HDR section to halfway between the restore button and the divider below) and the site callouts (first monitor tile, SDR dropdown, the gap under Read from monitor) come from `geo()`. Re-run the script, then check the `hdr-*` crops and the site's window section. If a callout should point at a different control, change `marks()` and `layout_json()` in `src/render.rs`.
+Nothing to update by hand: the HDR crop (`Offscreen::marks` in `src/ui/main_window/mod.rs`, from the divider above the HDR section to halfway between the restore button and the divider below) and the site callouts (first monitor tile, SDR dropdown, the gap under Read from monitor) come from `geo()`. Re-run the script, then check the `hdr-*` crops and the site's window section. If a callout should point at a different control, change `marks()` and `layout_json()` in `src/render.rs`.
 
 ## 3. Checks worth keeping
 

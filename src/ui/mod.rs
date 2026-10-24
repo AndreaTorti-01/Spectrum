@@ -13,8 +13,10 @@ pub mod overlay;
 pub mod profiles_window;
 pub mod traymenu;
 pub mod widgets;
+pub mod window;
 
 use crate::app::{self, UiAction, UiState};
+use crate::monitors::Rect;
 use std::cell::RefCell;
 
 thread_local! {
@@ -44,20 +46,58 @@ pub fn snapshot() -> UiState {
 
 /// Sends a user intent. With a mock installed it is logged and applied to the mock state; the main window
 /// is refreshed afterwards either way.
-pub fn dispatch(a: UiAction) {
+pub fn dispatch(action: UiAction) {
     if is_mock() {
-        crate::util::log(&format!("ui(mock) dispatch {a:?}"));
-        mock_apply(&a);
+        crate::util::log(&format!("ui(mock) dispatch {action:?}"));
+        mock_apply(&action);
     } else {
-        app::dispatch(a.clone());
+        app::dispatch(action.clone());
     }
-    if !matches!(a, UiAction::CloseMain) && main_window::is_open() {
+    if !matches!(action, UiAction::CloseMain) && main_window::is_open() {
         main_window::refresh();
     }
 }
 
-fn mock_apply(a: &UiAction) {
-    use crate::monitors::Rect;
+/// The obvious effect of `action` on a mock state. Window actions are left to [`mock_apply`].
+fn apply_to_state(state: &mut UiState, action: &UiAction) {
+    fn monitor(state: &mut UiState, mon: usize) -> Option<&mut app::UiMonitor> {
+        state.monitors.get_mut(mon)
+    }
+    match action {
+        UiAction::SetSdr { mon, idx } => {
+            if let Some(u) = monitor(state, *mon) {
+                u.sdr_current = Some(*idx);
+            }
+        }
+        UiAction::SetHdrEnabled { mon, on } => {
+            if let Some(u) = monitor(state, *mon) {
+                u.hdr_on = *on;
+            }
+        }
+        UiAction::ApplyHdr { mon, params } => {
+            if let Some(u) = monitor(state, *mon) {
+                u.hdr = *params;
+                u.hdr_custom_active = true;
+            }
+        }
+        UiAction::SetSdrWhite { mon, nits } => {
+            if let Some(u) = monitor(state, *mon) {
+                u.sdr_white_nits = Some(*nits);
+            }
+        }
+        UiAction::ResetHdr { mon } => {
+            if let Some(u) = monitor(state, *mon) {
+                u.hdr = app::hdr_defaults_from(u.edid_hdr.as_ref());
+                u.hdr_custom_active = true;
+            }
+        }
+        UiAction::SetAutostart(on) => state.autostart = *on,
+        UiAction::SetAdvanced(on) => state.advanced = *on,
+        _ => {}
+    }
+}
+
+fn mock_apply(action: &UiAction) {
     // The identify overlay and the gamut window are driven by the app in real mode; do it here for previews.
     let rects: Vec<(Rect, u32, u32)> = MOCK.with(|m| {
         m.borrow()
@@ -66,45 +106,50 @@ fn mock_apply(a: &UiAction) {
             .unwrap_or_default()
     });
     MOCK.with(|m| {
-        let mut b = m.borrow_mut();
-        let Some(s) = b.as_mut() else { return };
-        match a {
-            UiAction::SetSdr { mon, idx } => {
-                if let Some(u) = s.monitors.get_mut(*mon) {
-                    u.sdr_current = Some(*idx);
-                }
-            }
-            UiAction::SetHdrEnabled { mon, on } => {
-                if let Some(u) = s.monitors.get_mut(*mon) {
-                    u.hdr_on = *on;
-                }
-            }
-            UiAction::ApplyHdr { mon, params } => {
-                if let Some(u) = s.monitors.get_mut(*mon) {
-                    u.hdr = *params;
-                    u.hdr_custom_active = true;
-                }
-            }
-            UiAction::SetSdrWhite { mon, nits } => {
-                if let Some(u) = s.monitors.get_mut(*mon) {
-                    u.sdr_white_nits = Some(*nits);
-                }
-            }
-            UiAction::ResetHdr { mon } => {
-                if let Some(u) = s.monitors.get_mut(*mon) {
-                    u.hdr = crate::app::hdr_defaults_from(u.edid_hdr.as_ref());
-                    u.hdr_custom_active = true;
-                }
-            }
-            UiAction::SetAutostart(on) => s.autostart = *on,
-            UiAction::SetAdvanced(on) => s.advanced = *on,
-            _ => {}
+        if let Some(state) = m.borrow_mut().as_mut() {
+            apply_to_state(state, action);
         }
     });
-    match a {
+    match action {
         UiAction::Identify => overlay::identify_all(&rects),
         UiAction::OpenGamut => gamut_window::open(None, main_window::selected()),
         UiAction::OpenProfiles => profiles_window::open_showcase(crate::debug::showcase_profiles()),
         _ => {}
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::icc_write::HdrParams;
+
+    #[test]
+    fn mock_state_takes_the_obvious_effect() {
+        let mut st = crate::showcase::state();
+        apply_to_state(&mut st, &UiAction::SetSdr { mon: 0, idx: 3 });
+        apply_to_state(&mut st, &UiAction::SetHdrEnabled { mon: 0, on: false });
+        apply_to_state(&mut st, &UiAction::SetSdrWhite { mon: 0, nits: 300.0 });
+        apply_to_state(&mut st, &UiAction::SetAutostart(false));
+        apply_to_state(&mut st, &UiAction::SetAdvanced(false));
+        // Out-of-range monitors are ignored.
+        apply_to_state(&mut st, &UiAction::SetSdr { mon: 9, idx: 1 });
+        let m = &st.monitors[0];
+        assert_eq!(m.sdr_current, Some(3));
+        assert!(!m.hdr_on);
+        assert_eq!(m.sdr_white_nits, Some(300.0));
+        assert!(!st.autostart && !st.advanced);
+
+        let params = HdrParams {
+            min_nits: 0.1,
+            peak_nits: 800.0,
+            full_frame_nits: 300.0,
+            saturation: 0.5,
+        };
+        apply_to_state(&mut st, &UiAction::ApplyHdr { mon: 0, params });
+        assert_eq!(st.monitors[0].hdr, params);
+        apply_to_state(&mut st, &UiAction::ResetHdr { mon: 0 });
+        let reset = st.monitors[0].hdr;
+        assert_eq!(reset.saturation, 0.0);
+        assert!((reset.peak_nits - 455.5).abs() < 1.0, "{reset:?}");
     }
 }
