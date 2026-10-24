@@ -1,7 +1,7 @@
 //! Application state and glue: UI snapshot/dispatch, apply flows, reconcile logic and the hidden
 //! message-window loop.
 //!
-//! Everything runs on the UI thread. Shared state is tiny (the last status line and a monitor cache);
+//! Everything runs on the UI thread. Shared state is tiny (the last error and a monitor cache);
 //! the config is re-read from disk for every operation so a debug command run from a second process
 //! never fights the tray instance's memory.
 
@@ -134,7 +134,8 @@ pub struct UiState {
     pub autostart: bool,
     /// HDR "Advanced" row expanded.
     pub advanced: bool,
-    pub status: Option<String>,
+    /// The last action's error, cleared by the next action that succeeds.
+    pub error: Option<String>,
 }
 
 #[derive(Clone, Debug)]
@@ -160,7 +161,7 @@ pub enum UiAction {
 // ---------------------------------------------------------------------------------------------
 
 thread_local! {
-    static STATUS: RefCell<Option<String>> = const { RefCell::new(None) };
+    static LAST_ERROR: RefCell<Option<String>> = const { RefCell::new(None) };
     /// Monitors from the most recent enumeration; used for cheap lookups (identify, the gamut window).
     static CACHE: RefCell<Vec<Monitor>> = const { RefCell::new(Vec::new()) };
     static HWND_CELL: Cell<isize> = const { Cell::new(0) };
@@ -181,8 +182,8 @@ thread_local! {
 
 type ProfileStamp = (u64, Option<std::time::SystemTime>);
 
-fn set_status(s: Option<String>) {
-    STATUS.with(|c| *c.borrow_mut() = s);
+fn set_error(s: Option<String>) {
+    LAST_ERROR.with(|c| *c.borrow_mut() = s);
 }
 
 fn enumerate_cached() -> Vec<Monitor> {
@@ -418,7 +419,8 @@ fn build_ui_monitor(m: &Monitor, cfg: &Config) -> UiMonitor {
         width: m.rect.right - m.rect.left,
         height: m.rect.bottom - m.rect.top,
         hdr_supported: m.hdr_supported,
-        hdr_on: m.hdr_enabled,
+        // A display without HDR can still report the flag (a stale mode after a cable swap); never show it on.
+        hdr_on: m.hdr_supported && m.hdr_enabled,
         sdr_options,
         sdr_current,
         has_edid: m.edid.is_some(),
@@ -470,7 +472,7 @@ pub fn snapshot() -> UiState {
         monitors,
         autostart: crate::autostart::autostart_enabled(),
         advanced: cfg.advanced,
-        status: STATUS.with(|s| s.borrow().clone()),
+        error: LAST_ERROR.with(|s| s.borrow().clone()),
     }
 }
 
@@ -629,6 +631,9 @@ fn wait_for_hdr(idx: usize, on: bool) {
 
 fn set_hdr_enabled(idx_mon: usize, on: bool) -> Result<String, String> {
     let m = monitor_at(idx_mon)?;
+    if !m.hdr_supported {
+        return Err(format!("Monitor {} doesn't support HDR.", m.num));
+    }
     if let Err(e) = monitors::set_hdr(&m, on) {
         log(&format!("set hdr {on} on monitor {}: {e}", m.num));
         return Err(format!(
@@ -978,7 +983,7 @@ fn identify() {
     ui::overlay::identify_all(&rects);
 }
 
-/// Runs one UI action. `Ok` carries the status line (may be empty).
+/// Runs one UI action. `Ok` carries a past-tense report for headless callers (may be empty).
 pub fn execute(a: UiAction) -> Result<String, String> {
     match a {
         UiAction::SetSdr { mon, idx } => set_sdr(mon, idx),
@@ -1031,7 +1036,7 @@ pub fn dispatch(a: UiAction) {
     let _ = dispatch_result(a);
 }
 
-/// Same as [`dispatch`] (status line and monitor cache included), but also returns the outcome so
+/// Same as [`dispatch`] (last error and monitor cache included), but also returns the outcome so
 /// headless callers can report it.
 pub fn dispatch_result(a: UiAction) -> Result<String, String> {
     let quiet = matches!(
@@ -1040,9 +1045,9 @@ pub fn dispatch_result(a: UiAction) -> Result<String, String> {
     );
     let r = execute(a);
     match &r {
-        Ok(msg) if !msg.is_empty() => set_status(Some(msg.clone())),
+        Ok(_) if !quiet => set_error(None),
         Ok(_) => {}
-        Err(msg) => set_status(Some(msg.clone())),
+        Err(msg) => set_error(Some(msg.clone())),
     }
     if !quiet {
         // A changed default or HDR state may move other monitors' options too.

@@ -80,7 +80,7 @@ pub fn state() -> UiState {
         monitors: vec![m],
         autostart: true,
         advanced: true,
-        status: None,
+        error: None,
     }
 }
 

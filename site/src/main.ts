@@ -3,7 +3,7 @@
  *
  * Screenshot mode (used for visual checks and by the screenshot skill):
  *   ?shot=<section-id>&theme=light|dark
- *   <section-id> is one of hero, window, hdr, gamut, tray, footer, or "all"
+ *   <section-id> is one of hero, window, hdr, gamut, footer, or "all"
  *   (no scroll jump, whole page). The page jumps to that section, forces the theme (not persisted), turns
  *   off Lenis, pins and every animation, and renders each animation in its final state.
  *   The same static path is used for prefers-reduced-motion. window.__shotReady becomes true once the final

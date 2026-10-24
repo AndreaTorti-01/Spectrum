@@ -50,8 +50,9 @@ const VALUE_W: i32 = 80;
 const IDENTIFY_W: i32 = 96;
 const MAP_H: i32 = 80;
 const WM_DROPDOWN_DONE: u32 = WM_APP + 10;
-const TIMER_COMMIT: usize = 1;
-const COMMIT_DELAY_MS: u32 = 400;
+/// Applies slider edits while they happen, at most once per interval, like the Windows HDR settings do.
+const TIMER_APPLY: usize = 1;
+const APPLY_INTERVAL_MS: u32 = 100;
 /// Re-reads what Windows reports after a change; it takes a moment to apply a profile or a mode.
 const TIMER_REFRESH: usize = 2;
 const REFRESH_DELAY_MS: u32 = 600;
@@ -104,6 +105,8 @@ struct Main {
     white_dirty: bool,
     drag: Option<Id>,
     dirty: bool,
+    /// `TIMER_APPLY` is running; the next tick commits whatever changed since the last one.
+    apply_armed: bool,
     pending: Vec<Pending>,
     tracking: bool,
     dd_closed_at: Option<Instant>,
@@ -144,16 +147,18 @@ struct Geo {
     reset: R,
     div2: i32,
     autostart: R,
-    status: R,
+    /// Only laid out (non-empty) after an action failed.
+    error: R,
     /// Client height in physical pixels.
     h: i32,
 }
 
-/// Which optional groups take space: the Advanced rows and the HDR restore button.
+/// Which optional groups take space: the Advanced rows, the HDR restore button and the error line.
 #[derive(Clone, Copy, PartialEq, Eq, Default)]
 struct Shape {
     advanced: bool,
     restore: bool,
+    error: bool,
 }
 
 fn client_h(shape: Shape) -> i32 {
@@ -228,9 +233,13 @@ fn geo(dpi: u32, shape: Shape) -> Geo {
 
     // Footer.
     g.autostart = rect(x0, y, x1, y + CHECK + 4);
-    y += CHECK + 4 + SPACE_S;
-    g.status = rect(x0, y, x1, y + CAPTION_H);
-    y += CAPTION_H + PAD;
+    y += CHECK + 4;
+    if shape.error {
+        y += SPACE_S;
+        g.error = rect(x0, y, x1, y + CAPTION_H);
+        y += CAPTION_H;
+    }
+    y += PAD;
     g.h = s(y);
     g
 }
@@ -254,6 +263,7 @@ impl Main {
             white_dirty: false,
             drag: None,
             dirty: false,
+            apply_armed: false,
             pending: Vec::new(),
             tracking: false,
             dd_closed_at: None,
@@ -281,6 +291,7 @@ impl Main {
         Shape {
             advanced: self.st.advanced,
             restore: self.hdr_enabled(),
+            error: self.st.error.is_some(),
         }
     }
 
@@ -555,10 +566,16 @@ impl Main {
         }
     }
 
-    fn arm_commit_timer(&self) {
-        // SAFETY: valid window handle; re-arming replaces the pending one-shot.
+    /// Commits the pending slider edit within `APPLY_INTERVAL_MS`. Unlike a debounce, a running timer is not
+    /// re-armed, so a continuous drag still applies at a steady rate.
+    fn schedule_apply(&mut self) {
+        if self.apply_armed || self.hwnd.is_null() {
+            return;
+        }
+        self.apply_armed = true;
+        // SAFETY: valid window handle.
         unsafe {
-            SetTimer(self.hwnd, TIMER_COMMIT, COMMIT_DELAY_MS, None);
+            SetTimer(self.hwnd, TIMER_APPLY, APPLY_INTERVAL_MS, None);
         }
     }
 
@@ -831,8 +848,8 @@ impl Main {
             self.st.autostart,
             ui.state(Id::Autostart),
         );
-        if let Some(s) = &self.st.status {
-            c.text(g.status, s, self.fonts.caption, th.text_dim, TA_LEFT);
+        if let Some(e) = &self.st.error {
+            c.text(g.error, e, self.fonts.caption, design::warning(&th), TA_LEFT);
         }
     }
 }
@@ -997,10 +1014,11 @@ pub struct Offscreen(Main);
 
 /// Places the screenshots and the site point at, in client pixels.
 pub struct Marks {
-    pub identify: R,
+    /// Tile of the first monitor in the map (its big number).
+    pub monitor: R,
     pub sdr: R,
-    /// Value text of the Peak brightness row.
-    pub peak_value: R,
+    /// A point (empty rect) below Read from monitor.
+    pub read: R,
     /// Client rows of the HDR section (the `hdr` screenshot): from the divider above it to halfway between
     /// the restore button and the divider below it.
     pub hdr_rows: (i32, i32),
@@ -1033,9 +1051,13 @@ impl Offscreen {
     pub fn marks(&self) -> Marks {
         let g = &self.0.geo;
         Marks {
-            identify: g.identify,
+            monitor: self.0.ui.get(Id::Tile(0)).map(|w| w.rect).unwrap_or(g.map),
             sdr: g.sdr,
-            peak_value: g.rows[1].2,
+            // Under the button's middle, in the gap above the divider, so a leader line crosses no control.
+            read: {
+                let (x, y) = ((g.read.l + g.read.r) / 2, (g.read.b + g.div1) / 2);
+                R::new(x, y, x, y)
+            },
             hdr_rows: (g.div1, (g.reset.b + g.div2) / 2),
         }
     }
@@ -1297,6 +1319,7 @@ unsafe fn handle(hwnd: HWND, msg: u32, wp: WPARAM, lp: LPARAM) -> LRESULT {
                         m.commit();
                     } else {
                         m.slider_at_x(id, x);
+                        m.schedule_apply();
                     }
                 } else {
                     let h = m.ui.hit(x, y);
@@ -1383,7 +1406,7 @@ unsafe fn handle(hwnd: HWND, msg: u32, wp: WPARAM, lp: LPARAM) -> LRESULT {
                         let t = m.slider_scale(id).to_t(m.slider_value(id));
                         let n = (t + 0.03 * (delta as f64 / 120.0)).clamp(0.0, 1.0);
                         m.set_slider_t(id, n);
-                        m.arm_commit_timer();
+                        m.schedule_apply();
                         m.invalidate();
                     }
                 }
@@ -1412,7 +1435,7 @@ unsafe fn handle(hwnd: HWND, msg: u32, wp: WPARAM, lp: LPARAM) -> LRESULT {
                             let t = m.slider_scale(f).to_t(m.slider_value(f));
                             if let Some(n) = key_to_t(t, vk) {
                                 m.set_slider_t(f, n);
-                                m.arm_commit_timer();
+                                m.schedule_apply();
                             }
                         } else if f == Id::Sdr && vk == VK_DOWN {
                             m.pending.push(Pending::OpenDropdown);
@@ -1424,9 +1447,12 @@ unsafe fn handle(hwnd: HWND, msg: u32, wp: WPARAM, lp: LPARAM) -> LRESULT {
             0
         }
         WM_TIMER => {
-            if wp == TIMER_COMMIT {
-                KillTimer(hwnd, TIMER_COMMIT);
-                with(|m| m.commit());
+            if wp == TIMER_APPLY {
+                KillTimer(hwnd, TIMER_APPLY);
+                with(|m| {
+                    m.apply_armed = false;
+                    m.commit();
+                });
             } else if wp == TIMER_REFRESH {
                 KillTimer(hwnd, TIMER_REFRESH);
                 refresh();
@@ -1484,7 +1510,7 @@ unsafe fn handle(hwnd: HWND, msg: u32, wp: WPARAM, lp: LPARAM) -> LRESULT {
             0
         }
         WM_DESTROY => {
-            KillTimer(hwnd, TIMER_COMMIT);
+            KillTimer(hwnd, TIMER_APPLY);
             KillTimer(hwnd, TIMER_REFRESH);
             HWND_CELL.with(|c| c.set(0));
             let main = MAIN.with(|m| m.try_borrow_mut().ok().and_then(|mut b| b.take()));
@@ -1538,4 +1564,56 @@ fn icon_at(dpi: u32, metric: i32) -> HICON {
     // SAFETY: plain query.
     let px = unsafe { windows_sys::Win32::UI::HiDpi::GetSystemMetricsForDpi(metric, dpi) };
     crate::icon::create_hicon(px.max(16) as u32)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn without_hdr() -> UiState {
+        let mut st = crate::showcase::state();
+        for m in &mut st.monitors {
+            m.hdr_supported = false;
+            m.hdr_on = false;
+            m.sdr_white_nits = None;
+        }
+        st
+    }
+
+    fn enabled(m: &Main, id: Id) -> Option<bool> {
+        m.ui.get(id).map(|w| w.enabled)
+    }
+
+    #[test]
+    fn non_hdr_monitor_greys_out_the_hdr_controls() {
+        let mut st = without_hdr();
+        st.advanced = true;
+        let m = Main::new(st, 96);
+        assert_eq!(enabled(&m, Id::HdrToggle), Some(false));
+        for id in SLIDERS {
+            assert_eq!(enabled(&m, id), Some(false), "{id:?}");
+        }
+        assert!(m.ui.get(Id::Reset).is_none());
+        assert!(!m.hdr_enabled());
+        // The SDR side stays usable.
+        assert_eq!(enabled(&m, Id::Compare), Some(true));
+        assert!(m.render_check());
+    }
+
+    #[test]
+    fn hdr_monitor_enables_the_toggle() {
+        let m = Main::new(crate::showcase::state(), 96);
+        assert_eq!(enabled(&m, Id::HdrToggle), Some(true));
+    }
+
+    impl Main {
+        /// Draws once off-screen; false when no canvas could be made.
+        fn render_check(&self) -> bool {
+            let Some(mut c) = Canvas::new(sc(CLIENT_W, self.dpi), self.geo.h) else {
+                return false;
+            };
+            self.draw(&mut c);
+            true
+        }
+    }
 }

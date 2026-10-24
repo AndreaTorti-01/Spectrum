@@ -4,8 +4,8 @@ import layout from "./layout.json" with { type: "json" };
 
 const { main, gamut } = layout;
 
-/** Targets of the three callouts on the main window screenshot (Advanced open, HDR on): Identify button,
- * SDR dropdown, Peak brightness value. */
+/** Targets of the three callouts on the main window screenshot (Advanced open, HDR on): the first monitor's
+ * tile, SDR dropdown, Read from monitor. */
 export const MAIN_CALLOUTS: ReadonlyArray<{ x: number; y: number }> = main.callouts.map((c) => ({
   x: c.x / main.width,
   y: c.y / main.height,

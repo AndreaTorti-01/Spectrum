@@ -1,4 +1,4 @@
-//! Off-screen screenshots: `--render <surface> --theme light|dark --scale <f> [--frame] --out <file>`.
+﻿//! Off-screen screenshots: `--render <surface> --theme light|dark --scale <f> [--frame] --out <file>`.
 //!
 //! Every window paints into an off-screen `Canvas` and only blits it to the screen at the end, so the same
 //! `draw` code renders straight into a PNG here: no window is created, nothing takes focus or appears on
@@ -101,9 +101,9 @@ pub fn layout_json() -> String {
     let _ = writeln!(
         o,
         "    \"callouts\": [{}, {}, {}],",
-        pt(k.identify),
+        pt(k.monitor),
         pt(k.sdr),
-        pt(k.peak_value)
+        pt(k.read)
     );
     let _ = writeln!(o, "    \"hdrRows\": [{}, {}]", k.hdr_rows.0, k.hdr_rows.1);
     let _ = writeln!(o, "  }},");
@@ -423,11 +423,11 @@ mod tests {
     fn layout_matches_the_main_window_geometry() {
         let j = layout_json();
         assert!(
-            j.contains("\"width\": 440,") && j.contains("\"height\": 680,"),
+            j.contains("\"width\": 440,") && j.contains("\"height\": 654,"),
             "{j}"
         );
         assert!(
-            j.contains("{ \"x\": 420, \"y\": 36 }, { \"x\": 420, \"y\": 160 }, { \"x\": 420, \"y\": 409 }"),
+            j.contains("{ \"x\": 234, \"y\": 60 }, { \"x\": 420, \"y\": 160 }, { \"x\": 84, \"y\": 224 }"),
             "{j}"
         );
         assert!(j.contains("\"hdrRows\": [232, 585]"), "{j}");
@@ -439,8 +439,8 @@ mod tests {
             let c = surface(name, false, dpi, framed).unwrap();
             (c.width(), c.height())
         };
-        assert_eq!(size("main", 192, false), (880, 1360));
-        assert_eq!(size("main", 96, true), (442, 707));
+        assert_eq!(size("main", 192, false), (880, 1308));
+        assert_eq!(size("main", 96, true), (442, 681));
         assert_eq!(size("hdr", 96, false), (440, 353));
         assert_eq!(size("traymenu", 96, false), (200, 244));
     }

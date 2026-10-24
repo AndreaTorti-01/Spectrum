@@ -73,9 +73,9 @@ function specRows(): string {
 
 function callouts(): string {
   const texts = [
-    "Identify shows each monitor's number on its screen",
-    "The SDR profile applies on selection",
-    "HDR changes apply when you let go of a slider",
+    "Select which monitor to set up",
+    "Select color profile",
+    "Trigger EDID: download the right color profile from the monitor itself",
   ];
   return (
     `<ul class="callouts">` +

@@ -1,6 +1,6 @@
 # Spectrum website copy
 
-Total prose words: 144 (budget 380; counts Headline, Hero text, Body, Caption, Callout, noscript and the footer line; excludes kickers, button and label lines, numbers, axis ticks, alt text and the gamut descriptions, which are the app's own strings)
+Total prose words: 134 (budget 380; counts Headline, Hero text, Body, Caption, Callout, noscript and the footer line; excludes kickers, button and label lines, numbers, axis ticks, alt text and the gamut descriptions, which are the app's own strings)
 
 Line types: Headline, Hero text, Body, Caption, Callout and Noscript count as prose and carry a word count. Kicker, Button, Label, Alt, Aria and Description are UI text and are not counted. Placeholders in braces ({rx}, {area}) are filled by the builder from the measurement report and monitor.json. Coverage percentages are computed from monitor.json (checked by hand: 100, 98.4, 94.9 and 78.1).
 
@@ -36,13 +36,19 @@ UI labels quoted here match the app verbatim: "Read from monitor", "Compare gamu
 - Canvas axis labels: wavelength ticks every 20 nm, "x" and "y"
 - Aria: "CIE 1931 xy chromaticity diagram. The gamut triangle morphs from sRGB through Display P3 and Adobe RGB (1998) to the author's monitor, a QD-OLED 27."
 
-## 3. Main window
+## 3. Main window and tray
 
-- Headline: none (the screenshot and callouts carry the section)
+The main window screenshot with its callouts, then a taskbar mock whose tray icon opens the tray menu replica (the former tray section, merged here).
+
+- Headline: "Monitor color profile switching, just one click away." (8 words; the owner's wording)
 - Body: none
-- Callout 1: "Identify shows each monitor's number on its screen" (8 words)
-- Callout 2: "The SDR profile applies on selection" (6 words)
-- Callout 3: "HDR changes apply when you let go of a slider" (10 words)
+- Caption: "Spectrum lives in your system tray." (6 words)
+- Callout 1 (the first monitor's tile): "Select which monitor to set up" (6 words; the owner's wording, "setup" fixed to the verb "set up")
+- Callout 2 (SDR dropdown): "Select color profile" (3 words; the owner's wording)
+- Callout 3 (Read from monitor): "Trigger EDID: download the right color profile from the monitor itself" (11 words; the owner's wording)
+- Label (taskbar mock): "Spectrum" (tray icon tooltip)
+- Alt (tray menu, light): "Spectrum tray menu, light theme. For each monitor, a radio list of SDR profiles (QD-OLED 27 (EDID), sRGB, Display P3, Adobe RGB, ProPhoto RGB, Rec. 2020, DCI-P3), an HDR check item, then Open Spectrum and Exit."
+- Alt (tray menu, dark): "Spectrum tray menu, dark theme. For each monitor, a radio list of SDR profiles (QD-OLED 27 (EDID), sRGB, Display P3, Adobe RGB, ProPhoto RGB, Rec. 2020, DCI-P3), an HDR check item, then Open Spectrum and Exit."
 - Alt (light): "Spectrum main window, light theme. A map of the connected monitors, an SDR profile dropdown, Read from monitor and Compare gamuts… buttons, an HDR toggle with four sliders, and a Start with Windows checkbox."
 - Alt (dark): "Spectrum main window, dark theme. A map of the connected monitors, an SDR profile dropdown, Read from monitor and Compare gamuts… buttons, an HDR toggle with four sliders, and a Start with Windows checkbox."
 
@@ -70,7 +76,7 @@ UI labels quoted here match the app verbatim: "Read from monitor", "Compare gamu
 - Kicker: "Gamut"
 - Headline: "Compare gamuts against reference spaces." (5 words)
 - Body: none
-- Caption: "Computed from a QD-OLED monitor's EDID." (6 words)
+- Caption: none
 - Spec row 1 label: "sRGB" · "100%"
 - Description (shown on hover or focus, as in the app): "The web and Windows default, with the same primaries as Rec. 709 (HD video)."
 - Spec row 2 label: "Display P3" · "98.4%"
@@ -82,16 +88,7 @@ UI labels quoted here match the app verbatim: "Read from monitor", "Compare gamu
 - Alt (light): "Spectrum gamut window, light theme. A CIE 1931 xy diagram with gamut triangles, and a checklist of color spaces with coverage figures."
 - Alt (dark): "Spectrum gamut window, dark theme. A CIE 1931 xy diagram with gamut triangles, and a checklist of color spaces with coverage figures."
 
-## 6. Tray
-
-- Headline: "Monitor color profile switching, just one click away." (8 words; the owner's wording)
-- Body: none
-- Caption: "Spectrum lives in your system tray." (6 words)
-- Label (taskbar mock): "Spectrum" (tray icon tooltip)
-- Alt (light): "Spectrum tray menu, light theme. For each monitor, a radio list of SDR profiles (QD-OLED 27 (EDID), sRGB, Display P3, Adobe RGB, ProPhoto RGB, Rec. 2020, DCI-P3), an HDR check item, then Open Spectrum and Exit."
-- Alt (dark): "Spectrum tray menu, dark theme. For each monitor, a radio list of SDR profiles (QD-OLED 27 (EDID), sRGB, Display P3, Adobe RGB, ProPhoto RGB, Rec. 2020, DCI-P3), an HDR check item, then Open Spectrum and Exit."
-
-## 7. Footer
+## 6. Footer
 
 - Text: "© 2026 Andrea Torti"
 - Link: "MIT license"

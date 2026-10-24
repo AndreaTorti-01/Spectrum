@@ -35,7 +35,7 @@ cargo build --release
 
 ## 2b. When the main window layout changes
 
-Nothing to update by hand: the HDR crop (`Offscreen::marks` in `src/ui/main_window.rs`, from the divider above the HDR section to halfway between the restore button and the divider below) and the site callouts (Identify button, SDR dropdown, Peak brightness value) come from `geo()`. Re-run the script, then check the `hdr-*` crops and the site's window section. If a callout should point at a different control, change `marks()` and `layout_json()` in `src/render.rs`.
+Nothing to update by hand: the HDR crop (`Offscreen::marks` in `src/ui/main_window.rs`, from the divider above the HDR section to halfway between the restore button and the divider below) and the site callouts (first monitor tile, SDR dropdown, the gap under Read from monitor) come from `geo()`. Re-run the script, then check the `hdr-*` crops and the site's window section. If a callout should point at a different control, change `marks()` and `layout_json()` in `src/render.rs`.
 
 ## 3. Checks worth keeping
 
@@ -55,13 +55,13 @@ After `cd site; npm run build`:
 
 ```
 cd site; npm run shots -- --out <scratchpad folder>      # all sections, 1440x900 and 390x844 at DPR 2, light and dark
-npm run shots -- --ids hero,tray --sizes m --themes dark
+npm run shots -- --ids hero,window --sizes m --themes dark
 npm run shots -- --hover window --themes dark            # slab specular, animated page
 npm run shots -- --reduced | --nojs | --widths 320,360 | --longtasks
 ```
 
 - `site/scripts/shots.mjs` has no dependencies: it starts `vite preview` if needed, launches headless Edge with `--remote-debugging-port` and talks CDP over Node's WebSocket. It emulates the viewport (the plain `msedge --headless --screenshot --window-size=390,844` call is laid out at about 500 px and captures before the page is ready, so it's a poor fit), loads `?shot=<id>&theme=<t>`, waits for fonts and `window.__shotReady`, and writes `<id>-<width>-<theme>.png`. The default folder is `screenshots-raw/site` (gitignored).
-- `<id>` is a `<section id>` from `site/index.html` (hero, window, hdr, gamut, tray) or `all`.
+- `<id>` is a `<section id>` from `site/index.html` (hero, window, hdr, gamut) or `all`.
 - Prefer the scratchpad or a temp folder over the repo for these, unless the task is the social preview image.
 - `npm run shots` leaves the `vite preview` server it started running on port 4173. Stopping it afterwards (`Stop-Process` on the `node` that runs `vite.js preview`) avoids an orphan that outlives the session.
 - After changing `site/src/shots/`, run `npm run images` (or `npm run build`) to regenerate AVIF and WebP.

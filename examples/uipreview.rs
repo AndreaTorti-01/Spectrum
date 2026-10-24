@@ -118,7 +118,7 @@ fn mock_state(args: &[String]) -> UiState {
         monitors: if mons == 1 { vec![m1] } else { vec![m1, m2] },
         autostart: true,
         advanced: true,
-        status: Some("Applied QD-OLED 27 (from EDID)".into()),
+        error: None,
     }
 }
 

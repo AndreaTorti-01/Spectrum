@@ -69,7 +69,7 @@ export function initGamut() {
   });
 }
 
-/** 7. Tray: the menu springs out of the tray icon. */
+/** 4. Main window section, taskbar: the menu springs out of the tray icon. */
 export function initTray() {
   const bar = document.querySelector<HTMLElement>("[data-tray]");
   const menu = bar?.querySelector<HTMLElement>(".slab-tray");

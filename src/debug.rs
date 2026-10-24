@@ -16,13 +16,14 @@ use std::fmt::Write as _;
 use std::io::Write as _;
 use std::path::Path;
 use std::time::Instant;
-use windows_sys::Win32::Foundation::{HWND, INVALID_HANDLE_VALUE};
+use windows_sys::Win32::Foundation::{CloseHandle, HWND, INVALID_HANDLE_VALUE};
 use windows_sys::Win32::System::Console::{
     AttachConsole, GetStdHandle, ATTACH_PARENT_PROCESS, STD_OUTPUT_HANDLE,
 };
 use windows_sys::Win32::System::DataExchange::COPYDATASTRUCT;
+use windows_sys::Win32::System::Threading::{OpenProcess, WaitForSingleObject, PROCESS_SYNCHRONIZE};
 use windows_sys::Win32::UI::WindowsAndMessaging::{
-    FindWindowW, PostMessageW, SendMessageW, WM_CLOSE, WM_COPYDATA,
+    FindWindowW, GetWindowThreadProcessId, PostMessageW, SendMessageW, WM_CLOSE, WM_COPYDATA,
 };
 
 // ---------------------------------------------------------------------------------------------
@@ -913,15 +914,27 @@ pub fn send_to_running(cmd: &str) -> bool {
     true
 }
 
-/// Asks a running instance to exit (`--quit`, `--cleanup`) and waits up to `ms` for its window to go.
+/// Asks a running instance to exit (`--quit`, `--cleanup`) and waits up to `ms` for its process to end, so
+/// the installer can overwrite the exe right after.
 pub fn stop_running(ms: u64) {
-    if let Some(h) = find_running() {
-        // SAFETY: plain post.
-        unsafe { PostMessageW(h, WM_CLOSE, 0, 0) };
-        let start = Instant::now();
-        while find_running().is_some() && start.elapsed().as_millis() < ms as u128 {
-            std::thread::sleep(std::time::Duration::from_millis(50));
+    let Some(h) = find_running() else {
+        return;
+    };
+    // SAFETY: plain calls; the process handle is closed below.
+    unsafe {
+        let mut pid = 0u32;
+        GetWindowThreadProcessId(h, &mut pid);
+        let process = OpenProcess(PROCESS_SYNCHRONIZE, 0, pid);
+        PostMessageW(h, WM_CLOSE, 0, 0);
+        if !process.is_null() {
+            WaitForSingleObject(process, ms as u32);
+            CloseHandle(process);
+            return;
         }
+    }
+    let start = Instant::now();
+    while find_running().is_some() && start.elapsed().as_millis() < ms as u128 {
+        std::thread::sleep(std::time::Duration::from_millis(50));
     }
 }
 

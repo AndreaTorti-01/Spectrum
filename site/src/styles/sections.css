@@ -165,8 +165,17 @@ html:not(.js) .hero-diagram {
   height: auto;
 }
 
-/* ---------- main window ---------- */
+/* ---------- main window and tray ---------- */
+.win {
+  --menu-w: 200px; /* the capture is 200 px wide and the Windows menu cannot be captured at 2x: never scale it up */
+  --menu-h: calc(var(--menu-w) * 1.22);
+  padding-bottom: 0;
+}
 .win h2 {
+  max-width: 20ch;
+}
+.win .caption {
+  margin-top: 16px;
   margin-bottom: clamp(40px, 6vw, 72px);
 }
 .win-stage {
@@ -437,6 +446,7 @@ input[type="range"]:focus-visible {
 }
 .slab-gamut {
   grid-column: 4 / 13;
+  margin-left: clamp(16px, 3vw, 48px);
 }
 .gamut-overlay {
   position: absolute;
@@ -451,22 +461,13 @@ input[type="range"]:focus-visible {
   stroke-linejoin: round;
   transition: opacity 0.25s;
 }
-.slab-gamut .caption {
-  margin-top: 28px;
-}
 
-/* ---------- tray ---------- */
-.tray {
-  --menu-w: 200px; /* the capture is 200 px wide and the Windows menu cannot be captured at 2x: never scale it up */
-  padding-bottom: 0;
-}
-.tray .caption {
-  margin-top: 16px;
-}
+/* The taskbar closes the section. On wide screens the menu opens beside the lower half of the window, so the
+   bar only needs a little room; below 900 px it gets the menu's full height. */
 .taskbar {
   position: relative;
   height: 48px;
-  margin-top: calc(var(--menu-w) * 0.91 + 72px);
+  margin-top: 64px;
   background: var(--bg-raise);
   border-top: 1px solid var(--rule);
 }
@@ -604,10 +605,6 @@ input[type="range"]:focus-visible {
   .callout {
     width: 0;
   }
-  /* keep dot 3 clear of the "450 nits" readout (between the slider track end and the readout) */
-  .callout:nth-child(3) {
-    --x: 74% !important;
-  }
   .callout-line,
   .callout-label {
     display: none;
@@ -655,6 +652,10 @@ input[type="range"]:focus-visible {
   }
   .slab-gamut {
     order: -1;
+    margin-left: 0;
+  }
+  .taskbar {
+    margin-top: calc(var(--menu-h) + 72px);
   }
   .footer-inner p {
     margin-left: 0;

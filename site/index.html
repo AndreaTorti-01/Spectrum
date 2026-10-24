@@ -82,10 +82,12 @@
       </div>
     </section>
 
-    <!-- 4. Main window -->
-    <section id="window" class="section win" aria-label="Main window">
+    <!-- 4. Main window and tray -->
+    <section id="window" class="section win" aria-labelledby="h-window">
       <spectral></spectral>
       <div class="wrap">
+        <h2 id="h-window" data-reveal>Monitor color profile switching, just one click away.</h2>
+        <p class="caption">Spectrum lives in your system tray.</p>
         <div class="win-stage">
           <figure class="slab slab-main" data-slab data-max-tilt="9">
             <div class="slab-sway">
@@ -99,10 +101,28 @@
             <i class="slab-caustic"></i>
           </figure>
           <ol class="callout-list">
-            <li><span class="callout-n">1</span>Identify shows each monitor's number on its screen</li>
-            <li><span class="callout-n">2</span>The SDR profile applies on selection</li>
-            <li><span class="callout-n">3</span>HDR changes apply when you let go of a slider</li>
+            <li><span class="callout-n">1</span>Select which monitor to set up</li>
+            <li><span class="callout-n">2</span>Select color profile</li>
+            <li><span class="callout-n">3</span>Trigger EDID: download the right color profile from the monitor itself</li>
           </ol>
+        </div>
+      </div>
+      <div class="taskbar" data-tray>
+        <div class="taskbar-inner">
+          <div class="taskbar-apps" aria-hidden="true"><i></i><i></i><i></i><i></i></div>
+          <div class="taskbar-tray">
+            <figure class="slab slab-tray" data-slab data-max-tilt="4" data-entry="none">
+              <div class="slab-sway">
+                <div class="slab-tilt">
+                  <shot name="traymenu" alt-light="Spectrum tray menu, light theme. For each monitor, a radio list of SDR profiles (QD-OLED 27 (EDID), sRGB, Display P3, Adobe RGB, ProPhoto RGB, Rec. 2020, DCI-P3), an HDR check item, then Open Spectrum and Exit." alt-dark="Spectrum tray menu, dark theme. For each monitor, a radio list of SDR profiles (QD-OLED 27 (EDID), sRGB, Display P3, Adobe RGB, ProPhoto RGB, Rec. 2020, DCI-P3), an HDR check item, then Open Spectrum and Exit." sizes="(min-width: 900px) 320px, 70vw"></shot>
+                  <i class="slab-spec"></i>
+                  <i class="slab-edge"></i>
+                </div>
+              </div>
+              <i class="slab-caustic"></i>
+            </figure>
+            <button class="tray-icon" type="button" aria-expanded="true" aria-label="Spectrum"><!--prism:22--><span class="tray-tip" aria-hidden="true">Spectrum</span></button>
+          </div>
         </div>
       </div>
     </section>
@@ -170,35 +190,7 @@
               </div>
             </div>
             <i class="slab-caustic"></i>
-            <figcaption class="caption">Computed from a QD-OLED monitor's EDID.</figcaption>
           </figure>
-        </div>
-      </div>
-    </section>
-
-    <!-- 7. Tray -->
-    <section id="tray" class="section tray" aria-labelledby="h-tray">
-      <spectral></spectral>
-      <div class="wrap">
-        <h2 id="h-tray" data-reveal>Monitor color profile switching, just one click away.</h2>
-        <p class="caption">Spectrum lives in your system tray.</p>
-      </div>
-      <div class="taskbar" data-tray>
-        <div class="taskbar-inner">
-          <div class="taskbar-apps" aria-hidden="true"><i></i><i></i><i></i><i></i></div>
-          <div class="taskbar-tray">
-            <figure class="slab slab-tray" data-slab data-max-tilt="4" data-entry="none">
-              <div class="slab-sway">
-                <div class="slab-tilt">
-                  <shot name="traymenu" alt-light="Spectrum tray menu, light theme. For each monitor, a radio list of SDR profiles (QD-OLED 27 (EDID), sRGB, Display P3, Adobe RGB, ProPhoto RGB, Rec. 2020, DCI-P3), an HDR check item, then Open Spectrum and Exit." alt-dark="Spectrum tray menu, dark theme. For each monitor, a radio list of SDR profiles (QD-OLED 27 (EDID), sRGB, Display P3, Adobe RGB, ProPhoto RGB, Rec. 2020, DCI-P3), an HDR check item, then Open Spectrum and Exit." sizes="(min-width: 900px) 320px, 70vw"></shot>
-                  <i class="slab-spec"></i>
-                  <i class="slab-edge"></i>
-                </div>
-              </div>
-              <i class="slab-caustic"></i>
-            </figure>
-            <button class="tray-icon" type="button" aria-expanded="true" aria-label="Spectrum"><!--prism:22--><span class="tray-tip" aria-hidden="true">Spectrum</span></button>
-          </div>
         </div>
       </div>
     </section>

@@ -5,7 +5,7 @@
 //   cd site; npm run build; npm run shots -- [options]       (starts `vite preview` itself if nothing listens)
 //
 //   --out <dir>        output folder (default ../screenshots-raw/site, gitignored)
-//   --ids a,b          section ids (default: hero,window,hdr,gamut,tray; "all" = full page)
+//   --ids a,b          section ids (default: hero,window,hdr,gamut; "all" = full page)
 //   --sizes d,m        d = 1440x900 at DPR 1, m = 390x844 at DPR 2 (default both)
 //   --themes light,dark
 //   --reduced          emulate prefers-reduced-motion: reduce (files get "-rm")
@@ -26,7 +26,7 @@ import { fileURLToPath } from "node:url";
 
 const siteRoot = join(dirname(fileURLToPath(import.meta.url)), "..");
 const EDGE = process.env.EDGE_PATH || "C:\\Program Files (x86)\\Microsoft\\Edge\\Application\\msedge.exe";
-const ALL_IDS = ["hero", "window", "hdr", "gamut", "tray"];
+const ALL_IDS = ["hero", "window", "hdr", "gamut"];
 const SIZES = { d: { name: "1440", width: 1440, height: 900, dpr: 1, mobile: false }, m: { name: "390", width: 390, height: 844, dpr: 2, mobile: true } };
 
 const opt = { out: join(siteRoot, "..", "screenshots-raw", "site"), url: "http://127.0.0.1:4173/", ids: ALL_IDS, sizes: ["d", "m"], themes: ["light", "dark"], reduced: false, nojs: false, hover: "", widths: [], longtasks: false };
