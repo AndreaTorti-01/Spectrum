@@ -1,9 +1,9 @@
-; Spectrum per-user installer (Inno Setup 6). No admin: everything lives under the user's profile.
+﻿; Spectrum per-user installer (Inno Setup 6). No admin: everything lives under the user's profile.
 ; Build:  iscc installer\spectrum.iss [/DAppVersion=1.2.3] [/DExePath=C:\path\to\Spectrum.exe]
 ; Run `cargo build --release` first: it also writes target\spectrum.ico, the wizard icon.
 
 #ifndef AppVersion
-  #define AppVersion "0.1.6"
+  #define AppVersion "0.1.7"
 #endif
 #ifndef ExePath
   #define ExePath "..\target\release\Spectrum.exe"
