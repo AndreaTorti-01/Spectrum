@@ -5,8 +5,10 @@
   </picture>
 </p>
 
+<h1 align="center">Simple monitor color profile manager</h1>
+
 <p align="center">
-  Your monitor can already report to Windows which colors it can show. Spectrum turns that into a color profile and keeps it applied. If you use your monitor's color space emulation modes, Spectrum allows you to change your color profile with just one click, from your system tray. Easily enable, disable and manage HDR, too! All this, open source and for free, today.
+  Your monitor can already report to Windows which colors it can show: Spectrum helps you save it as a color profile. Spectrum also allows you to change your color profile with just one click, right from your system tray. With Spectrum you can easily toggle and tune HDR too. Free and open source.
 </p>
 
 <p align="center">

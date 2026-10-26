@@ -3,7 +3,7 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>Spectrum: monitor color profiles for Windows</title>
+  <title>Spectrum: simple monitor color profile manager</title>
   <meta name="description" content="Windows tray utility that builds an ICC profile from your monitor's EDID, writes MHC2 profiles for HDR and re-applies them after driver updates." />
   <meta name="author" content="Andrea Torti" />
   <meta name="color-scheme" content="dark light" />
@@ -13,14 +13,14 @@
   <link rel="canonical" href="%SITE_URL%" />
   <meta property="og:type" content="website" />
   <meta property="og:site_name" content="Spectrum" />
-  <meta property="og:title" content="Spectrum: your monitor already knows its colors" />
+  <meta property="og:title" content="Spectrum: simple monitor color profile manager" />
   <meta property="og:description" content="Windows tray utility that builds an ICC profile from your monitor's EDID, writes MHC2 profiles for HDR and re-applies them after driver updates." />
   <meta property="og:url" content="%SITE_URL%" />
   <meta property="og:image" content="%SITE_URL%og.png" />
   <meta property="og:image:width" content="1200" />
   <meta property="og:image:height" content="630" />
   <meta name="twitter:card" content="summary_large_image" />
-  <meta name="twitter:title" content="Spectrum: your monitor already knows its colors" />
+  <meta name="twitter:title" content="Spectrum: simple monitor color profile manager" />
   <meta name="twitter:description" content="Windows tray utility that builds an ICC profile from your monitor's EDID, writes MHC2 profiles for HDR and re-applies them after driver updates." />
   <meta name="twitter:image" content="%SITE_URL%og.png" />
   <link rel="icon" type="image/svg+xml" href="./favicon.svg" />
@@ -47,7 +47,7 @@
 
   <header class="nav" id="nav">
     <div class="nav-inner">
-      <a class="brand" href="#hero" aria-label="Spectrum home"><!--prism:30--><span class="brand-word">SPECTRUM</span></a>
+      <a class="brand" href="#hero" aria-label="Spectrum home"><!--prism:30--><span class="brand-word">SPECTRUM</span><span class="brand-sub">Simple monitor color profile manager</span></a>
       <nav class="nav-links" aria-label="Main">
         <a class="nav-link nav-hide-sm" href="#window">How it works</a>
         <a class="nav-link nav-hide-sm" href="%REPO%">GitHub</a>
@@ -66,9 +66,9 @@
       <div class="hero-stage">
         <div class="wrap hero-grid">
           <div class="hero-copy">
-            <p class="kicker">Windows 11 · MIT</p>
-            <h1 id="h-hero" class="display" data-reveal>Your monitor already knows its colors.</h1>
-            <p class="lead">Your monitor can already report to Windows which colors it can show. Spectrum turns that into a color profile and keeps it applied. If you use your monitor&rsquo;s color space emulation modes, Spectrum allows you to change your color profile with just one click, from your system tray. Easily enable, disable and manage HDR, too! All this, open source and for free, today.</p>
+            <p class="kicker"><span class="only-wide">Windows 11 · MIT</span><span class="only-narrow">Your monitor already knows its colors.</span></p>
+            <h1 id="h-hero" class="display" data-reveal><span class="only-wide">Your monitor already knows its colors.</span><span class="only-narrow">Simple monitor color profile manager</span></h1>
+            <p class="lead">Your monitor can already report to Windows which colors it can show: Spectrum helps you save it as a color profile. Spectrum also allows you to change your color profile with just one click, right from your system tray. With Spectrum you can easily toggle and tune HDR too. Free and open source.</p>
             <div class="actions">
               <a class="btn" href="%DOWNLOAD%">Download for Windows</a>
               <a class="btn btn-ghost" href="%REPO%">View on GitHub</a>

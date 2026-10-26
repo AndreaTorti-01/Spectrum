@@ -169,3 +169,26 @@
     padding: 10px;
   }
 }
+
+.brand-sub {
+  font-family: var(--font-mono);
+  font-weight: 500;
+  font-size: 0.75rem;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--ink-dim);
+  padding-left: 12px;
+  border-left: 1px solid var(--rule);
+}
+.only-narrow {
+  display: none;
+}
+@media (max-width: 719px) {
+  .brand-sub,
+  .only-wide {
+    display: none;
+  }
+  .only-narrow {
+    display: inline;
+  }
+}

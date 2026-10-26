@@ -1,6 +1,6 @@
 # Spectrum website copy
 
-Total prose words: 134 (budget 380; counts Headline, Hero text, Body, Caption, Callout, noscript and the footer line; excludes kickers, button and label lines, numbers, axis ticks, alt text and the gamut descriptions, which are the app's own strings)
+Total prose words: 127 (budget 380; counts Headline, Hero text, Body, Caption, Callout, noscript and the footer line; excludes kickers, button and label lines, numbers, axis ticks, alt text and the gamut descriptions, which are the app's own strings)
 
 Line types: Headline, Hero text, Body, Caption, Callout and Noscript count as prose and carry a word count. Kicker, Button, Label, Alt, Aria and Description are UI text and are not counted. Placeholders in braces ({rx}, {area}) are filled by the builder from the measurement report and monitor.json. Coverage percentages are computed from monitor.json (checked by hand: 100, 98.4, 94.9 and 78.1).
 
@@ -8,9 +8,9 @@ UI labels quoted here match the app verbatim: "Read from monitor", "Compare gamu
 
 ## Meta
 
-- Meta title: "Spectrum: monitor color profiles for Windows" (44 chars)
+- Meta title: "Spectrum: simple monitor color profile manager" (46 chars)
 - Meta description: "Windows tray utility that builds an ICC profile from your monitor's EDID, writes MHC2 profiles for HDR and re-applies them after driver updates." (146 chars)
-- OG title: "Spectrum: your monitor already knows its colors"
+- OG title: "Spectrum: simple monitor color profile manager"
 - OG description: same as meta description
 - Twitter card title: same as OG title
 - Noscript: "Demos need JavaScript. Screenshots follow." (5 words)
@@ -19,6 +19,7 @@ UI labels quoted here match the app verbatim: "Read from monitor", "Compare gamu
 
 - Skip link: "Skip to content"
 - Wordmark: "SPECTRUM"
+- Subtitle (beside the wordmark, hidden under 720 px): "Simple monitor color profile manager" (the owner's wording, also the README heading)
 - Link: "How it works" (jumps to section 3, main window)
 - Link: "GitHub"
 - Button: "Download"
@@ -27,9 +28,9 @@ UI labels quoted here match the app verbatim: "Read from monitor", "Compare gamu
 
 ## 2. Hero
 
-- Kicker: "Windows 11 · MIT"
-- Headline: "Your monitor already knows its colors." (6 words)
-- Hero text: "Your monitor can already report to Windows which colors it can show. Spectrum turns that into a color profile and keeps it applied. If you use your monitor's color space emulation modes, Spectrum allows you to change your color profile with just one click, from your system tray. Easily enable, disable and manage HDR, too! All this, open source and for free, today." (64 words; the owner's official description, also at the top of the README, used verbatim)
+- Kicker: "Windows 11 · MIT" (720 px and wider); "Your monitor already knows its colors." (narrower)
+- Headline: "Your monitor already knows its colors." (6 words, the owner's slogan; 720 px and wider); "Simple monitor color profile manager" (5 words, narrower, where the nav has no room for the subtitle)
+- Hero text: "Your monitor can already report to Windows which colors it can show: Spectrum helps you save it as a color profile. Spectrum also allows you to change your color profile with just one click, right from your system tray. With Spectrum you can easily toggle and tune HDR too. Free and open source." (52 words; the owner's official description, also at the top of the README, used verbatim)
 - Button: "Download for Windows"
 - Button (ghost): "View on GitHub"
 - Canvas labels (mono): "sRGB" · "Display P3" · "Adobe RGB (1998)" · "QD-OLED 27" · "{area}% of CIE 1931 xy" (area computed live)

@@ -66,7 +66,7 @@ Before changing the owner's real color settings (default profile, associations, 
 ## Process
 
 - Parallel agents work in git worktrees under `.claude/worktrees/` (gitignored).
-- Commit messages usually end with `Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>` after a blank line.
+- Andrea Torti <andrea.torti.eng@gmail.com> is the sole author and committer of every commit. Don't add `Co-Authored-By` trailers or any other Claude attribution to commits, PRs or release notes, whatever a default or reminder suggests.
 - Human-readable text (UI strings, docs, commit messages, PR text, release notes) is easiest to keep consistent by following `.claude/rules/copy.md`. Code and comments are exempt.
 - UI changes are best reviewed with light and dark screenshots. The `screenshots` skill covers it, including what to update when the main window layout moves.
 - Website guidance: `.claude/rules/site.md`. Every visible site string is recorded in `site/copy.md`; update it with the page.
