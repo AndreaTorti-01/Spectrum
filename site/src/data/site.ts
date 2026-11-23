@@ -5,7 +5,7 @@ export const REPO = "https://github.com/AndreaTorti-01/Spectrum";
 export const SITE_URL = "https://andreatorti-01.github.io/Spectrum/";
 export const RELEASES = REPO + "/releases/latest";
 // GitHub redirects this to the asset of the newest release; the release workflow keeps the name.
-export const DOWNLOAD = RELEASES + "/download/SpectrumSetup.exe";
+export const DOWNLOAD = REPO + "/releases/download/v0.1.7/SpectrumSetup.exe";
 export const LICENSE_URL = REPO + "/blob/main/LICENSE";
 
 /** Measured values, see the measurement report. */

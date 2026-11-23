@@ -18,7 +18,8 @@
 </p>
 
 <p align="center">
-  <b><a href="https://github.com/AndreaTorti-01/Spectrum/releases/latest/download/SpectrumSetup.exe">Download SpectrumSetup.exe</a></b>
+  <b><a href="https://github.com/AndreaTorti-01/Spectrum/releases/download/v0.1.7/SpectrumSetup.exe">Download SpectrumSetup.exe 0.1.7</a></b><br>
+  This is the frozen 0.1 line. Newer versions ship on the Microsoft Store from the main branch.
 </p>
 
 <p align="center">
