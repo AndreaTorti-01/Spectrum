@@ -70,11 +70,20 @@ Product features:
 
 Search terms (7 at most): color profile, ICC, HDR calibration, EDID, monitor, gamut, display
 
-Screenshots: PNG, at least 1366 × 768, four of them: main window (SDR), main window (HDR), gamut window, Manage profiles. Make them with the `screenshots` skill.
 
 App tile icon: `target/store-tile.png` (300 × 300, written by `cargo build`).
 
 Copyright and trademark info: © 2026 Andrea Torti. MIT License.
+
+## Screenshots
+
+PNG, 1920 × 1080, in `docs/store/`, each in a light and a dark version (`-light.png`, `-dark.png`); upload one set. Paste each caption into the screenshot's caption field; it matches the line drawn in the image. Re-render with `cd site; npm run store-shots` (needs `target\release\Spectrum.exe`, or pass `-- --exe <path>`).
+
+- `store-1-main-<theme>.png`: Color profile and HDR for each monitor
+- `store-2-tray-<theme>.png`: Switch color profiles from the tray menu
+- `store-3-gamut-<theme>.png`: Monitor gamut on the CIE 1931 diagram
+- `store-4-profiles-<theme>.png`: Profiles and the monitors that use them
+- `store-5-hdr-<theme>.png`: Tune the HDR profile Windows applies
 
 ## Submission options
 
