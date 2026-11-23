@@ -46,7 +46,7 @@
         <desktop:Extension Category="windows.startupTask" Executable="Spectrum.exe" EntryPoint="Windows.FullTrustApplication" uap10:Parameters="--tray">
           <desktop:StartupTask TaskId="SpectrumStartup" Enabled="false" DisplayName="Spectrum" />
         </desktop:Extension>
-        <!-- Lets a shell run "spectrum.exe" for the --debug-* switches and bug reports. -->
+        <!-- Lets a shell run "spectrum.exe" with the debug switches, for bug reports. -->
         <uap3:Extension Category="windows.appExecutionAlias" Executable="Spectrum.exe" EntryPoint="Windows.FullTrustApplication">
           <uap3:AppExecutionAlias>
             <desktop:ExecutionAlias Alias="spectrum.exe" />
