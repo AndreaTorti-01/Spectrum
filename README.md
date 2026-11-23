@@ -13,12 +13,11 @@
 
 <p align="center">
   <a href="https://github.com/AndreaTorti-01/Spectrum/actions/workflows/ci.yml"><img src="https://github.com/AndreaTorti-01/Spectrum/actions/workflows/ci.yml/badge.svg" alt="CI status"></a>
-  <a href="https://github.com/AndreaTorti-01/Spectrum/releases/latest"><img src="https://img.shields.io/github/v/release/AndreaTorti-01/Spectrum" alt="Latest release"></a>
   <a href="LICENSE"><img src="https://img.shields.io/github/license/AndreaTorti-01/Spectrum" alt="MIT license"></a>
 </p>
 
 <p align="center">
-  <b><a href="https://github.com/AndreaTorti-01/Spectrum/releases/latest/download/SpectrumSetup.exe">Download SpectrumSetup.exe</a></b>
+  <a href="https://apps.microsoft.com/detail/STORE_ID?mode=direct"><img src="https://get.microsoft.com/images/en-us%20dark.svg" alt="Get it from Microsoft" width="200"></a>
 </p>
 
 <p align="center">
@@ -75,21 +74,21 @@ Spectrum keys each monitor by its EDID and keeps a copy of every profile it gene
 
 ### No admin needed
 
-Standard users can create files in the Windows color folder, and the profile association APIs have a per-user scope. Spectrum uses both. `SpectrumSetup.exe` installs to `%LOCALAPPDATA%\Programs\Spectrum` and offers a Start with Windows option, which adds a Startup-folder shortcut.
+Standard users can create files in the Windows color folder, and the profile association APIs have a per-user scope. Spectrum uses both. The Microsoft Store installs it for the current user. Start with Windows is a startup task that you can also switch off in Settings › Apps › Startup.
 
 ## FAQ
 
 <details>
 <summary>Does it use the network?</summary>
 
-No, Spectrum sends no telemetry.
+No. Spectrum makes no network connections and collects no data. See [PRIVACY.md](PRIVACY.md).
 
 </details>
 
 <details>
 <summary>How do I uninstall?</summary>
 
-Use Settings › Apps. Uninstalling removes every profile and association Spectrum created, plus its data folder. For the portable exe, run `Spectrum.exe --cleanup`, then delete the file.
+Profiles you applied keep working after an uninstall. To put Windows back on its own profiles first, open Manage profiles and click Remove all Spectrum profiles. Then uninstall from Settings › Apps.
 
 </details>
 
@@ -102,11 +101,13 @@ rustup default stable-x86_64-pc-windows-gnu
 cargo build --release
 ```
 
-The installer needs [Inno Setup 6](https://jrsoftware.org/isinfo.php). It writes `target\installer\SpectrumSetup.exe`:
+The MSIX package needs the Windows SDK (`winget install Microsoft.WindowsSDK.10.0.26100`). With `-Register` the script installs the build for the current user, which needs Developer Mode. Without it, the script writes `target\Spectrum-X.Y.Z.msix` for the Store:
 
 ```
-iscc /DExePath=..\target\release\Spectrum.exe installer\spectrum.iss
+powershell -ExecutionPolicy Bypass -File packaging\build-msix.ps1 -Register
 ```
+
+The 0.1 versions, with the Inno Setup installer, are on the `legacy` branch.
 
 The website lives in `site/` and needs Node 22 or newer:
 

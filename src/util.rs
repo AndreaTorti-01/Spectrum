@@ -42,6 +42,35 @@ pub(crate) fn known_folder(id: &GUID) -> Option<PathBuf> {
     }
 }
 
+/// True when running from the MSIX package (the Store build or `packaging/build-msix.ps1 -Register`).
+pub fn is_packaged() -> bool {
+    use windows_sys::Win32::Foundation::APPMODEL_ERROR_NO_PACKAGE;
+    use windows_sys::Win32::Storage::Packaging::Appx::GetCurrentPackageFullName;
+    let mut len = 0u32;
+    // SAFETY: a zero-length query with a null buffer only reports the needed length or an error code.
+    let rc = unsafe { GetCurrentPackageFullName(&mut len, std::ptr::null_mut()) };
+    rc != APPMODEL_ERROR_NO_PACKAGE
+}
+
+/// Asks Windows to start the app again, in the tray, after it closed it to install an update. Crashes,
+/// hangs and reboots don't restart it: after a reboot the startup task decides.
+pub fn register_restart_after_update() {
+    use windows_sys::Win32::System::Recovery::{
+        RegisterApplicationRestart, RESTART_NO_CRASH, RESTART_NO_HANG, RESTART_NO_REBOOT,
+    };
+    let args = wide(crate::autostart::TRAY_ARG);
+    // SAFETY: the argument string is NUL-terminated and copied by the call.
+    let hr = unsafe {
+        RegisterApplicationRestart(
+            args.as_ptr(),
+            RESTART_NO_CRASH | RESTART_NO_HANG | RESTART_NO_REBOOT,
+        )
+    };
+    if hr < 0 {
+        log(&format!("RegisterApplicationRestart failed: {:#010x}", hr as u32));
+    }
+}
+
 /// `%APPDATA%\Spectrum`, created on demand.
 pub fn app_data_dir() -> PathBuf {
     let base = known_folder(&FOLDERID_RoamingAppData)

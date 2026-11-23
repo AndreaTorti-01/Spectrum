@@ -35,9 +35,9 @@ fn main() {
         println!("  HDR default   {:?}", wcs::default_profile(m, true));
         println!("  assoc (SDR)   {:?}", wcs::associated(m, false));
         println!("  assoc (HDR)   {:?}", wcs::associated(m, true));
-        println!("  autostart     {}", autostart::autostart_enabled());
+        println!("  autostart     {}", autostart::startup_state().name());
     }
-    println!("startup lnk   {}", autostart::shortcut_path().display());
+    println!("packaged      {}", spectrum::util::is_packaged());
     println!("backup_dir    {}", wcs::backup_dir().display());
     let cfg = config::Config::load();
     println!("config monitors: {}", cfg.monitors.len());

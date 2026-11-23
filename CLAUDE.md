@@ -13,12 +13,14 @@ rustup default stable-x86_64-pc-windows-gnu    # once; GNU target, no Visual Stu
 cargo fmt --check
 cargo clippy --all-targets -- -D warnings
 cargo test
-cargo build --release                          # also writes target\spectrum.ico
-& "$env:LOCALAPPDATA\Programs\Inno Setup 6\ISCC.exe" installer\spectrum.iss   # needs the release exe; output target\installer\SpectrumSetup.exe
+cargo build --release                          # also writes target\spectrum.ico, target\msix-assets, target\store-tile.png
+powershell -ExecutionPolicy Bypass -File packaging\build-msix.ps1 [-Register]   # Windows SDK; target\Spectrum-X.Y.Z.msix, or -Register installs the layout (Developer Mode)
 cd site; npm ci; npm run build                 # also: dev, preview (127.0.0.1:4173), images, demo, banner
 ```
 
-CI (`.github/workflows/ci.yml`) runs the same four cargo commands, then builds the installer.
+CI (`.github/workflows/ci.yml`) runs the cargo checks, then builds the MSIX package.
+
+Distribution is the Microsoft Store (MSIX, `packaging/`). The Store signs the package, so there is no code signing here. Branches: `dev` collects work and goes to a Partner Center package flight, `main` gets release merges and public submissions, `legacy` is the frozen 0.1 line with the Inno installer (don't push to it). Listing text, the `runFullTrust` justification and the certification notes are in `packaging/store-listing.md`.
 
 ## Hard rules
 
@@ -26,7 +28,8 @@ CI (`.github/workflows/ci.yml`) runs the same four cargo commands, then builds t
 - UI is custom-drawn GDI in `src/ui/`. Prefer extending that over comctl controls, which would not match the theme. The design language (spacing grid, control height, type ramp, button variants, when to hide or disable) is written down and tokenized in `src/ui/design.rs`; build layouts from its tokens and draw with the `src/ui/widgets/` components, so the windows stay consistent.
 - Everything is per-user. Avoid anything that needs admin; it would break the zero-prompt install.
 - The app theme follows the Windows setting. `--theme light|dark` is for screenshots.
-- Install and autostart belong to the Inno installer and a Startup-folder shortcut (`Spectrum.lnk --tray`), not the exe. That is the reason to keep self-copy, Run keys, an Uninstall key and cmd self-delete out: Defender ML quarantined a self-installing exe (`Program:Win32/Contebrew.A!ml`). The exe only has `--cleanup` and `--quit` for the uninstaller.
+- The MSIX package installs and removes the app; the exe never installs itself. "Start with Windows" is the manifest's `windows.startupTask` (`SpectrumStartup`, runs `--tray`), toggled through the WinRT `StartupTask` API in `src/autostart.rs`. Startup-folder shortcuts and Run keys don't work from a package (AppData writes are redirected).
+- Store policy: change nothing in Windows until the user acts (no first-run setup), and keep "Remove all Spectrum profiles" working, since an MSIX uninstall can't run code.
 - Release profile is `panic = "abort"`. A panic or a `RefCell` double borrow kills the tray app. Release borrows before calling back into Win32.
 
 ## Testing
@@ -43,7 +46,7 @@ Switches (each takes `--out <file>`; monitor numbers are the 1-based numbers in 
 
 - `--debug-dump [--json]`: monitors, EDID keys, defaults, associations. Read-only. `site/src/data/monitor.json` comes from `--json`.
 - `--debug-edid <n>`: "Read from monitor" flow. Writes a profile into the color folder.
-- `--debug-sdr <n> <option-index>`, `--debug-hdr <n> <min>,<peak>,<full>,<sat>`, `--debug-hdr-reset <n>`, `--debug-hdr-toggle <n> on|off`, `--debug-autostart on|off`, `--debug-sdr-white <n> [nits]`, `--debug-delete-profile <file name>`: the matching UI actions, headless. They change real settings (delete only files you created for the test).
+- `--debug-sdr <n> <option-index>`, `--debug-hdr <n> <min>,<peak>,<full>,<sat>`, `--debug-hdr-reset <n>`, `--debug-hdr-toggle <n> on|off`, `--debug-autostart on|off`, `--debug-sdr-white <n> [nits]`, `--debug-delete-profile <file name>`, `--debug-remove-all`: the matching UI actions, headless. `--debug-autostart` only works in the packaged build (run it through the `spectrum.exe` alias). They change real settings (delete only files you created for the test).
 - `--debug-dxgi <n>`: min, max and full-frame luminance, primaries and color space that Windows reports for the monitor (also in `--debug-dump`). Read-only.
 - `--debug-wipe <n>` removes Spectrum's associations (simulates a driver update); `--debug-reconcile` runs reconcile once.
 - `--debug-tray-cmd <id>`: runs a tray menu command in the running instance.
@@ -70,6 +73,6 @@ Before changing the owner's real color settings (default profile, associations, 
 - Human-readable text (UI strings, docs, commit messages, PR text, release notes) is easiest to keep consistent by following `.claude/rules/copy.md`. Code and comments are exempt.
 - UI changes are best reviewed with light and dark screenshots. The `screenshots` skill covers it, including what to update when the main window layout moves.
 - Website guidance: `.claude/rules/site.md`. Every visible site string is recorded in `site/copy.md`; update it with the page.
-- Not yet verified on real hardware: the Inno installer's install and `--cleanup` uninstall round trip. Everything else was exercised on the owner's QD-OLED HDR monitor (Windows 11 build 26300).
+- Not yet verified on real hardware: the packaged build (color-folder writes, the startup task with `--tray`, `RegisterApplicationRestart` after a Store update, taking over from a legacy install). The 0.1 code paths were exercised on the owner's QD-OLED HDR monitor (Windows 11 build 26300).
 - `SETUP-NOTES.txt` is the owner's private, gitignored file. Keep it out of commits and public text.
 - Prefer PowerShell or Node over `python3` for quick checks: on this PC `python3` is the Microsoft Store alias, and a heredoc run through it waited without exiting until it was stopped by hand. Give any command that can wait (interpreters, UI Automation reads, servers) a `timeout`, and stop helpers you start (`npm run shots` leaves `vite preview` on port 4173) before reporting.

@@ -270,7 +270,7 @@ impl Main {
         }
     }
 
-    /// Start with Windows, and the last action's error.
+    /// Start with Windows (with a hint when only Windows can change it), and the last action's error.
     fn draw_footer(&self, c: &mut Canvas, ctx: &Ctx) {
         let (th, geo) = (&ctx.th, &self.geo);
         self.draw_divider(c, th, geo.div2);
@@ -279,9 +279,12 @@ impl Main {
             ctx,
             geo.autostart,
             "Start with Windows",
-            self.state.autostart,
+            self.state.autostart.is_on(),
             self.ui.state(Id::Autostart),
         );
+        if let Some(h) = self.state.autostart.hint() {
+            c.text(geo.autostart, h, self.fonts.caption, th.text_dim, TA_RIGHT);
+        }
         if let Some(e) = &self.state.error {
             c.text(geo.error, e, self.fonts.caption, design::warning(th), TA_LEFT);
         }

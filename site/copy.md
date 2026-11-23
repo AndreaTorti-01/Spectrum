@@ -22,7 +22,7 @@ UI labels quoted here match the app verbatim: "Read from monitor", "Compare gamu
 - Subtitle (beside the wordmark, hidden under 720 px): "Simple monitor color profile manager" (the owner's wording, also the README heading)
 - Link: "How it works" (jumps to section 3, main window)
 - Link: "GitHub"
-- Button: "Download"
+- Button: "Get it" (opens the Microsoft Store listing)
 - Icons: monitor, sun, moon (theme toggle states, no visible text)
 - Aria: "Theme: System" / "Theme: Light" / "Theme: Dark" (toggle), "Spectrum home" (wordmark link)
 
@@ -31,7 +31,7 @@ UI labels quoted here match the app verbatim: "Read from monitor", "Compare gamu
 - Kicker: "Windows 11 · MIT" (720 px and wider); "Your monitor already knows its colors." (narrower)
 - Headline: "Your monitor already knows its colors." (6 words, the owner's slogan; 720 px and wider); "Simple monitor color profile manager" (5 words, narrower, where the nav has no room for the subtitle)
 - Hero text: "Your monitor can already report to Windows which colors it can show: Spectrum helps you save it as a color profile. Spectrum also allows you to change your color profile with just one click, right from your system tray. With Spectrum you can easily toggle and tune HDR too. Free and open source." (52 words; the owner's official description, also at the top of the README, used verbatim)
-- Button: "Download for Windows"
+- Button: "Get it from Microsoft" (the Microsoft Store listing; Microsoft's own badge wording)
 - Button (ghost): "View on GitHub"
 - Canvas labels (mono): "sRGB" · "Display P3" · "Adobe RGB (1998)" · "QD-OLED 27" · "{area}% of CIE 1931 xy" (area computed live)
 - Canvas axis labels: wavelength ticks every 20 nm, "x" and "y"

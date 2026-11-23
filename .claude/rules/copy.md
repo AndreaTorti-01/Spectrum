@@ -4,7 +4,7 @@ paths:
   - "site/**"
   - "src/**"
   - ".github/**"
-  - "installer/**"
+  - "packaging/**"
 ---
 
 # Copy rules

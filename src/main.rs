@@ -1,11 +1,11 @@
 #![windows_subsystem = "windows"]
-//! Thin CLI shell: parses switches, handles single instance, and hands off to the library. The app never
-//! installs itself: `installer/spectrum.iss` does that, and `--cleanup` / `--quit` serve its uninstaller.
+//! Thin CLI shell: parses switches, handles single instance, and hands off to the library. The MSIX
+//! package installs and removes the app; the exe never installs itself.
 
 use spectrum::app::{self, RunOpts};
+use spectrum::debug;
 use spectrum::ui::draw;
-use spectrum::util::wide;
-use spectrum::{autostart, debug};
+use spectrum::util::{register_restart_after_update, wide};
 use std::path::PathBuf;
 use windows_sys::Win32::Foundation::{CloseHandle, GetLastError, ERROR_ALREADY_EXISTS, HANDLE};
 use windows_sys::Win32::System::Threading::CreateMutexW;
@@ -24,10 +24,6 @@ enum Command {
     Default,
     /// `--tray`: run in the tray only.
     Tray,
-    /// `--cleanup`: remove Spectrum's associations, profiles, Startup shortcut and data (the uninstaller).
-    Cleanup,
-    /// `--quit`: ask a running instance to exit.
-    Quit,
     DebugDump {
         json: bool,
     },
@@ -43,6 +39,7 @@ enum Command {
     DebugAutostart(String),
     DebugDxgi(String),
     DebugDeleteProfile(String),
+    DebugRemoveAll,
     DebugSdrWhite(String, Option<String>),
     DebugSdrCap(String, String),
     /// `--render <surface>`: off-screen screenshot (`spectrum::render`).
@@ -107,8 +104,6 @@ fn parse_option<I: Iterator<Item = String>>(arg: &str, it: &mut ArgIter<I>, args
 fn parse_command<I: Iterator<Item = String>>(arg: &str, it: &mut ArgIter<I>) -> Option<Command> {
     Some(match arg {
         "--tray" => Command::Tray,
-        "--cleanup" => Command::Cleanup,
-        "--quit" => Command::Quit,
         "--render" => Command::Render(value(it)),
         "--debug-edid" => Command::DebugEdid(num(it)),
         "--debug-wipe" => Command::DebugWipe(num(it)),
@@ -128,6 +123,7 @@ fn parse_command<I: Iterator<Item = String>>(arg: &str, it: &mut ArgIter<I>) -> 
         }
         "--debug-sdr-cap" => Command::DebugSdrCap(value(it), value(it)),
         "--debug-delete-profile" => Command::DebugDeleteProfile(value(it)),
+        "--debug-remove-all" => Command::DebugRemoveAll,
         _ => return None,
     })
 }
@@ -155,8 +151,10 @@ fn parse_args<I: Iterator<Item = String>>(it: I) -> Args {
     }
     args
 }
-/// Takes the single-instance mutex. `None` when another instance already holds it.
+/// Takes the single-instance mutex. `None` when another instance already holds it. A running copy of the
+/// pre-Store install is asked to exit first, so the Store build takes over.
 fn acquire_instance() -> Option<HANDLE> {
+    debug::stop_legacy_copy();
     // SAFETY: plain mutex creation; the handle is kept for the life of the process.
     unsafe {
         let h = CreateMutexW(std::ptr::null(), 0, wide(MUTEX_NAME).as_ptr());
@@ -187,6 +185,7 @@ fn show_running() {
 }
 
 fn run_interactive() -> i32 {
+    register_restart_after_update();
     app::run(RunOpts {
         tray: true,
         show_main: true,
@@ -207,22 +206,8 @@ fn run_tray() -> i32 {
     if acquire_instance().is_none() {
         return 0;
     }
+    register_restart_after_update();
     app::run_tray()
-}
-
-/// `--cleanup`: the uninstaller's step. Stops a running copy first so it can't re-associate anything, then
-/// removes associations and profiles (SDR and HDR), the Startup shortcut and `%APPDATA%\Spectrum`.
-fn cleanup() -> i32 {
-    debug::stop_running(5000);
-    app::remove_all_profiles();
-    let _ = autostart::set_autostart(false);
-    0
-}
-
-/// `--quit`: asks a running instance to exit and waits up to 5 s.
-fn quit() -> i32 {
-    debug::stop_running(5000);
-    0
 }
 
 fn debug_open(cmd: String) -> i32 {
@@ -250,8 +235,6 @@ fn main() {
     let code = match args.command {
         Command::Default => run_default(),
         Command::Tray => run_tray(),
-        Command::Cleanup => cleanup(),
-        Command::Quit => quit(),
         Command::DebugDump { json } => {
             debug::dump(json, out);
             0
@@ -275,6 +258,7 @@ fn main() {
         Command::DebugDxgi(n) => debug::dxgi(&n, out),
         Command::DebugAutostart(v) => debug::autostart(&v, out),
         Command::DebugDeleteProfile(f) => debug::delete_profile(&f, out),
+        Command::DebugRemoveAll => debug::remove_all(out),
         Command::DebugSdrWhite(n, v) => debug::sdr_white(&n, v.as_deref(), out),
         Command::DebugSdrCap(n, v) => debug::sdr_cap(&n, &v, out),
         Command::DebugOpen(what) => debug_open(format!("open {what}")),
@@ -305,18 +289,14 @@ mod tests {
     }
 
     #[test]
-    fn cleanup_and_quit_switches() {
-        assert_eq!(parse(&["--cleanup"]).command, Command::Cleanup);
-        assert_eq!(parse(&["--quit"]).command, Command::Quit);
-    }
-
-    #[test]
     fn removed_install_switches_are_ignored() {
         for sw in [
             "--uninstall",
             "--finish-uninstall",
             "--debug-install",
             "--install",
+            "--cleanup",
+            "--quit",
         ] {
             assert_eq!(parse(&[sw]).command, Command::Default, "{sw}");
         }
@@ -382,6 +362,7 @@ mod tests {
                 vec!["--debug-delete-profile", "a b.icm"],
                 Command::DebugDeleteProfile(s("a b.icm")),
             ),
+            (vec!["--debug-remove-all"], Command::DebugRemoveAll),
             (
                 vec!["--debug-sdr"],
                 Command::DebugSdr(String::new(), String::new()),
@@ -409,7 +390,7 @@ mod tests {
 
     #[test]
     fn the_last_command_wins() {
-        assert_eq!(parse(&["--tray", "--quit"]).command, Command::Quit);
+        assert_eq!(parse(&["--debug-reconcile", "--tray"]).command, Command::Tray);
         assert_eq!(
             parse(&["--json", "--debug-dump"]).command,
             Command::DebugDump { json: true }
@@ -423,7 +404,7 @@ mod tests {
     #[test]
     fn debug_dump_wins_and_keeps_json() {
         assert_eq!(
-            parse(&["--cleanup", "--debug-dump", "--json"]).command,
+            parse(&["--tray", "--debug-dump", "--json"]).command,
             Command::DebugDump { json: true }
         );
     }

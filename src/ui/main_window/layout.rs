@@ -266,7 +266,8 @@ impl Main {
         if hdr_on {
             ui.add(Id::Reset, Kind::Button, g.reset, true, true);
         }
-        ui.add(Id::Autostart, Kind::Checkbox, g.autostart, true, true);
+        let startup = self.state.autostart.can_toggle();
+        ui.add(Id::Autostart, Kind::Checkbox, g.autostart, startup, startup);
         // Drop focus that points at something now disabled.
         if let Some(f) = ui.focus {
             if !ui.get(f).map(|w| w.enabled).unwrap_or(false) && !matches!(f, Id::Tile(_)) {

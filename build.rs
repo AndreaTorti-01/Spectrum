@@ -24,7 +24,7 @@ const RT_MANIFEST: u16 = 24;
 const LANG: u16 = 0x0409;
 
 const COMPANY: &str = "Andrea Torti";
-const DESCRIPTION: &str = "Spectrum: monitor color profiles";
+const DESCRIPTION: &str = "Spectrum: Monitor Color Profiles Manager";
 const PRODUCT: &str = "Spectrum";
 const EXE_NAME: &str = "Spectrum.exe";
 const COPYRIGHT: &str = "MIT License";
@@ -44,6 +44,7 @@ fn main() {
     let version = std::env::var("CARGO_PKG_VERSION").unwrap_or_else(|_| "0.0.0".into());
 
     write_ico();
+    write_msix_assets();
 
     let resources = build_resources(&version);
     let obj = coff_object(&resources);
@@ -55,19 +56,35 @@ fn main() {
     );
 }
 
-/// Writes `target/spectrum.ico` (next to, not inside, the profile folders) for the installer's wizard
-/// icon. The path is stable on purpose: `installer/spectrum.iss` refers to `target/spectrum.ico`.
-fn write_ico() {
-    let manifest = PathBuf::from(std::env::var("CARGO_MANIFEST_DIR").expect("CARGO_MANIFEST_DIR"));
-    let dir = manifest.join("target");
-    let bytes = icon_render::ico_bytes();
-    let path = dir.join("spectrum.ico");
-    if std::fs::read(&path).map(|old| old == bytes).unwrap_or(false) {
+fn target_dir() -> PathBuf {
+    PathBuf::from(std::env::var("CARGO_MANIFEST_DIR").expect("CARGO_MANIFEST_DIR")).join("target")
+}
+
+/// Writes `bytes` to `path` unless it already holds them, so unchanged builds don't touch the files.
+fn write_if_changed(path: &std::path::Path, bytes: &[u8]) {
+    if std::fs::read(path).map(|old| old == bytes).unwrap_or(false) {
         return;
     }
-    if std::fs::create_dir_all(&dir).is_err() || std::fs::write(&path, bytes).is_err() {
+    let ok = path.parent().is_some_and(|d| std::fs::create_dir_all(d).is_ok())
+        && std::fs::write(path, bytes).is_ok();
+    if !ok {
         println!("cargo:warning=could not write {}", path.display());
     }
+}
+
+/// Writes `target/spectrum.ico` (next to, not inside, the profile folders), handy for docs and tools.
+fn write_ico() {
+    write_if_changed(&target_dir().join("spectrum.ico"), &icon_render::ico_bytes());
+}
+
+/// Writes the MSIX images to `target/msix-assets/` and the Store listing tile to `target/store-tile.png`.
+/// `packaging/build-msix.ps1` copies the folder into the package as `Assets\`.
+fn write_msix_assets() {
+    let dir = target_dir().join("msix-assets");
+    for (name, png) in icon_render::msix_assets() {
+        write_if_changed(&dir.join(name), &png);
+    }
+    write_if_changed(&target_dir().join("store-tile.png"), &icon_render::store_tile());
 }
 
 // ---- resources ---------------------------------------------------------------------------------

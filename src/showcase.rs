@@ -78,7 +78,7 @@ pub fn state() -> UiState {
     };
     UiState {
         monitors: vec![m],
-        autostart: true,
+        autostart: crate::autostart::Startup::Enabled,
         advanced: true,
         error: None,
     }

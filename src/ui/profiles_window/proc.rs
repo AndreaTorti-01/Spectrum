@@ -57,6 +57,8 @@ enum Release {
     Confirm,
     /// Second click: delete this file.
     Delete(String),
+    /// Second click on "Remove all Spectrum profiles".
+    RemoveAll,
 }
 
 impl Profiles {
@@ -91,6 +93,11 @@ impl Profiles {
                 self.invalidate();
                 false
             }
+            None if self.on_remove_all(x, y) => {
+                self.pressed_all = true;
+                self.invalidate();
+                true
+            }
             None => match self.button_at(x, y) {
                 Some(i) => {
                     self.pressed = Some(i);
@@ -106,9 +113,21 @@ impl Profiles {
     fn on_release(&mut self, x: i32, y: i32, capture_lost: bool) -> Release {
         let was_drag = self.drag.take().is_some();
         let pressed = self.pressed.take();
+        let pressed_all = std::mem::take(&mut self.pressed_all);
         self.invalidate();
         if was_drag || capture_lost {
             return Release::Nothing;
+        }
+        if pressed_all {
+            if !self.on_remove_all(x, y) {
+                return Release::Nothing;
+            }
+            if self.confirm_all {
+                return Release::RemoveAll;
+            }
+            self.confirm_all = true;
+            self.confirm = None;
+            return Release::Confirm;
         }
         let Some(i) = pressed.filter(|&i| self.button_at(x, y) == Some(i)) else {
             return Release::Nothing;
@@ -117,6 +136,7 @@ impl Profiles {
             return Release::Delete(self.rows[i].file.clone());
         }
         self.confirm = Some(i);
+        self.confirm_all = false;
         Release::Confirm
     }
 
@@ -151,6 +171,35 @@ fn delete_now(hwnd: HWND, file: String) {
         match rows {
             Some(r) => p.rows = r,
             None => p.rows.retain(|r| r.file != file),
+        }
+        p.clamp_scroll();
+        p.invalidate();
+    });
+    if !mock && super::super::main_window::is_open() {
+        super::super::main_window::refresh();
+    }
+}
+
+/// Second click on "Remove all Spectrum profiles": same path as `--debug-remove-all`, then reloads the
+/// rows. Runs with PROFILES unborrowed, like [`delete_now`].
+fn remove_all_now(hwnd: HWND) {
+    // SAFETY: valid window; killing the timer twice is harmless.
+    unsafe { KillTimer(hwnd, TIMER_CONFIRM) };
+    let mock = with(|p| p.mock).unwrap_or(false);
+    let result = if mock {
+        Ok("Removed Spectrum's profiles".to_string())
+    } else {
+        crate::app::dispatch_result(UiAction::RemoveAllProfiles)
+    };
+    let rows = (!mock).then(crate::app::list_profiles);
+    with(|p| {
+        p.confirm_all = false;
+        p.status = Some(result.unwrap_or_else(|e| e));
+        match rows {
+            Some(r) => p.rows = r,
+            None => p
+                .rows
+                .retain(|r| !r.file.to_ascii_lowercase().starts_with("spectrum ")),
         }
         p.clamp_scroll();
         p.invalidate();
@@ -245,6 +294,7 @@ unsafe extern "system" fn wnd_proc(hwnd: HWND, msg: u32, wp: WPARAM, lp: LPARAM)
                     SetTimer(hwnd, TIMER_CONFIRM, CONFIRM_MS, None);
                 }
                 Some(Release::Delete(file)) => delete_now(hwnd, file),
+                Some(Release::RemoveAll) => remove_all_now(hwnd),
                 _ => {}
             }
             0
@@ -254,6 +304,7 @@ unsafe extern "system" fn wnd_proc(hwnd: HWND, msg: u32, wp: WPARAM, lp: LPARAM)
                 KillTimer(hwnd, TIMER_CONFIRM);
                 with(|p| {
                     p.confirm = None;
+                    p.confirm_all = false;
                     p.invalidate();
                 });
             }
@@ -269,7 +320,7 @@ unsafe extern "system" fn wnd_proc(hwnd: HWND, msg: u32, wp: WPARAM, lp: LPARAM)
         WM_SETCURSOR => {
             if window::is_client_hit(lp) {
                 let (x, y) = window::cursor_pos(hwnd);
-                let hand = with(|p| p.button_at(x, y).is_some()).unwrap_or(false);
+                let hand = with(|p| p.button_at(x, y).is_some() || p.on_remove_all(x, y)).unwrap_or(false);
                 window::set_cursor(hand);
                 return 1;
             }
@@ -310,6 +361,33 @@ mod tests {
             p.on_release(x, y, false),
             Release::Delete("Display P3 calibrated.icm".into())
         );
+    }
+
+    #[test]
+    fn remove_all_takes_two_clicks_and_cancels_a_row_confirm() {
+        let mut p = Profiles::new(crate::showcase::profiles(), true, 96);
+        let all = super::super::geo(96).remove_all;
+        let (x, y) = (all.l + 2, all.t + 2);
+        let b = p.button_rect(2);
+        p.on_button_down(b.l + 2, b.t + 2);
+        p.on_release(b.l + 2, b.t + 2, false);
+        assert_eq!(p.confirm, Some(2));
+        assert!(p.on_button_down(x, y));
+        assert_eq!(p.on_release(x, y, false), Release::Confirm);
+        assert!(p.confirm_all && p.confirm.is_none());
+        assert!(p.on_button_down(x, y));
+        assert_eq!(p.on_release(x, y, false), Release::RemoveAll);
+    }
+
+    #[test]
+    fn remove_all_is_off_without_spectrum_profiles() {
+        let rows = crate::showcase::profiles()
+            .into_iter()
+            .filter(|r| !r.file.to_ascii_lowercase().starts_with("spectrum "))
+            .collect();
+        let mut p = Profiles::new(rows, true, 96);
+        let all = super::super::geo(96).remove_all;
+        assert!(!p.on_button_down(all.l + 2, all.t + 2));
     }
 
     #[test]

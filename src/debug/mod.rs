@@ -10,11 +10,11 @@ mod dump;
 mod instance;
 
 pub use actions::{
-    apply_hdr, autostart, delete_profile, read_edid, reconcile, reset_hdr, sdr_cap, sdr_white, set_sdr,
-    toggle_hdr, wipe,
+    apply_hdr, autostart, delete_profile, read_edid, reconcile, remove_all, reset_hdr, sdr_cap, sdr_white,
+    set_sdr, toggle_hdr, wipe,
 };
 pub use dump::{dump, dxgi};
-pub use instance::{find_running, send_to_running, stop_running};
+pub use instance::{find_running, send_to_running, stop_legacy_copy};
 
 use crate::app::{ProfileRow, UiState};
 use crate::icc_write::HdrParams;

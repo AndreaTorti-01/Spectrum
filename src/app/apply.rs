@@ -32,6 +32,7 @@ pub enum UiAction {
     OpenGamut,
     OpenProfiles,
     DeleteProfile { file: String },
+    RemoveAllProfiles,
     Identify,
     CloseMain,
 }
@@ -323,6 +324,22 @@ fn set_autostart(on: bool) -> Result<String, String> {
         })
 }
 
+/// "Remove all Spectrum profiles": the report counts the deleted files; any failure is an error.
+fn remove_all() -> Result<String, String> {
+    remove_all_report(&super::reconcile::remove_all_profiles())
+}
+
+fn remove_all_report(lines: &[String]) -> Result<String, String> {
+    if lines.iter().any(|l| l.contains("could not")) {
+        return Err("Couldn't remove every Spectrum profile. Try again.".into());
+    }
+    Ok(match lines.iter().filter(|l| l.starts_with("deleted ")).count() {
+        0 => "No Spectrum profiles to remove".into(),
+        1 => "Removed 1 Spectrum profile".into(),
+        n => format!("Removed {n} Spectrum profiles"),
+    })
+}
+
 fn set_advanced(on: bool) {
     let mut cfg = Config::load();
     cfg.advanced = on;
@@ -381,6 +398,7 @@ pub fn execute(action: UiAction) -> Result<String, String> {
         UiAction::OpenGamut => done(open_gamut),
         UiAction::OpenProfiles => done(ui::profiles_window::open),
         UiAction::DeleteProfile { file } => super::profiles::delete_profile(&file),
+        UiAction::RemoveAllProfiles => remove_all(),
         UiAction::Identify => done(identify),
         UiAction::CloseMain => done(close_main),
     }
@@ -411,6 +429,25 @@ pub fn dispatch_result(action: UiAction) -> Result<String, String> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn remove_all_reports_counts_and_failures() {
+        let s = |v: &[&str]| v.iter().map(|x| x.to_string()).collect::<Vec<_>>();
+        assert_eq!(remove_all_report(&[]).unwrap(), "No Spectrum profiles to remove");
+        assert_eq!(
+            remove_all_report(&s(&[
+                "monitor 1: removed Spectrum A.icc",
+                "deleted Spectrum A.icc"
+            ]))
+            .unwrap(),
+            "Removed 1 Spectrum profile"
+        );
+        assert_eq!(
+            remove_all_report(&s(&["deleted Spectrum A.icc", "deleted Spectrum B.icc"])).unwrap(),
+            "Removed 2 Spectrum profiles"
+        );
+        assert!(remove_all_report(&s(&["deleted Spectrum A.icc", "could not delete X: busy"])).is_err());
+    }
 
     #[test]
     fn window_actions_are_quiet() {

@@ -91,7 +91,11 @@ fn apply_to_state(state: &mut UiState, action: &UiAction) {
                 u.hdr_custom_active = true;
             }
         }
-        UiAction::SetAutostart(on) => state.autostart = *on,
+        UiAction::SetAutostart(on) => {
+            if state.autostart.can_toggle() {
+                state.autostart = crate::autostart::Startup::toggled(*on);
+            }
+        }
         UiAction::SetAdvanced(on) => state.advanced = *on,
         _ => {}
     }
@@ -137,7 +141,7 @@ mod tests {
         assert_eq!(m.sdr_current, Some(3));
         assert!(!m.hdr_on);
         assert_eq!(m.sdr_white_nits, Some(300.0));
-        assert!(!st.autostart && !st.advanced);
+        assert!(!st.autostart.is_on() && !st.advanced);
 
         let params = HdrParams {
             min_nits: 0.1,

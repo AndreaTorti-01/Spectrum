@@ -24,6 +24,7 @@ impl Profiles {
         let geo = geo(dpi);
         c.clear(th.bg);
         c.text(geo.head, "Manage profiles", self.fonts.subtitle, th.text, TA_LEFT);
+        self.draw_remove_all(c, geo.remove_all);
         let radius = scf(design::RADIUS_CARD, dpi);
         c.fill_rrect(geo.panel, radius, th.surface, 1.0);
         if self.rows.is_empty() {
@@ -48,6 +49,28 @@ impl Profiles {
         if let Some(s) = &self.status {
             c.text(geo.status, s, self.fonts.caption, th.text_dim, TA_LEFT);
         }
+    }
+
+    /// "Remove all Spectrum profiles", a danger button that asks for a second click like Delete.
+    fn draw_remove_all(&self, c: &mut Canvas, r: R) {
+        let enabled = self.has_ours();
+        let (label, style) = if self.confirm_all {
+            ("Click to confirm", BtnStyle::DangerConfirm)
+        } else {
+            ("Remove all Spectrum profiles", BtnStyle::Danger)
+        };
+        let state = WState {
+            hover: enabled && r.contains(self.mouse.0, self.mouse.1),
+            pressed: enabled && self.pressed_all,
+            focus: false,
+            enabled,
+        };
+        let ctx = Ctx {
+            th: theme(),
+            fonts: &self.fonts,
+            dpi: self.dpi,
+        };
+        draw_button(c, &ctx, r, label, state, style);
     }
 
     /// Name with its type tag, file name, usage (and why a locked row can't be deleted), Delete button.

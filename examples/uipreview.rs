@@ -116,7 +116,7 @@ fn mock_state(args: &[String]) -> UiState {
     };
     UiState {
         monitors: if mons == 1 { vec![m1] } else { vec![m1, m2] },
-        autostart: true,
+        autostart: spectrum::autostart::Startup::Enabled,
         advanced: true,
         error: None,
     }

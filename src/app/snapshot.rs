@@ -90,7 +90,8 @@ impl UiMonitor {
 #[derive(Clone, Debug)]
 pub struct UiState {
     pub monitors: Vec<UiMonitor>,
-    pub autostart: bool,
+    /// The "Start with Windows" startup task.
+    pub autostart: crate::autostart::Startup,
     /// HDR "Advanced" row expanded.
     pub advanced: bool,
     /// The last action's error, cleared by the next action that succeeds.
@@ -270,7 +271,7 @@ pub fn snapshot() -> UiState {
     }
     UiState {
         monitors,
-        autostart: crate::autostart::autostart_enabled(),
+        autostart: crate::autostart::startup_state(),
         advanced: cfg.advanced,
         error: LAST_ERROR.with(|s| s.borrow().clone()),
     }

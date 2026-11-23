@@ -205,7 +205,7 @@ async function widths(cdp) {
         // html and body clip overflow-x, so measure the rightmost edge of the elements instead
         const edge = await cdp.eval("Math.round(Math.max(...Array.from(document.querySelectorAll('.nav-inner *, main *')).map((e) => e.getBoundingClientRect().right)))");
         const btn = await cdp.eval("Math.round(document.querySelector('.nav .btn').getBoundingClientRect().right)");
-        console.log(`w${w} ${id} ${theme}: rightmost element edge ${edge}px, nav Download right edge ${btn}px (viewport ${w}px)`);
+        console.log(`w${w} ${id} ${theme}: rightmost element edge ${edge}px, nav Get it right edge ${btn}px (viewport ${w}px)`);
         await grab(cdp, join(opt.out, `w${w}-${id}-${theme}.png`));
       }
     }

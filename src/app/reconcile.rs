@@ -1,11 +1,10 @@
-//! Driver-update survival ([`reconcile`]), the first run, and the debug wipe and uninstall helpers.
+//! Driver-update survival ([`reconcile`]), the debug wipe and "Remove all Spectrum profiles".
 
-use super::apply::{install_edid, retire_hdr_profile};
+use super::apply::retire_hdr_profile;
 use super::files::{ensure_file, hdr_file_name, hdr_profile_bytes, is_ours};
-use super::{contains_ci, enumerate_cached, eq, monitor_at, monitor_name, Config, Monitor, MonitorCfg};
-use crate::color;
+use super::{contains_ci, enumerate_cached, eq, monitor_name, Config, Monitor, MonitorCfg};
 use crate::monitors;
-use crate::util::{app_data_dir, log};
+use crate::util::log;
 use crate::wcs;
 
 /// Brings every configured monitor back to the user's choice. Returns one line per action taken.
@@ -133,30 +132,6 @@ fn reconcile_hdr(m: &Monitor, entry: &mut MonitorCfg, tag: &str, out: &mut Vec<S
     false
 }
 
-/// First-ever start (no config file): installs and associates the EDID profile of every monitor with a
-/// valid EDID. The default profile stays as it is.
-pub(super) fn first_run() {
-    let count = enumerate_cached().len();
-    for i in 0..count {
-        let plausible = monitor_at(i)
-            .map(|m| {
-                m.edid
-                    .as_ref()
-                    .is_some_and(|e| color::primaries_plausible(&e.primaries))
-            })
-            .unwrap_or(false);
-        if !plausible {
-            continue;
-        }
-        match install_edid(i, false) {
-            Ok(s) => log(&format!("first run: {s}")),
-            Err(e) => log(&format!("first run: {e}")),
-        }
-    }
-    // Marks the first run as done even when no monitor had an EDID.
-    Config::load().save();
-}
-
 fn kind_name(hdr: bool) -> &'static str {
     if hdr {
         "HDR"
@@ -224,7 +199,10 @@ fn known_files(m: &Monitor, cfg: &Config, hdr: bool) -> Vec<String> {
     files
 }
 
-/// Uninstall helper: removes every Spectrum profile association and file, plus Spectrum's data folder.
+/// "Remove all Spectrum profiles" (Profiles window, `--debug-remove-all`): removes every association and
+/// file of a Spectrum profile, the profile backups and the per-monitor choices, so reconcile won't bring
+/// them back. Windows falls back to its own defaults. The MSIX uninstall can't run code, so this is how a
+/// user undoes Spectrum's changes before uninstalling. One line per action taken.
 pub fn remove_all_profiles() -> Vec<String> {
     let mut out = Vec::new();
     let cfg = Config::load();
@@ -252,7 +230,15 @@ pub fn remove_all_profiles() -> Vec<String> {
             Err(e) => out.push(format!("could not delete {f}: {e}")),
         }
     }
-    let _ = std::fs::remove_dir_all(app_data_dir());
+    let _ = std::fs::remove_dir_all(wcs::backup_dir());
+    let mut cfg = Config::load();
+    if !cfg.monitors.is_empty() {
+        cfg.monitors.clear();
+        cfg.save();
+    }
+    for line in &out {
+        log(&format!("remove all: {line}"));
+    }
     out
 }
 

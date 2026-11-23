@@ -303,7 +303,15 @@ pub fn delete_profile(file: &str, out: Option<&Path>) -> i32 {
     code
 }
 
-/// `--debug-autostart on|off`: result line plus the Startup shortcut state.
+/// `--debug-remove-all`: the profiles window's "Remove all Spectrum profiles", headless.
+pub fn remove_all(out: Option<&Path>) -> i32 {
+    let mut text = String::from("action: remove all Spectrum profiles\n");
+    let code = push_result(&mut text, app::dispatch_result(UiAction::RemoveAllProfiles));
+    emit(out, &text);
+    code
+}
+
+/// `--debug-autostart on|off`: result line plus the startup task state.
 pub fn autostart(state: &str, out: Option<&Path>) -> i32 {
     let on = match parse_on_off(state) {
         Ok(o) => o,
@@ -311,7 +319,7 @@ pub fn autostart(state: &str, out: Option<&Path>) -> i32 {
     };
     let mut text = format!("action: set autostart {}\n", on_off(on));
     let code = push_result(&mut text, app::dispatch_result(UiAction::SetAutostart(on)));
-    text.push_str(&install_text(crate::autostart::autostart_enabled()));
+    text.push_str(&install_text(crate::autostart::startup_state()));
     emit(out, &text);
     code
 }

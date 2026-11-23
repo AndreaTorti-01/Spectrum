@@ -1,5 +1,6 @@
 //! The profiles window: every .icc/.icm in the color folder with its type, the monitors using it and a
-//! two-step Delete button. Destroyed on close, like the gamut window.
+//! two-step Delete button, plus "Remove all Spectrum profiles" by the heading (the way to undo Spectrum's
+//! changes before uninstalling). Destroyed on close, like the gamut window.
 //!
 //! - `paint`: the list and its rows.
 //! - `proc`: the window procedure and the delete flow.
@@ -30,6 +31,8 @@ const STATUS_H: i32 = 20;
 const STATUS_GAP: i32 = 12;
 const CLIENT_H: i32 = TOP + 2 * PAD + VISIBLE_ROWS * ROW_H + STATUS_GAP + STATUS_H + 20;
 const BTN_W: i32 = 132;
+/// Width of "Remove all Spectrum profiles".
+const ALL_W: i32 = 232;
 const BTN_H: i32 = design::CONTROL_H;
 
 struct Profiles {
@@ -46,6 +49,9 @@ struct Profiles {
     pressed: Option<usize>,
     /// Row waiting for the second click.
     confirm: Option<usize>,
+    /// "Remove all Spectrum profiles" is pressed / waiting for the second click.
+    pressed_all: bool,
+    confirm_all: bool,
     /// The last delete's result.
     status: Option<String>,
     /// `WM_MOUSELEAVE` was requested.
@@ -75,6 +81,8 @@ struct Geo {
     list: R,
     status: R,
     head: R,
+    /// "Remove all Spectrum profiles", right-aligned on the heading line.
+    remove_all: R,
 }
 
 fn geo(dpi: u32) -> Geo {
@@ -105,6 +113,12 @@ fn geo(dpi: u32) -> Geo {
             s(CLIENT_W - MARGIN),
             s(design::PAD + design::HEADING_H),
         ),
+        remove_all: R::xywh(
+            s(CLIENT_W - MARGIN - ALL_W),
+            s(design::PAD + (design::HEADING_H - BTN_H) / 2),
+            s(ALL_W),
+            s(BTN_H),
+        ),
     }
 }
 
@@ -122,6 +136,8 @@ impl Profiles {
             mouse: (-1, -1),
             pressed: None,
             confirm: None,
+            pressed_all: false,
+            confirm_all: false,
             status: None,
             tracking: false,
             drag: None,
@@ -180,6 +196,18 @@ impl Profiles {
     fn button_at(&self, x: i32, y: i32) -> Option<usize> {
         let i = self.row_at(x, y)?;
         (self.rows[i].deletable.is_ok() && self.button_rect(i).contains(x, y)).then_some(i)
+    }
+
+    /// Whether any listed profile is Spectrum's, so "Remove all Spectrum profiles" has something to do.
+    fn has_ours(&self) -> bool {
+        self.rows
+            .iter()
+            .any(|r| r.file.to_ascii_lowercase().starts_with("spectrum "))
+    }
+
+    /// The point is on an enabled "Remove all Spectrum profiles".
+    fn on_remove_all(&self, x: i32, y: i32) -> bool {
+        self.has_ours() && geo(self.dpi).remove_all.contains(x, y)
     }
 
     fn invalidate(&self) {
@@ -263,6 +291,7 @@ pub fn refresh() {
     with(|p| {
         p.rows = rows;
         p.confirm = None;
+        p.confirm_all = false;
         p.clamp_scroll();
         p.invalidate();
     });
@@ -284,6 +313,7 @@ mod tests {
             assert_eq!(g.list.h() % sc(ROW_H, dpi), 0, "dpi {dpi}");
             assert!(g.status.t > g.panel.b && g.status.b <= sc(CLIENT_H, dpi));
             assert!(g.head.b <= g.panel.t);
+            assert!(g.remove_all.b <= g.panel.t && g.remove_all.r <= sc(CLIENT_W - MARGIN, dpi));
         }
     }
 

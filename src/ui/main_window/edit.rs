@@ -171,7 +171,7 @@ impl Main {
                 self.layout();
                 self.invalidate();
             }
-            Id::Autostart => self.send(UiAction::SetAutostart(!self.state.autostart)),
+            Id::Autostart => self.send(UiAction::SetAutostart(!self.state.autostart.is_on())),
             Id::SdrCap => self.toggle_sdr_cap(),
             _ => {}
         }

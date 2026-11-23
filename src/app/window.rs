@@ -4,7 +4,7 @@ use super::commands::{
     exit_app, queue_command, refresh_main_window, run_command, show_tray_menu, take_command, toggle_main,
     WM_RUN_CMD,
 };
-use super::reconcile::{first_run, reconcile};
+use super::reconcile::reconcile;
 use super::{set_hwnd, tray_mode, COPYDATA_MAGIC, SHOW_MESSAGE_NAME, TRAY_MODE, WINDOW_CLASS};
 use crate::tray::{self, WM_TRAY};
 use crate::ui::{self, draw};
@@ -92,12 +92,11 @@ fn on_tray(lp: LPARAM) {
     }
 }
 
-/// First message of the loop: first run, reconcile, then what `RunOpts` asked for.
+/// First message of the loop: reconcile, then what `RunOpts` asked for. Nothing changes in Windows until
+/// the user picks something (Store policy 10.2.8): there is no first-run setup.
 fn on_startup() {
     let opts = OPTS.with(|o| o.borrow_mut().take()).unwrap_or_default();
-    if !crate::config::config_path().exists() {
-        first_run();
-    }
+    super::legacy::check();
     for line in reconcile() {
         log(&format!("startup: {line}"));
     }

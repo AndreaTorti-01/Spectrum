@@ -259,6 +259,11 @@ pub fn entry(size: u32) -> Vec<u8> {
 
 /// PNG-compressed icon image (straight alpha, as PNG wants).
 pub fn png_entry(size: u32) -> Vec<u8> {
+    png_canvas(size, size, size)
+}
+
+/// Straight-alpha RGBA of the icon at `size` px.
+fn straight_rgba(size: u32) -> Vec<u8> {
     let px = render_bgra(size);
     let mut rgba = Vec::with_capacity(px.len());
     for p in px.chunks(4) {
@@ -266,7 +271,59 @@ pub fn png_entry(size: u32) -> Vec<u8> {
         let un = |c: u8| -> u8 { ((c as u32 * 255 + a / 2).checked_div(a).unwrap_or(0)).min(255) as u8 };
         rgba.extend_from_slice(&[un(p[2]), un(p[1]), un(p[0]), p[3]]);
     }
-    super::icon_png::encode_rgba(size, &rgba)
+    rgba
+}
+
+/// PNG of a transparent `width` x `height` canvas with the icon at `icon` px in the middle.
+pub fn png_canvas(width: u32, height: u32, icon: u32) -> Vec<u8> {
+    let icon = icon.min(width).min(height);
+    let src = straight_rgba(icon);
+    if (width, height) == (icon, icon) {
+        return super::icon_png::encode_rgba(icon, &src);
+    }
+    let (w, ic) = (width as usize, icon as usize);
+    let (x0, y0) = (((width - icon) / 2) as usize, ((height - icon) / 2) as usize);
+    let mut rgba = vec![0u8; w * height as usize * 4];
+    for y in 0..ic {
+        let d = ((y0 + y) * w + x0) * 4;
+        rgba[d..d + ic * 4].copy_from_slice(&src[y * ic * 4..(y + 1) * ic * 4]);
+    }
+    super::icon_png::encode_rgba_wh(width, height, &rgba)
+}
+
+/// The MSIX package images, as (file name under `Assets\`, PNG). All full bleed: the beam and rainbow run
+/// to the icon edge, so a smaller icon on a bigger tile would look cut off. No wide tile: Windows 11
+/// Start doesn't show one.
+pub fn msix_assets() -> Vec<(String, Vec<u8>)> {
+    let mut out = Vec::new();
+    for (scale, mul) in [(100u32, 1u32), (200, 2)] {
+        out.push((
+            format!("Square44x44Logo.scale-{scale}.png"),
+            png_canvas(44 * mul, 44 * mul, 44 * mul),
+        ));
+        out.push((
+            format!("Square150x150Logo.scale-{scale}.png"),
+            png_entry(150 * mul),
+        ));
+        out.push((
+            format!("StoreLogo.scale-{scale}.png"),
+            png_canvas(50 * mul, 50 * mul, 50 * mul),
+        ));
+    }
+    for size in [16u32, 24, 32, 48, 256] {
+        let png = png_entry(size);
+        out.push((format!("Square44x44Logo.targetsize-{size}.png"), png.clone()));
+        out.push((
+            format!("Square44x44Logo.targetsize-{size}_altform-unplated.png"),
+            png,
+        ));
+    }
+    out
+}
+
+/// The 300 x 300 app tile icon uploaded to the Store listing (not part of the package).
+pub fn store_tile() -> Vec<u8> {
+    png_entry(300)
 }
 
 /// One ICO image / RT_ICON resource: BITMAPINFOHEADER + bottom-up BGRA pixels + 1-bit AND mask.
@@ -348,6 +405,43 @@ mod tests {
             assert_eq!(len, 40 + (s * s * 4) as usize + mask);
         }
         assert_eq!(end, b.len());
+    }
+
+    fn png_size(b: &[u8]) -> (u32, u32) {
+        assert_eq!(&b[..8], &[0x89, b'P', b'N', b'G', 0x0D, 0x0A, 0x1A, 0x0A]);
+        let be = |o: usize| u32::from_be_bytes([b[o], b[o + 1], b[o + 2], b[o + 3]]);
+        (be(16), be(20))
+    }
+
+    #[test]
+    fn msix_assets_have_the_sizes_their_names_say() {
+        let assets = msix_assets();
+        assert_eq!(assets.len(), 16);
+        for (name, png) in &assets {
+            let (w, h) = png_size(png);
+            let want = if let Some(t) = name.split("targetsize-").nth(1) {
+                let n: u32 = t.split(['_', '.']).next().unwrap().parse().unwrap();
+                (n, n)
+            } else {
+                let mul = if name.contains("scale-200") { 2 } else { 1 };
+                let base = match name.split('.').next().unwrap() {
+                    "Square44x44Logo" => (44, 44),
+                    "Square150x150Logo" => (150, 150),
+                    "StoreLogo" => (50, 50),
+                    other => panic!("unexpected asset {other}"),
+                };
+                (base.0 * mul, base.1 * mul)
+            };
+            assert_eq!((w, h), want, "{name}");
+        }
+        assert_eq!(png_size(&store_tile()), (300, 300));
+    }
+
+    #[test]
+    fn canvas_centers_the_icon_on_transparency() {
+        // Corners of a wide canvas are outside the icon, so the left and right margins stay transparent.
+        let png = png_canvas(40, 20, 16);
+        assert_eq!(png_size(&png), (40, 20));
     }
 
     #[test]

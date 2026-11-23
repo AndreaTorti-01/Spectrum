@@ -36,30 +36,13 @@ jobs:
       - name: Run tests
         run: cargo test --locked
 
-      - name: Build the release exe
-        run: cargo build --release --locked
-
-      - name: Upload Spectrum.exe
-        uses: actions/upload-artifact@v4
-        with:
-          name: Spectrum-exe
-          path: target/release/Spectrum.exe
-          if-no-files-found: error
-
-      - name: Build the installer
+      - name: Build the MSIX package
         shell: pwsh
-        run: |
-          $iscc = "C:\Program Files (x86)\Inno Setup 6\iscc.exe"
-          if (-not (Test-Path $iscc)) {
-            choco install innosetup -y --no-progress
-            $iscc = "C:\Program Files (x86)\Inno Setup 6\iscc.exe"
-          }
-          & $iscc installer\spectrum.iss
-          if ($LASTEXITCODE -ne 0) { throw "iscc failed with exit code $LASTEXITCODE" }
+        run: ./packaging/build-msix.ps1
 
-      - name: Upload SpectrumSetup.exe
+      - name: Upload the MSIX package
         uses: actions/upload-artifact@v4
         with:
-          name: SpectrumSetup-exe
-          path: target/installer/SpectrumSetup.exe
+          name: Spectrum-msix
+          path: target/Spectrum-*.msix
           if-no-files-found: error

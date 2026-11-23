@@ -2,7 +2,7 @@
 
 use super::{emit, fail, hdr_text, on_off, opt, parse_num};
 use crate::app::{self, UiMonitor, UiState};
-use crate::autostart;
+use crate::autostart::Startup;
 use crate::color::{Primaries, Xy};
 use crate::config::{Config, MonitorCfg};
 use crate::dxgi::Reported;
@@ -105,12 +105,11 @@ fn name_of(m: &Monitor) -> String {
         .unwrap_or_else(|| m.friendly_name.clone())
 }
 
-/// Autostart state: whether the Startup shortcut exists, and where it is.
-pub(super) fn install_text(autostart: bool) -> String {
-    let lnk = autostart::shortcut_path();
+/// Package identity and the "Start with Windows" startup task.
+pub(super) fn install_text(autostart: Startup) -> String {
     let mut s = String::new();
-    let _ = writeln!(s, "autostart:       {}", on_off(autostart));
-    let _ = writeln!(s, "startup shortcut: {} (exists={})", lnk.display(), lnk.exists());
+    let _ = writeln!(s, "packaged:        {}", crate::util::is_packaged());
+    let _ = writeln!(s, "autostart:       {}", autostart.name());
     s
 }
 
@@ -409,16 +408,15 @@ fn monitor_json(m: &Monitor, cfg: &Config, ui: &UiState) -> String {
 
 fn dump_json(mons: &[Monitor], cfg: &Config, ui: &UiState) -> String {
     let items: Vec<String> = mons.iter().map(|m| monitor_json(m, cfg, ui)).collect();
-    let lnk = autostart::shortcut_path();
     let install = format!(
-        "{{\"startup_shortcut\":{},\"startup_shortcut_exists\":{}}}",
-        json_str(&lnk.display().to_string()),
-        lnk.exists()
+        "{{\"packaged\":{},\"startup_task\":{}}}",
+        crate::util::is_packaged(),
+        json_str(ui.autostart.name())
     );
     let cpath = crate::config::config_path();
     format!(
         "{{\"autostart\":{},\"install\":{},\"config_file\":{},\"config_exists\":{},\"monitors\":[{}]}}\n",
-        ui.autostart,
+        ui.autostart.is_on(),
         install,
         json_str(&cpath.display().to_string()),
         cpath.exists(),

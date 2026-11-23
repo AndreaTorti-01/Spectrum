@@ -151,7 +151,7 @@
   }
 }
 
-/* 320 px: keep the Download button inside the viewport. */
+/* 320 px: keep the Get it button inside the viewport. */
 @media (max-width: 359px) {
   .nav-inner {
     gap: 8px;
