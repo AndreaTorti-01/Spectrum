@@ -24,8 +24,8 @@ Set-Location $root
 
 # Partner Center > Product management > Product identity. Case-sensitive, must match exactly.
 $identity = @{
-    IDENTITY_NAME          = 'Spectrum.Dev'
-    IDENTITY_PUBLISHER     = 'CN=Spectrum Dev'
+    IDENTITY_NAME          = 'AndreaTorti.SpectrumMonitorColorProfilesManager'
+    IDENTITY_PUBLISHER     = 'CN=B880C85A-4B59-4AFD-808C-E957442C4354'
     PUBLISHER_DISPLAY_NAME = 'Andrea Torti'
 }
 

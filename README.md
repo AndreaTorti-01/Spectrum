@@ -17,7 +17,7 @@
 </p>
 
 <p align="center">
-  <a href="https://apps.microsoft.com/detail/STORE_ID?mode=direct"><img src="https://get.microsoft.com/images/en-us%20dark.svg" alt="Get it from Microsoft" width="200"></a>
+  <a href="https://apps.microsoft.com/detail/9PL7WV4HWZ0D?mode=direct"><img src="https://get.microsoft.com/images/en-us%20dark.svg" alt="Get it from Microsoft" width="200"></a>
 </p>
 
 <p align="center">

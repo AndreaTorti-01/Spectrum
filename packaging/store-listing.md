@@ -6,8 +6,8 @@ Text and answers for Partner Center, section by section. Paste the quoted blocks
 
 Copy these from Partner Center › Product management › Product identity:
 
-- `Package/Identity/Name`, `Package/Identity/Publisher` and `Package/Properties/PublisherDisplayName` go in `$identity` at the top of `packaging/build-msix.ps1`.
-- The Store ID goes in `STORE_ID` in `site/src/data/site.ts` and in the README badge link.
+- Name `AndreaTorti.SpectrumMonitorColorProfilesManager`, Publisher `CN=B880C85A-4B59-4AFD-808C-E957442C4354`, PublisherDisplayName `Andrea Torti`: in `$identity` at the top of `packaging/build-msix.ps1`.
+- Store ID `9PL7WV4HWZ0D`: `STORE_ID` in `site/src/data/site.ts` and the README badge link.
 
 ## Pricing and availability
 
