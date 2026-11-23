@@ -96,7 +96,6 @@ fn on_tray(lp: LPARAM) {
 /// the user picks something (Store policy 10.2.8): there is no first-run setup.
 fn on_startup() {
     let opts = OPTS.with(|o| o.borrow_mut().take()).unwrap_or_default();
-    super::legacy::check();
     for line in reconcile() {
         log(&format!("startup: {line}"));
     }

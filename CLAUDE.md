@@ -58,6 +58,7 @@ Before changing the owner's real color settings (default profile, associations, 
 
 ## Gotchas
 
+- A packaged app's writes to `%APPDATA%` go to the package's `LocalCache\Roaming` (removed on uninstall), except into a folder that already existed before the package was installed: `%APPDATA%\Spectrum` from a 0.1 install keeps being written in place. Reads fall back to the real folder either way.
 - `ColorProfileGetDisplayList` returns nothing. List associations with `WcsEnumColorProfiles` (`src/wcs.rs`).
 - `ColorProfileAddDisplayAssociation(setAsDefault)` is ignored for an already associated profile. Use `ColorProfileSetDisplayDefaultAssociation`, then read the default back to verify (`wcs::set_default`).
 - Windows applies a new HDR profile's min, peak and full-frame values within about a second. Verified with `--debug-hdr` and `--debug-dxgi`: 0.05/700/300 and 0/1000/600 were reported back, and a reset returned the EDID values 455.5/253.8/0. Read them through `IDXGIOutput6::GetDesc1` on a fresh factory (`src/dxgi.rs`), since DXGI caches per factory.
@@ -73,6 +74,6 @@ Before changing the owner's real color settings (default profile, associations, 
 - Human-readable text (UI strings, docs, commit messages, PR text, release notes) is easiest to keep consistent by following `.claude/rules/copy.md`. Code and comments are exempt.
 - UI changes are best reviewed with light and dark screenshots. The `screenshots` skill covers it, including what to update when the main window layout moves.
 - Website guidance: `.claude/rules/site.md`. Every visible site string is recorded in `site/copy.md`; update it with the page.
-- Not yet verified on real hardware: the packaged build (color-folder writes, the startup task with `--tray`, `RegisterApplicationRestart` after a Store update, taking over from a legacy install). The 0.1 code paths were exercised on the owner's QD-OLED HDR monitor (Windows 11 build 26300).
+- Verified on 26300 from the registered package (`build-msix.ps1 -Register`, through the `spectrum.exe` alias): color-folder writes, SDR and HDR associations, HDR toggle, MHC2 values read back through DXGI, SDR white, the startup task toggle (State 2 under `HKCU\Software\Classes\Local Settings\Software\Microsoft\Windows\CurrentVersion\AppModel\SystemAppData\<family>\SpectrumStartup`). Not yet verified: the startup task launching with `--tray` at sign-in, and `RegisterApplicationRestart` after a Store update.
 - `SETUP-NOTES.txt` is the owner's private, gitignored file. Keep it out of commits and public text.
 - Prefer PowerShell or Node over `python3` for quick checks: on this PC `python3` is the Microsoft Store alias, and a heredoc run through it waited without exiting until it was stopped by hand. Give any command that can wait (interpreters, UI Automation reads, servers) a `timeout`, and stop helpers you start (`npm run shots` leaves `vite preview` on port 4173) before reporting.

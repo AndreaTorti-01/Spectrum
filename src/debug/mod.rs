@@ -14,7 +14,7 @@ pub use actions::{
     set_sdr, toggle_hdr, wipe,
 };
 pub use dump::{dump, dxgi};
-pub use instance::{find_running, send_to_running, stop_legacy_copy};
+pub use instance::{find_running, send_to_running};
 
 use crate::app::{ProfileRow, UiState};
 use crate::icc_write::HdrParams;

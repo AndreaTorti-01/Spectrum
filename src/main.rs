@@ -151,10 +151,9 @@ fn parse_args<I: Iterator<Item = String>>(it: I) -> Args {
     }
     args
 }
-/// Takes the single-instance mutex. `None` when another instance already holds it. A running copy of the
-/// pre-Store install is asked to exit first, so the Store build takes over.
+
+/// Takes the single-instance mutex. `None` when another instance already holds it.
 fn acquire_instance() -> Option<HANDLE> {
-    debug::stop_legacy_copy();
     // SAFETY: plain mutex creation; the handle is kept for the life of the process.
     unsafe {
         let h = CreateMutexW(std::ptr::null(), 0, wide(MUTEX_NAME).as_ptr());

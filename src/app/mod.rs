@@ -9,7 +9,6 @@
 //! - `apply`: the actions the windows send ([`execute`], [`dispatch`]).
 //! - `profiles`: the profiles window's rows and delete.
 //! - `reconcile`: driver-update survival, the debug wipe and "Remove all Spectrum profiles".
-//! - `legacy`: taking over from the pre-Store install.
 //! - `files`: profile file names, labels and restoring missing files.
 //! - `commands`: tray menu, debug/IPC commands and exit.
 //! - `window`: the hidden message window and its loop.
@@ -17,7 +16,6 @@
 mod apply;
 mod commands;
 mod files;
-mod legacy;
 mod profiles;
 mod reconcile;
 mod snapshot;
